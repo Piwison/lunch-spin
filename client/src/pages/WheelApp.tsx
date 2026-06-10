@@ -10,7 +10,7 @@ import WheelSelector from "@/components/WheelSelector";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { X, AlertTriangle } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 
 type Tab = "wheel" | "restaurants" | "history";
@@ -81,6 +81,18 @@ export default function WheelApp() {
     setShowResult(false);
     setSpinResult(null);
     setIsSpinning(true);
+  };
+
+  const handleReSpin = () => {
+    setShowResult(false);
+    setSpinResult(null);
+    // Re-enter the spinning state on the next frame so the wheel restarts.
+    requestAnimationFrame(() => handleSpin());
+  };
+
+  const openDirections = (name: string) => {
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const toggleTag = (tagId: number) => {
@@ -292,18 +304,47 @@ export default function WheelApp() {
                           >
                             {spinResult.label}
                           </h2>
-                          <button
-                            onClick={() => setShowResult(false)}
-                            className="px-6 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
-                            style={{
-                              background: spinResult.color + "22",
-                              border: `1px solid ${spinResult.color}66`,
-                              color: spinResult.color,
-                              fontFamily: "var(--font-display)",
-                            }}
-                          >
-                            CLOSE
-                          </button>
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={() => openDirections(spinResult.label)}
+                              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95"
+                              style={{
+                                background: spinResult.color + "22",
+                                border: `1px solid ${spinResult.color}66`,
+                                color: spinResult.color,
+                                fontFamily: "var(--font-display)",
+                              }}
+                            >
+                              <MapPin size={15} /> DIRECTIONS
+                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={handleReSpin}
+                                disabled={wheelSegments.length === 0}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
+                                style={{
+                                  background: "oklch(0.16 0.025 260)",
+                                  border: "1px solid oklch(0.25 0.03 260)",
+                                  color: "oklch(0.85 0.02 260)",
+                                  fontFamily: "var(--font-display)",
+                                }}
+                              >
+                                <RotateCw size={14} /> RE-SPIN
+                              </button>
+                              <button
+                                onClick={() => setShowResult(false)}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
+                                style={{
+                                  background: "oklch(0.70 0.18 150 / 0.18)",
+                                  border: "1px solid oklch(0.70 0.18 150 / 0.5)",
+                                  color: "oklch(0.80 0.16 155)",
+                                  fontFamily: "var(--font-display)",
+                                }}
+                              >
+                                <Check size={14} /> ACCEPT
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}

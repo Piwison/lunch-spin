@@ -189,6 +189,16 @@ export async function addRestaurant(wheelId: number, addedBy: number, name: stri
   return restaurantId;
 }
 
+// Bulk-insert restaurants by name only (used by paste import). Returns the
+// number of rows created.
+export async function addRestaurants(wheelId: number, addedBy: number, names: string[]): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (names.length === 0) return 0;
+  await db.insert(restaurants).values(names.map((name) => ({ wheelId, addedBy, name, notes: null })));
+  return names.length;
+}
+
 export async function updateRestaurant(id: number, name: string, notes: string | null, tagIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

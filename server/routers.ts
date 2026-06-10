@@ -5,8 +5,10 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { parseRestaurantList } from "@shared/import";
 import {
   addRestaurant,
+  addRestaurants,
   addWheelMember,
   createCustomTag,
   createWheel,
@@ -156,6 +158,19 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds);
         return { id };
+      }),
+
+    addBulk: protectedProcedure
+      .input(z.object({ wheelId: z.number(), text: z.string().max(10000) }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const existing = await getRestaurantsByWheel(input.wheelId);
+        const { names, skipped } = parseRestaurantList(input.text, existing.map((r) => r.name));
+        const added = await addRestaurants(input.wheelId, ctx.user.id, names);
+        return { added, skipped };
       }),
 
     update: protectedProcedure

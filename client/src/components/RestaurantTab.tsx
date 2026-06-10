@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
-import { Plus, Pencil, Trash2, X, Check, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +27,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const [form, setForm] = useState<RestaurantForm>(EMPTY_FORM);
   const [newTagName, setNewTagName] = useState("");
   const [showTagCreate, setShowTagCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
 
   const utils = trpc.useUtils();
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
@@ -47,6 +49,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   });
   const deleteRestaurant = trpc.restaurants.delete.useMutation({
     onSuccess: () => { invalidate(); toast.success("Restaurant removed"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const importRestaurants = trpc.restaurants.addBulk.useMutation({
+    onSuccess: (res) => {
+      invalidate();
+      setShowImport(false);
+      setImportText("");
+      const extras: string[] = [];
+      if (res.skipped.duplicates) extras.push(`${res.skipped.duplicates} duplicate${res.skipped.duplicates > 1 ? "s" : ""} skipped`);
+      if (res.skipped.tooLong) extras.push(`${res.skipped.tooLong} too long`);
+      toast.success(`Added ${res.added} restaurant${res.added !== 1 ? "s" : ""}${extras.length ? ` (${extras.join(", ")})` : ""}`);
+    },
     onError: (e) => toast.error(e.message),
   });
   const createTag = trpc.tags.createCustom.useMutation({
@@ -125,18 +139,33 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         <h2 className="text-lg font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
           RESTAURANTS
         </h2>
-        <button
-          onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
-          style={{
-            background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-            color: "white",
-            fontFamily: "var(--font-display)",
-            letterSpacing: "0.05em",
-          }}
-        >
-          <Plus size={14} /> ADD
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setImportText(""); setShowImport(true); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
+            style={{
+              background: "oklch(0.16 0.025 260)",
+              border: "1px solid oklch(0.25 0.03 260)",
+              color: "oklch(0.85 0.02 260)",
+              fontFamily: "var(--font-display)",
+              letterSpacing: "0.05em",
+            }}
+          >
+            <ClipboardList size={14} /> IMPORT
+          </button>
+          <button
+            onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
+            style={{
+              background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+              color: "white",
+              fontFamily: "var(--font-display)",
+              letterSpacing: "0.05em",
+            }}
+          >
+            <Plus size={14} /> ADD
+          </button>
+        </div>
       </div>
 
       {/* Permissions note */}
@@ -251,6 +280,35 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
             >
               {addRestaurant.isPending || updateRestaurant.isPending ? "Saving..." : editId !== null ? "Save Changes" : "Add Restaurant"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk import dialog */}
+      <Dialog open={showImport} onOpenChange={(open) => { if (!open) { setShowImport(false); setImportText(""); } }}>
+        <DialogContent className="glass border-border/50 max-w-md">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>IMPORT RESTAURANTS</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 pt-2">
+            <p className="text-xs text-muted-foreground">
+              Paste a list — one name per line (or comma-separated). Duplicates are skipped. You can add tags afterward.
+            </p>
+            <Textarea
+              placeholder={"Ramen House\nSushi Bar\nPho Corner"}
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              className="bg-secondary/50 border-border/50 resize-none font-mono text-sm"
+              rows={8}
+              autoFocus
+            />
+            <Button
+              onClick={() => importText.trim() && importRestaurants.mutate({ wheelId, text: importText })}
+              disabled={!importText.trim() || importRestaurants.isPending}
+              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+            >
+              {importRestaurants.isPending ? "Importing..." : "Import"}
             </Button>
           </div>
         </DialogContent>

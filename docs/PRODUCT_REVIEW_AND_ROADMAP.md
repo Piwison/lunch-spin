@@ -197,12 +197,17 @@ _Goal: the wheel is honest and the new features are actually tested._
 > stores `tagIds[0]` as the primary. A follow-up could make the UI read
 > `primaryTagId` directly to remove the implicit ordering dependency.
 
-### Phase 1 — Decision Loop & Onboarding (2–3 weeks)
+### Phase 1 — Decision Loop & Onboarding (in progress)
 _Goal: first spin in under a minute; the result leads somewhere._
-- [ ] Starter wheel on signup + bulk/paste restaurant import.
-- [ ] Result actions: Directions (wire `Map.tsx`), Re-spin, Accept/lock-in.
+- [x] Bulk/paste restaurant import — paste a list (one per line or comma-sep),
+      de-duped against the wheel. Pure parser in `shared/import.ts` (tested),
+      `restaurants.addBulk` procedure, Import dialog in the Restaurants tab.
+- [x] Result actions — Directions (Google Maps search), Re-spin, Accept replace
+      the dead-end Close button on the result overlay.
+- [ ] Starter wheel on signup (seeded restaurants for instant first spin).
 - [ ] Make exclusion visible and human ("had it Tuesday — skipping").
-- [ ] Per-wheel exclusion window setting (off / 1 / 3 / 7 days).
+- [ ] Per-wheel exclusion window setting (off / 1 / 3 / 7 days) — the pure
+      `computeExcludedIds` already accepts `windowDays`; needs a `wheels` column.
 - [ ] Loading/empty/error states across all tabs.
 
 ### Phase 2 — Make Sharing Live (3–4 weeks)
