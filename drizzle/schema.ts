@@ -1,0 +1,106 @@
+import {
+  boolean,
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+} from "drizzle-orm/mysql-core";
+
+export const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  name: text("name"),
+  email: varchar("email", { length: 320 }),
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+
+// ─── Wheels ───────────────────────────────────────────────────────────────────
+
+export const wheels = mysqlTable("wheels", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  ownerId: int("ownerId").notNull(),
+  isShared: boolean("isShared").default(false).notNull(),
+  isPublic: boolean("isPublic").default(false).notNull(),
+  inviteToken: varchar("inviteToken", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Wheel = typeof wheels.$inferSelect;
+export type InsertWheel = typeof wheels.$inferInsert;
+
+// ─── Wheel Members (for shared wheels) ────────────────────────────────────────
+
+export const wheelMembers = mysqlTable("wheel_members", {
+  id: int("id").autoincrement().primaryKey(),
+  wheelId: int("wheelId").notNull(),
+  userId: int("userId").notNull(),
+  joinedAt: timestamp("joinedAt").defaultNow().notNull(),
+});
+
+export type WheelMember = typeof wheelMembers.$inferSelect;
+
+// ─── Tags ─────────────────────────────────────────────────────────────────────
+
+export const tags = mysqlTable("tags", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  category: mysqlEnum("category", ["cuisine", "food_type", "custom"]).notNull(),
+  color: varchar("color", { length: 32 }).notNull().default("#6366f1"),
+  createdBy: int("createdBy"), // null = predefined system tag
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Tag = typeof tags.$inferSelect;
+export type InsertTag = typeof tags.$inferInsert;
+
+// ─── Restaurants ──────────────────────────────────────────────────────────────
+
+export const restaurants = mysqlTable("restaurants", {
+  id: int("id").autoincrement().primaryKey(),
+  wheelId: int("wheelId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  notes: text("notes"),
+  addedBy: int("addedBy").notNull(),
+  primaryTagId: int("primaryTagId"), // determines wheel segment color
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Restaurant = typeof restaurants.$inferSelect;
+export type InsertRestaurant = typeof restaurants.$inferInsert;
+
+// ─── Restaurant ↔ Tag join ────────────────────────────────────────────────────
+
+export const restaurantTags = mysqlTable("restaurant_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  restaurantId: int("restaurantId").notNull(),
+  tagId: int("tagId").notNull(),
+});
+
+export type RestaurantTag = typeof restaurantTags.$inferSelect;
+
+// ─── Spin History ─────────────────────────────────────────────────────────────
+
+export const spinHistory = mysqlTable("spin_history", {
+  id: int("id").autoincrement().primaryKey(),
+  wheelId: int("wheelId").notNull(),
+  restaurantId: int("restaurantId").notNull(),
+  spunBy: int("spunBy").notNull(),
+  spunAt: timestamp("spunAt").defaultNow().notNull(),
+  // If true, user manually re-enabled this restaurant before 3-day window expires
+  manuallyReenabled: boolean("manuallyReenabled").default(false).notNull(),
+});
+
+export type SpinHistory = typeof spinHistory.$inferSelect;
+export type InsertSpinHistory = typeof spinHistory.$inferInsert;
