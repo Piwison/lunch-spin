@@ -269,3 +269,32 @@ export async function reenableRestaurant(wheelId: number, restaurantId: number) 
     .set({ manuallyReenabled: true })
     .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${threeDaysAgo}`));
 }
+
+
+// ─── Statistics ───────────────────────────────────────────────────────────────
+
+export async function getRestaurantStats(wheelId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  
+  // Get pick count and last picked date for each restaurant in the wheel
+  const stats = await db.execute(sql`
+    SELECT 
+      r.id,
+      r.name,
+      COUNT(sh.id) as pickCount,
+      MAX(sh.spunAt) as lastPickedAt
+    FROM ${restaurants} r
+    LEFT JOIN ${spinHistory} sh ON r.id = sh.restaurantId
+    WHERE r.wheelId = ${wheelId}
+    GROUP BY r.id, r.name
+    ORDER BY pickCount DESC, lastPickedAt DESC
+  `);
+  
+  return (stats as any[]).map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    pickCount: row.pickCount || 0,
+    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt) : null,
+  }));
+}

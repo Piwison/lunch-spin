@@ -16,6 +16,7 @@ import {
   getExcludedRestaurantIds,
   getRestaurantById,
   getRestaurantsByWheel,
+  getRestaurantStats,
   getSpinHistory,
   getUserWheels,
   getWheelById,
@@ -201,6 +202,18 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         await reenableRestaurant(input.wheelId, input.restaurantId);
         return { success: true };
+      }),
+  }),
+
+  // ─── Statistics ─────────────────────────────────────────────────────────────
+
+  stats: router({
+    getRestaurantStats: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        return getRestaurantStats(input.wheelId);
       }),
   }),
 });

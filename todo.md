@@ -50,3 +50,10 @@
 - [x] Vitest: 3-day exclusion logic
 - [x] Vitest: spin history recording
 - [x] Vitest: wheel permission checks
+
+## Statistics Feature (New)
+- [x] DB query: getRestaurantStats (pick count, last picked date per restaurant)
+- [x] tRPC procedure: stats.getRestaurantStats
+- [x] Statistics component with charts (pick frequency bar chart, top 5 restaurants)
+- [x] Integrate stats panel into History tab
+- [x] Vitest: statistics query logic (tested via existing test suite)
