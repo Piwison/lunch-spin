@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { X, AlertTriangle } from "lucide-react";
+import { filterRestaurantsByTags } from "@shared/filter";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -31,7 +32,10 @@ export default function WheelApp() {
     if (!loading && !user) navigate("/");
   }, [user, loading, navigate]);
 
-  const { data: tags } = trpc.tags.list.useQuery();
+  const { data: tags } = trpc.tags.list.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId }
+  );
   const { data: restaurants, refetch: refetchRestaurants } = trpc.restaurants.list.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId }
@@ -46,16 +50,10 @@ export default function WheelApp() {
   });
 
   // Filter restaurants: AND logic on selected tags, exclude auto-excluded
-  const filteredRestaurants = useMemo(() => {
-    if (!restaurants) return [];
-    let filtered = restaurants.filter((r) => !r.isExcluded);
-    if (selectedTagIds.length > 0) {
-      filtered = filtered.filter((r) =>
-        selectedTagIds.every((tagId) => r.tags.some((t) => t.id === tagId))
-      );
-    }
-    return filtered;
-  }, [restaurants, selectedTagIds]);
+  const filteredRestaurants = useMemo(
+    () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
+    [restaurants, selectedTagIds]
+  );
 
   const wheelSegments: WheelSegment[] = useMemo(() =>
     filteredRestaurants.map((r) => ({

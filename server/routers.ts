@@ -12,12 +12,12 @@ import {
   createWheel,
   deleteRestaurant,
   deleteWheel,
-  getAllTags,
   getExcludedRestaurantIds,
   getRestaurantById,
   getRestaurantsByWheel,
   getRestaurantStats,
   getSpinHistory,
+  getTagsForWheel,
   getUserWheels,
   getWheelById,
   getWheelByInviteToken,
@@ -112,14 +112,22 @@ export const appRouter = router({
   // ─── Tags ────────────────────────────────────────────────────────────────────
 
   tags: router({
-    list: publicProcedure.query(async () => {
-      return getAllTags();
-    }),
+    list: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
+        return getTagsForWheel(input.wheelId);
+      }),
 
     createCustom: protectedProcedure
-      .input(z.object({ name: z.string().min(1).max(64) }))
+      .input(z.object({ name: z.string().min(1).max(64), wheelId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const id = await createCustomTag(input.name, ctx.user.id);
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const id = await createCustomTag(input.name, ctx.user.id, input.wheelId);
         return { id };
       }),
   }),

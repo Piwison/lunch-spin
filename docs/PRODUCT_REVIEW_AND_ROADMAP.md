@@ -174,14 +174,28 @@ both want pagination + indexed, windowed SQL once a wheel has thousands of spins
 Framing: **earn trust → make it social → make it smart → grow.** Each phase is
 shippable on its own.
 
-### Phase 0 — Trust & Correctness (this week)
+### Phase 0 — Trust & Correctness ✅ (shipped on this branch)
 _Goal: the wheel is honest and the new features are actually tested._
-- [ ] Fix the spin-landing desync; extract `pickAndLand` as a tested pure fn.
-- [ ] Scope custom tags to wheel + membership check on `tags.list`.
-- [ ] Replace hollow stats tests with real ones (extract `rankStats`); add a DB
-      integration harness and cover exclusion + permission paths.
-- [ ] Resolve `primaryTagId` vs `tags[0]` to a single source of truth.
-- [ ] Add ESLint + CI (`check`/`test`/`build`) and a SessionStart hook.
+- [x] Fix the spin-landing desync — extracted `computeSpin` into the pure,
+      tested `shared/wheel.ts`. (Also caught a second latent bug: the random
+      *fractional* extra rotation was shifting the landing position; extra turns
+      are now whole turns only.)
+- [x] Scope custom tags to a wheel — added `tags.wheelId`, made `tags.list`/
+      `tags.createCustom` wheel-scoped with membership/public checks
+      (migration `0002_tag_wheel_scope.sql`; run `pnpm db:push` to apply).
+- [x] Replace hollow/duplicated tests with real ones — pure logic for exclusion,
+      stats, and tag filtering now lives in `shared/*` and is unit-tested against
+      the **production** code (25 tests, was 16). Removed the two server test
+      files that reimplemented or asserted nothing.
+- [~] Resolve `primaryTagId` vs `tags[0]` — documented, not yet unified (note below).
+- [x] Add CI (`check`/`test`/`build`) via `.github/workflows/ci.yml`.
+- [ ] _Deferred:_ DB integration harness for `server/db.ts` (membership/permission
+      paths still need a live DB to test); ESLint config; SessionStart hook.
+
+> **`primaryTagId`:** kept as the single stored "primary tag" but the wheel/list
+> colour still reads `tags[0]`; these are reconciled because the writer always
+> stores `tagIds[0]` as the primary. A follow-up could make the UI read
+> `primaryTagId` directly to remove the implicit ordering dependency.
 
 ### Phase 1 — Decision Loop & Onboarding (2–3 weeks)
 _Goal: first spin in under a minute; the result leads somewhere._

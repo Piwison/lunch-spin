@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { computeSpin } from "@shared/wheel";
 
 export interface WheelSegment {
   id: number;
@@ -270,15 +271,16 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
   useEffect(() => {
     if (!isSpinning || segments.length === 0) return;
 
-    const targetIdx = Math.floor(Math.random() * segments.length);
-    const sliceAngle = (Math.PI * 2) / segments.length;
-    // Pointer is at top (−π/2). We want targetIdx segment to land there.
-    const targetCenter = -Math.PI / 2 - (targetIdx * sliceAngle + sliceAngle / 2);
-    const extraRotations = MIN_ROTATIONS * Math.PI * 2 + Math.random() * Math.PI * 2;
-    const totalDelta = extraRotations + ((targetCenter - startAngleRef.current) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    // Derive the landing angle from the *current* resting angle so the wheel
+    // always stops on segments[targetIdx] — the value we record and display.
+    const { targetIdx, targetAngle } = computeSpin({
+      count: segments.length,
+      currentAngle: currentAngleRef.current,
+      minRotations: MIN_ROTATIONS,
+    });
 
     startAngleRef.current = currentAngleRef.current;
-    targetAngleRef.current = currentAngleRef.current + totalDelta;
+    targetAngleRef.current = targetAngle;
     startTimeRef.current = performance.now();
 
     const animate = () => {

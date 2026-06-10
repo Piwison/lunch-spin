@@ -2,13 +2,13 @@ import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-
-interface RestaurantStat {
-  id: number;
-  name: string;
-  pickCount: number;
-  lastPickedAt: Date | null;
-}
+import {
+  averagePicks as computeAveragePicks,
+  rankStats,
+  type RestaurantStat,
+  topRestaurants as computeTopRestaurants,
+  totalPicks as computeTotalPicks,
+} from "@shared/stats";
 
 interface RestaurantStatsProps {
   stats: RestaurantStat[];
@@ -25,21 +25,15 @@ const COLORS = [
 
 export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
   // Sort by pick count and take top 5
-  const topRestaurants = useMemo(() => {
-    return [...stats]
-      .sort((a, b) => b.pickCount - a.pickCount)
-      .slice(0, 5);
-  }, [stats]);
+  const topRestaurants = useMemo(() => computeTopRestaurants(stats, 5), [stats]);
 
   // Prepare data for bar chart (all restaurants)
   const barData = useMemo(() => {
-    return [...stats]
-      .sort((a, b) => b.pickCount - a.pickCount)
-      .map((r) => ({
-        name: r.name.length > 20 ? r.name.substring(0, 17) + "..." : r.name,
-        picks: r.pickCount,
-        fullName: r.name,
-      }));
+    return rankStats(stats).map((r) => ({
+      name: r.name.length > 20 ? r.name.substring(0, 17) + "..." : r.name,
+      picks: r.pickCount,
+      fullName: r.name,
+    }));
   }, [stats]);
 
   // Prepare data for pie chart (top 5)
@@ -50,13 +44,11 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
     }));
   }, [topRestaurants]);
 
-  const totalPicks = useMemo(() => {
-    return stats.reduce((sum, r) => sum + r.pickCount, 0);
-  }, [stats]);
+  const totalPicks = useMemo(() => computeTotalPicks(stats), [stats]);
 
   const averagePicks = useMemo(() => {
-    return stats.length > 0 ? (totalPicks / stats.length).toFixed(1) : 0;
-  }, [stats, totalPicks]);
+    return stats.length > 0 ? computeAveragePicks(stats).toFixed(1) : 0;
+  }, [stats]);
 
   if (isLoading) {
     return (

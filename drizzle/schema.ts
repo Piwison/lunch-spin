@@ -58,6 +58,7 @@ export const tags = mysqlTable("tags", {
   category: mysqlEnum("category", ["cuisine", "food_type", "custom"]).notNull(),
   color: varchar("color", { length: 32 }).notNull().default("#6366f1"),
   createdBy: int("createdBy"), // null = predefined system tag
+  wheelId: int("wheelId"), // null = global/system tag; otherwise scoped to one wheel
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

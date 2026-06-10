@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -13,6 +13,8 @@ import {
   wheels,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { computeExcludedIds, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
+import { normalizeStatRow } from "@shared/stats";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -135,19 +137,24 @@ export async function getWheelMembers(wheelId: number) {
 
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 
-export async function getAllTags() {
+// Returns global/system tags (wheelId IS NULL) plus the given wheel's own
+// custom tags — so one team's custom vocabulary never leaks into another's.
+export async function getTagsForWheel(wheelId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(tags);
+  return db
+    .select()
+    .from(tags)
+    .where(or(isNull(tags.wheelId), eq(tags.wheelId, wheelId)));
 }
 
-export async function createCustomTag(name: string, createdBy: number) {
+export async function createCustomTag(name: string, createdBy: number, wheelId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Assign a color from a palette based on name hash
   const colors = ["#f43f5e","#fb923c","#facc15","#4ade80","#22d3ee","#818cf8","#e879f9","#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const [result] = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy });
+  const [result] = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy, wheelId });
   return (result as any).insertId as number;
 }
 
@@ -239,25 +246,16 @@ export async function getSpinHistory(wheelId: number) {
 export async function getExcludedRestaurantIds(wheelId: number): Promise<number[]> {
   const db = await getDb();
   if (!db) return [];
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-  // Get the most recent spin for each restaurant in the last 3 days
+  const cutoff = new Date(Date.now() - DEFAULT_EXCLUSION_DAYS * 24 * 60 * 60 * 1000);
   const recent = await db
-    .select({ restaurantId: spinHistory.restaurantId, manuallyReenabled: spinHistory.manuallyReenabled })
+    .select({
+      restaurantId: spinHistory.restaurantId,
+      spunAt: spinHistory.spunAt,
+      manuallyReenabled: spinHistory.manuallyReenabled,
+    })
     .from(spinHistory)
-    .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${threeDaysAgo}`))
-    .orderBy(sql`${spinHistory.spunAt} DESC`);
-  // Group by restaurantId, take the latest entry
-  const seen = new Set<number>();
-  const excluded: number[] = [];
-  for (const row of recent) {
-    if (!seen.has(row.restaurantId)) {
-      seen.add(row.restaurantId);
-      if (!row.manuallyReenabled) {
-        excluded.push(row.restaurantId);
-      }
-    }
-  }
-  return excluded;
+    .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
+  return computeExcludedIds(recent);
 }
 
 export async function reenableRestaurant(wheelId: number, restaurantId: number) {
@@ -291,10 +289,5 @@ export async function getRestaurantStats(wheelId: number) {
     ORDER BY pickCount DESC, lastPickedAt DESC
   `);
   
-  return (stats as any[]).map((row: any) => ({
-    id: row.id,
-    name: row.name,
-    pickCount: row.pickCount || 0,
-    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt) : null,
-  }));
+  return (stats as any[]).map(normalizeStatRow);
 }

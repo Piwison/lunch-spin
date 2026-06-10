@@ -1,0 +1,18 @@
+# Build output
+dist/
+build/
+
+# Regenerating tool caches (these rewrite on every `pnpm check` / `pnpm test`
+# and otherwise show up as spurious working-tree changes).
+node_modules/.vite/vitest/
+**/tsbuildinfo
+*.tsbuildinfo
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# OS / editor noise
+.DS_Store
+*.log

@@ -15,6 +15,13 @@
       "when": 1781111267114,
       "tag": "0001_sparkling_thunderbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1781114147175,
+      "tag": "0002_tag_wheel_scope",
+      "breakpoints": true
     }
   ]
 }

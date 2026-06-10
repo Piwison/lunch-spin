@@ -30,7 +30,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
   const utils = trpc.useUtils();
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
-  const { data: tags } = trpc.tags.list.useQuery();
+  const { data: tags } = trpc.tags.list.useQuery({ wheelId });
 
   const invalidate = () => {
     utils.restaurants.list.invalidate({ wheelId });
@@ -50,7 +50,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
     onError: (e) => toast.error(e.message),
   });
   const createTag = trpc.tags.createCustom.useMutation({
-    onSuccess: () => { utils.tags.list.invalidate(); setNewTagName(""); setShowTagCreate(false); toast.success("Tag created!"); },
+    onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setShowTagCreate(false); toast.success("Tag created!"); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -267,11 +267,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               placeholder="Tag name"
               value={newTagName}
               onChange={(e) => setNewTagName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && newTagName.trim() && createTag.mutate({ name: newTagName.trim() })}
+              onKeyDown={(e) => e.key === "Enter" && newTagName.trim() && createTag.mutate({ name: newTagName.trim(), wheelId })}
               className="bg-secondary/50 border-border/50"
             />
             <Button
-              onClick={() => newTagName.trim() && createTag.mutate({ name: newTagName.trim() })}
+              onClick={() => newTagName.trim() && createTag.mutate({ name: newTagName.trim(), wheelId })}
               disabled={!newTagName.trim() || createTag.isPending}
               size="icon"
               style={{ background: "oklch(0.72 0.22 30)", color: "white" }}
