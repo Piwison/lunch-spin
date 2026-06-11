@@ -8,6 +8,14 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { parseRestaurantList } from "@shared/import";
 import { pickWinner } from "@shared/pick";
 import {
+  emitSpin,
+  getPresence,
+  joinPresence,
+  leavePresence,
+  presenceIterator,
+  spinIterator,
+} from "./realtime";
+import {
   addRestaurant,
   addRestaurants,
   addWheelMember,
@@ -16,7 +24,6 @@ import {
   deleteRestaurant,
   deleteWheel,
   getExclusions,
-  getLatestSpin,
   getRestaurantById,
   getRestaurantsByWheel,
   getRestaurantStats,
@@ -242,7 +249,25 @@ export const appRouter = router({
 
         const restaurantId = pickWinner(eligible);
         const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
+        const restaurant = rests.find((r) => r.id === restaurantId);
+        // Broadcast to everyone watching this shared wheel.
+        emitSpin(input.wheelId, {
+          id,
+          restaurantId,
+          restaurantName: restaurant?.name ?? "",
+          spunBy: ctx.user.id,
+          spunByName: ctx.user.name,
+        });
         return { id, restaurantId };
+      }),
+
+    // Live spin broadcasts for an open shared wheel (SSE subscription).
+    onSpin: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .subscription(async function* ({ ctx, input, signal }) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        yield* spinIterator(input.wheelId, signal!);
       }),
 
     record: protectedProcedure
@@ -252,15 +277,6 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const id = await recordSpin(input.wheelId, input.restaurantId, ctx.user.id);
         return { id };
-      }),
-
-    latest: protectedProcedure
-      .input(z.object({ wheelId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const latest = await getLatestSpin(input.wheelId);
-        return latest ?? null;
       }),
 
     history: protectedProcedure
@@ -280,6 +296,29 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         await reenableRestaurant(input.wheelId, input.restaurantId, wheel.exclusionDays);
         return { success: true };
+      }),
+  }),
+
+  // ─── Presence ────────────────────────────────────────────────────────────────
+
+  presence: router({
+    // "Who's here right now" for a shared wheel. Joining/leaving is driven by the
+    // lifetime of this SSE subscription; the server ref-counts connections so a
+    // user with multiple tabs shows once and disappears only when all close.
+    onPresence: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .subscription(async function* ({ ctx, input, signal }) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        joinPresence(input.wheelId, ctx.user.id, ctx.user.name);
+        try {
+          yield getPresence(input.wheelId);
+          for await (const _ of presenceIterator(input.wheelId, signal!)) {
+            yield getPresence(input.wheelId);
+          }
+        } finally {
+          leavePresence(input.wheelId, ctx.user.id);
+        }
       }),
   }),
 

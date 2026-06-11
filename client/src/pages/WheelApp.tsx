@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
-import { detectIncomingSpin } from "@shared/live";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -31,8 +30,7 @@ export default function WheelApp() {
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [targetId, setTargetId] = useState<number | null>(null);
-  // undefined = baseline not yet seeded for the current wheel.
-  const lastSeenSpinId = useRef<number | null | undefined>(undefined);
+  const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
 
   useEffect(() => {
     if (!loading && !user) navigate("/");
@@ -58,35 +56,34 @@ export default function WheelApp() {
 
   const createSpin = trpc.spins.create.useMutation();
 
-  // Live shared wheels: poll the latest spin so a teammate's pick surfaces here.
   const isShared = !!wheelData?.isShared;
-  const { data: latestSpin } = trpc.spins.latest.useQuery(
+
+  // Live shared wheels: a teammate's spin is pushed here over SSE.
+  trpc.spins.onSpin.useSubscription(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && isShared, refetchInterval: 4000 }
+    {
+      enabled: !!selectedWheelId && isShared,
+      onData: (event) => {
+        if (!user || event.spunBy === user.id) return; // our own spin animates locally
+        toast(`${event.spunByName ?? "A teammate"} spun ${event.restaurantName}`, { icon: "🎡" });
+        refetchRestaurants();
+      },
+    }
   );
 
-  // Reset the live baseline when switching wheels so we don't carry one wheel's
-  // last-seen spin into another.
-  useEffect(() => {
-    lastSeenSpinId.current = undefined;
-  }, [selectedWheelId]);
+  // Presence: who's watching this shared wheel right now.
+  trpc.presence.onPresence.useSubscription(
+    { wheelId: selectedWheelId! },
+    {
+      enabled: !!selectedWheelId && isShared,
+      onData: (list) => setPresentUserIds(list.map((u) => u.userId)),
+      onError: () => setPresentUserIds([]),
+    }
+  );
 
   useEffect(() => {
-    if (!isShared || !user) return;
-    if (latestSpin === undefined) return; // still loading
-    // First observation for this wheel: seed silently so we only announce spins
-    // that land *after* we're watching, not pre-existing history.
-    if (lastSeenSpinId.current === undefined) {
-      lastSeenSpinId.current = latestSpin?.id ?? null;
-      return;
-    }
-    const incoming = detectIncomingSpin(latestSpin, lastSeenSpinId.current, user.id);
-    if (latestSpin) lastSeenSpinId.current = latestSpin.id;
-    if (incoming) {
-      toast(`${incoming.spunByName ?? "A teammate"} spun ${incoming.restaurantName}`, { icon: "🎡" });
-      refetchRestaurants();
-    }
-  }, [latestSpin, isShared, user]);
+    if (!isShared) setPresentUserIds([]);
+  }, [isShared, selectedWheelId]);
 
   // Filter restaurants: AND logic on selected tags, exclude auto-excluded
   const filteredRestaurants = useMemo(
@@ -253,6 +250,7 @@ export default function WheelApp() {
                         owner={wheelData.owner}
                         members={wheelData.members}
                         currentUserId={user.id}
+                        presentUserIds={presentUserIds}
                       />
                     )}
 

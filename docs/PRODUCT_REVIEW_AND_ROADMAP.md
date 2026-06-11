@@ -221,26 +221,29 @@ _Goal: first spin in under a minute; the result leads somewhere._
       skeleton while restaurants load and an inline error + retry button on
       failure (Restaurants/History already had these).
 
-### Phase 2 — Make Sharing Live (in progress)
+### Phase 2 — Make Sharing Live ✅
 _Goal: a shared wheel is a shared moment, not a shared table._
 - [x] Server-authoritative spin (anti-tamper, fairness) — `spins.create` picks
       the winner on the server from the live eligible set (`pickWinner`, tested)
       and records it; the client animates to that segment via the new
       `computeSpin({ targetIdx })`. Applies to every wheel, not just shared,
       so the animation and the recorded/displayed result can never disagree.
-- [~] Real-time spins — poll-based for now: open shared wheels poll
-      `spins.latest` every 4s and announce a teammate's pick (toast + refresh)
-      via the pure, tested `detectIncomingSpin`. Push-based sync (everyone sees
-      the *same animation* live) still needs SSE/WebSocket — see below.
+- [x] Real-time spins (push) — `spins.onSpin` is a tRPC SSE subscription fed by
+      an in-process emitter (`server/realtime.ts`); a teammate's spin is pushed
+      to every open client and surfaced (toast + refresh). Client uses a
+      `splitLink` routing subscriptions to `httpSubscriptionLink`.
+- [x] Presence + "who's here now" — `presence.onPresence` SSE subscription;
+      the server ref-counts connections (multiple tabs collapse to one) and
+      broadcasts the live roster. Shown as green "here now" dots + a count on
+      the team roster.
 - [x] Member roles/permissions surfaced in UI — shared wheels show a team
       roster (`WheelMembers`) with the creator marked by a crown and "You"
       highlighted; the owner is always listed even if not in the members table.
-- [ ] Presence + "who's here today" (live, not just membership) — needs the
-      same transport as push spins.
-- [ ] _Next:_ swap polling for SSE — a tRPC subscription (`spins.onSpin`) fed by
-      an in-process emitter, with a `splitLink` + `httpSubscriptionLink` on the
-      client. Deferred here because multi-client push can't be verified in this
-      environment; the poll-based path ships the user-visible value meanwhile.
+
+> The realtime emitters are single-process (fine for one Node instance). Scaling
+> to multiple instances means swapping them for Redis pub/sub behind the same
+> `server/realtime.ts` interface. The plumbing is runtime-verified at the module
+> level; full multi-browser push couldn't be exercised in this environment.
 
 ### Phase 3 — Make It Smart (4–6 weeks)
 _Goal: better-than-random group decisions — the moat._
