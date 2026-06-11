@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeExcludedIds, type SpinRecord } from "./exclusion";
+import { computeExcludedIds, computeExclusions, formatExclusionTimeLeft, type SpinRecord } from "./exclusion";
 
 const now = new Date("2026-06-10T12:00:00Z");
 const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000);
@@ -45,5 +45,40 @@ describe("computeExcludedIds", () => {
   it("honors a custom window length", () => {
     expect(computeExcludedIds([spin(1, daysAgo(5))], { now, windowDays: 7 })).toEqual([1]);
     expect(computeExcludedIds([spin(1, daysAgo(5))], { now, windowDays: 3 })).toEqual([]);
+  });
+
+  it("excludes nothing when the window is off (0 days)", () => {
+    expect(computeExcludedIds([spin(1, hoursAgo(1))], { now, windowDays: 0 })).toEqual([]);
+  });
+});
+
+describe("computeExclusions", () => {
+  it("reports when an excluded restaurant becomes available again", () => {
+    const exclusions = computeExclusions([spin(1, hoursAgo(1))], { now, windowDays: 3 });
+    expect(exclusions).toEqual([
+      { restaurantId: 1, excludedUntil: new Date(hoursAgo(1).getTime() + 3 * 24 * 60 * 60 * 1000) },
+    ]);
+  });
+
+  it("omits manually re-enabled restaurants", () => {
+    expect(computeExclusions([spin(1, hoursAgo(1), true)], { now })).toEqual([]);
+  });
+});
+
+describe("formatExclusionTimeLeft", () => {
+  it("formats days and hours", () => {
+    expect(formatExclusionTimeLeft(new Date(now.getTime() + 50 * 60 * 60 * 1000), now)).toBe("2d 2h");
+  });
+
+  it("formats hours only", () => {
+    expect(formatExclusionTimeLeft(new Date(now.getTime() + 5 * 60 * 60 * 1000), now)).toBe("5h");
+  });
+
+  it("formats minutes when under an hour", () => {
+    expect(formatExclusionTimeLeft(new Date(now.getTime() + 12 * 60 * 1000), now)).toBe("12m");
+  });
+
+  it("returns expired for past timestamps", () => {
+    expect(formatExclusionTimeLeft(new Date(now.getTime() - 1000), now)).toBe("expired");
   });
 });

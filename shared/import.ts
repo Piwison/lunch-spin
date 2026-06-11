@@ -3,7 +3,7 @@
  * or comma-separated) and we turn it into a clean, de-duplicated set of names.
  */
 
-const MAX_NAME_LENGTH = 128;
+export const MAX_NAME_LENGTH = 128;
 
 export interface ParsedImport {
   names: string[];

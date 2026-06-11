@@ -101,14 +101,14 @@ a spin by one doesn't surface for the other except on manual refetch. There's no
   winner and the client tells the server what it "landed on." Fine for friendly
   use; exploitable for any competitive/shared scenario. Consider server-side
   selection for shared wheels.
-- **`getExcludedRestaurantIds` groups in app memory** — pulls all recent spins
+- **`getExclusions` groups in app memory** — pulls all recent spins
   and de-dupes in JS. Fine at small scale, worth a windowed SQL query later.
-- **3-day window is hardcoded** in two places (`db.ts`) and in the UI copy. Make
-  it a per-wheel setting; teams differ ("don't repeat this week").
+- ~~**3-day window is hardcoded** in two places (`db.ts`) and in the UI copy.~~
+  Fixed in Phase 1: `wheels.exclusionDays` (off/1/3/7 days), editable per wheel.
 - **`getRestaurantStats` uses raw `db.execute`** and casts `any`; MySQL returns
   `COUNT` as a string in some drivers, so `pickCount` typing is unverified.
-- **No empty/error states beyond the wheel tab.** No loading skeletons on
-  restaurants/history fetch, no retry on mutation failure surfaced to the user.
+- ~~**No empty/error states beyond the wheel tab.**~~ Fixed in Phase 1: the
+  Wheel tab now has a loading skeleton and an error + retry state.
 
 ---
 
@@ -197,18 +197,30 @@ _Goal: the wheel is honest and the new features are actually tested._
 > stores `tagIds[0]` as the primary. A follow-up could make the UI read
 > `primaryTagId` directly to remove the implicit ordering dependency.
 
-### Phase 1 — Decision Loop & Onboarding (in progress)
+### Phase 1 — Decision Loop & Onboarding ✅
 _Goal: first spin in under a minute; the result leads somewhere._
 - [x] Bulk/paste restaurant import — paste a list (one per line or comma-sep),
       de-duped against the wheel. Pure parser in `shared/import.ts` (tested),
       `restaurants.addBulk` procedure, Import dialog in the Restaurants tab.
 - [x] Result actions — Directions (Google Maps search), Re-spin, Accept replace
       the dead-end Close button on the result overlay.
-- [ ] Starter wheel on signup (seeded restaurants for instant first spin).
-- [ ] Make exclusion visible and human ("had it Tuesday — skipping").
-- [ ] Per-wheel exclusion window setting (off / 1 / 3 / 7 days) — the pure
-      `computeExcludedIds` already accepts `windowDays`; needs a `wheels` column.
-- [ ] Loading/empty/error states across all tabs.
+- [x] Starter wheel on signup — curated "Nearby Lunch" list in
+      `shared/starter.ts` (tested), seeded via `restaurants.addBulk` from a
+      "Add starter restaurants" toggle in Create Wheel (on by default for a
+      user's first wheel).
+- [x] Make exclusion visible and human — the Wheel tab now shows a "Skipping
+      (picked recently)" panel naming each excluded restaurant and when it's
+      back, and History shows "excluded · Xd Yh left" / "excluded · Zm left".
+      Both use `formatExclusionTimeLeft` from `shared/exclusion.ts` (tested).
+- [x] Per-wheel exclusion window setting (off / 1 / 3 / 7 days) — added
+      `wheels.exclusionDays` (migration `0003_wheel_exclusion_days.sql`; run
+      `pnpm db:push`), set at wheel creation and editable via the new wheel
+      settings (gear icon) dialog. `computeExclusions`/`computeExcludedIds`
+      take `windowDays`; server's `getExclusions`/`reenableRestaurant` use the
+      wheel's own setting.
+- [x] Loading/empty/error states across all tabs — the Wheel tab now shows a
+      skeleton while restaurants load and an inline error + retry button on
+      failure (Restaurants/History already had these).
 
 ### Phase 2 — Make Sharing Live (3–4 weeks)
 _Goal: a shared wheel is a shared moment, not a shared table._

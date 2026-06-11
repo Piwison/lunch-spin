@@ -14,7 +14,7 @@ import {
   createWheel,
   deleteRestaurant,
   deleteWheel,
-  getExcludedRestaurantIds,
+  getExclusions,
   getRestaurantById,
   getRestaurantsByWheel,
   getRestaurantStats,
@@ -62,20 +62,30 @@ export const appRouter = router({
       }),
 
     create: protectedProcedure
-      .input(z.object({ name: z.string().min(1).max(128), isShared: z.boolean(), isPublic: z.boolean() }))
+      .input(z.object({
+        name: z.string().min(1).max(128),
+        isShared: z.boolean(),
+        isPublic: z.boolean(),
+        exclusionDays: z.number().int().min(0).max(30).default(3),
+      }))
       .mutation(async ({ ctx, input }) => {
         const inviteToken = input.isShared ? nanoid(16) : undefined;
-        const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken);
+        const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays);
         return { id, inviteToken };
       }),
 
     update: protectedProcedure
-      .input(z.object({ id: z.number(), name: z.string().min(1).max(128).optional(), isPublic: z.boolean().optional() }))
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).max(128).optional(),
+        isPublic: z.boolean().optional(),
+        exclusionDays: z.number().int().min(0).max(30).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.id);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic });
+        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays });
         return { success: true };
       }),
 
@@ -145,8 +155,12 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
         const rests = await getRestaurantsByWheel(input.wheelId);
-        const excluded = await getExcludedRestaurantIds(input.wheelId);
-        return rests.map((r) => ({ ...r, isExcluded: excluded.includes(r.id) }));
+        const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
+        return rests.map((r) => ({
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+        }));
       }),
 
     add: protectedProcedure
@@ -221,9 +235,11 @@ export const appRouter = router({
     reenable: protectedProcedure
       .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await reenableRestaurant(input.wheelId, input.restaurantId);
+        await reenableRestaurant(input.wheelId, input.restaurantId, wheel.exclusionDays);
         return { success: true };
       }),
   }),

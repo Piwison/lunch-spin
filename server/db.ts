@@ -13,7 +13,7 @@ import {
   wheels,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
-import { computeExcludedIds, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
+import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
 import { normalizeStatRow } from "@shared/stats";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -63,10 +63,10 @@ export async function getUserByOpenId(openId: string) {
 
 // ─── Wheels ───────────────────────────────────────────────────────────────────
 
-export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string) {
+export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null });
+  const [result] = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null, exclusionDays });
   return (result as any).insertId as number;
 }
 
@@ -96,7 +96,7 @@ export async function getUserWheels(userId: number) {
   return [...owned, ...joined];
 }
 
-export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null }>) {
+export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null; exclusionDays: number }>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(wheels).set(data).where(eq(wheels.id, id));
@@ -253,10 +253,12 @@ export async function getSpinHistory(wheelId: number) {
     .orderBy(sql`${spinHistory.spunAt} DESC`);
 }
 
-export async function getExcludedRestaurantIds(wheelId: number): Promise<number[]> {
+// Returns a map of restaurantId → the timestamp it becomes available again.
+// `windowDays` of 0 disables exclusion entirely (empty map).
+export async function getExclusions(wheelId: number, windowDays: number): Promise<Map<number, Date>> {
   const db = await getDb();
-  if (!db) return [];
-  const cutoff = new Date(Date.now() - DEFAULT_EXCLUSION_DAYS * 24 * 60 * 60 * 1000);
+  if (!db || windowDays <= 0) return new Map();
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const recent = await db
     .select({
       restaurantId: spinHistory.restaurantId,
@@ -265,17 +267,18 @@ export async function getExcludedRestaurantIds(wheelId: number): Promise<number[
     })
     .from(spinHistory)
     .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
-  return computeExcludedIds(recent);
+  const exclusions = computeExclusions(recent, { windowDays });
+  return new Map(exclusions.map((e) => [e.restaurantId, e.excludedUntil]));
 }
 
-export async function reenableRestaurant(wheelId: number, restaurantId: number) {
+export async function reenableRestaurant(wheelId: number, restaurantId: number, windowDays: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   await db
     .update(spinHistory)
     .set({ manuallyReenabled: true })
-    .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${threeDaysAgo}`));
+    .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
 }
 
 

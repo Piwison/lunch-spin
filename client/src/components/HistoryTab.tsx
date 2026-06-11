@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
+import { formatExclusionTimeLeft } from "@shared/exclusion";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -20,20 +21,11 @@ function timeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-function exclusionTimeLeft(spunAt: Date): string {
-  const expiresAt = new Date(spunAt).getTime() + 3 * 24 * 60 * 60 * 1000;
-  const remaining = expiresAt - Date.now();
-  if (remaining <= 0) return "expired";
-  const hours = Math.floor(remaining / 3600000);
-  const days = Math.floor(remaining / 86400000);
-  if (days > 0) return `${days}d ${hours % 24}h left`;
-  return `${hours}h left`;
-}
-
 export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
+  const { data: wheel } = trpc.wheels.get.useQuery({ id: wheelId });
   const { data: stats, isLoading: statsLoading } =
     trpc.stats.getRestaurantStats.useQuery({ wheelId });
 
@@ -46,9 +38,12 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
     onError: e => toast.error(e.message),
   });
 
-  // Build a map of restaurantId → isExcluded from restaurants list
+  // Build a map of restaurantId → isExcluded / excludedUntil from restaurants list
   const excludedMap = new Map<number, boolean>(
     restaurants?.map(r => [r.id, r.isExcluded]) ?? []
+  );
+  const excludedUntilMap = new Map<number, Date | null>(
+    restaurants?.map(r => [r.id, r.excludedUntil ? new Date(r.excludedUntil) : null]) ?? []
   );
 
   // Deduplicate history entries to show latest spin per restaurant for exclusion status
@@ -103,8 +98,9 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
           >
             <Clock size={13} className="mt-0.5 flex-shrink-0" />
             <span>
-              Restaurants are auto-excluded for 3 days after being spun. You can
-              manually re-enable them below.
+              Restaurants are auto-excluded for {wheel?.exclusionDays ?? 3} day
+              {(wheel?.exclusionDays ?? 3) !== 1 ? "s" : ""} after being spun. You
+              can manually re-enable them below.
             </span>
           </div>
         )}
@@ -130,6 +126,7 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                 latestByRestaurant.get(entry.restaurantId)?.id === entry.id;
               const isCurrentlyExcluded =
                 excludedMap.get(entry.restaurantId) ?? false;
+              const excludedUntil = excludedUntilMap.get(entry.restaurantId);
               const showReenableBtn =
                 isLatestForRestaurant &&
                 isCurrentlyExcluded &&
@@ -162,7 +159,7 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                       <span className="font-medium text-sm">
                         {entry.restaurantName}
                       </span>
-                      {isCurrentlyExcluded && isLatestForRestaurant && (
+                      {isCurrentlyExcluded && isLatestForRestaurant && excludedUntil && (
                         <span
                           className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
@@ -171,7 +168,7 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                             border: "1px solid oklch(0.60 0.22 25 / 0.3)",
                           }}
                         >
-                          excluded · {exclusionTimeLeft(spunAtDate)}
+                          excluded · {formatExclusionTimeLeft(excludedUntil)} left
                         </span>
                       )}
                       {entry.manuallyReenabled && (

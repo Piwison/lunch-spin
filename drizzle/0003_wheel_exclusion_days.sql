@@ -1,0 +1,1 @@
+ALTER TABLE `wheels` ADD `exclusionDays` int DEFAULT 3 NOT NULL;

@@ -10,8 +10,9 @@ import WheelSelector from "@/components/WheelSelector";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { X, AlertTriangle, MapPin, RotateCw, Check } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
+import { formatExclusionTimeLeft } from "@shared/exclusion";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -36,7 +37,12 @@ export default function WheelApp() {
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId }
   );
-  const { data: restaurants, refetch: refetchRestaurants } = trpc.restaurants.list.useQuery(
+  const {
+    data: restaurants,
+    isLoading: restaurantsLoading,
+    error: restaurantsError,
+    refetch: refetchRestaurants,
+  } = trpc.restaurants.list.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId }
   );
@@ -242,41 +248,90 @@ export default function WheelApp() {
                     </div>
 
                     {/* Wheel */}
-                    <div className="w-full max-w-md flex flex-col items-center gap-6">
-                      <SpinWheel
-                        segments={wheelSegments}
-                        onSpinEnd={handleSpinEnd}
-                        isSpinning={isSpinning}
-                        onSpinStart={handleSpin}
-                      />
+                    {restaurantsLoading ? (
+                      <div className="w-full max-w-md flex flex-col items-center gap-6 py-8">
+                        <div className="w-64 h-64 rounded-full bg-white/5 animate-pulse" />
+                        <div className="h-12 w-40 rounded-full bg-white/5 animate-pulse" />
+                      </div>
+                    ) : restaurantsError ? (
+                      <div className="w-full max-w-md flex flex-col items-center gap-3 py-8 text-center">
+                        <AlertTriangle size={28} className="text-amber-500/70" />
+                        <p className="text-sm text-muted-foreground">
+                          Couldn't load restaurants: {restaurantsError.message}
+                        </p>
+                        <button
+                          onClick={() => refetchRestaurants()}
+                          className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all active:scale-95"
+                          style={{
+                            background: "oklch(0.16 0.025 260)",
+                            border: "1px solid oklch(0.25 0.03 260)",
+                            color: "oklch(0.85 0.02 260)",
+                            fontFamily: "var(--font-display)",
+                          }}
+                        >
+                          <RefreshCw size={14} /> RETRY
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-full max-w-md flex flex-col items-center gap-6">
+                        <SpinWheel
+                          segments={wheelSegments}
+                          onSpinEnd={handleSpinEnd}
+                          isSpinning={isSpinning}
+                          onSpinStart={handleSpin}
+                        />
 
-                      {/* Spin button */}
-                      <button
-                        onClick={handleSpin}
-                        disabled={isSpinning || wheelSegments.length === 0}
-                        className="px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          background: isSpinning
-                            ? "oklch(0.16 0.025 260)"
-                            : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                          boxShadow: isSpinning ? "none" : "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
-                          color: "white",
-                        }}
-                      >
-                        {isSpinning ? "SPINNING..." : "SPIN"}
-                      </button>
+                        {/* Spin button */}
+                        <button
+                          onClick={handleSpin}
+                          disabled={isSpinning || wheelSegments.length === 0}
+                          className="px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                          style={{
+                            fontFamily: "var(--font-display)",
+                            background: isSpinning
+                              ? "oklch(0.16 0.025 260)"
+                              : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+                            boxShadow: isSpinning ? "none" : "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
+                            color: "white",
+                          }}
+                        >
+                          {isSpinning ? "SPINNING..." : "SPIN"}
+                        </button>
 
-                      {/* Segment count */}
-                      <p className="text-xs text-muted-foreground">
-                        {filteredRestaurants.length} restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
-                        {restaurants && restaurants.filter(r => r.isExcluded).length > 0 && (
-                          <span className="ml-2 text-amber-500/70">
-                            · {restaurants.filter(r => r.isExcluded).length} excluded
-                          </span>
+                        {/* Segment count */}
+                        <p className="text-xs text-muted-foreground">
+                          {filteredRestaurants.length} restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
+                        </p>
+
+                        {/* Smart-exclusion: tell the story of what's being skipped and why */}
+                        {restaurants && restaurants.some(r => r.isExcluded) && (
+                          <div
+                            className="w-full flex flex-col gap-1.5 px-3 py-2 rounded-lg text-xs"
+                            style={{
+                              background: "oklch(0.60 0.22 25 / 0.08)",
+                              border: "1px solid oklch(0.60 0.22 25 / 0.25)",
+                              color: "oklch(0.80 0.15 40)",
+                            }}
+                          >
+                            <div className="flex items-center gap-1.5 font-semibold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>
+                              <Clock size={12} /> SKIPPING (PICKED RECENTLY)
+                            </div>
+                            <ul className="flex flex-col gap-0.5 pl-1">
+                              {restaurants.filter(r => r.isExcluded).map((r) => (
+                                <li key={r.id} className="flex items-center justify-between gap-2">
+                                  <span className="truncate">{r.name}</span>
+                                  {r.excludedUntil && (
+                                    <span className="text-muted-foreground flex-shrink-0">
+                                      back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
+                                    </span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
-                      </p>
-                    </div>
+                      </div>
+                    )}
 
                     {/* Result overlay */}
                     {showResult && spinResult && (

@@ -32,6 +32,8 @@ export const wheels = mysqlTable("wheels", {
   isShared: boolean("isShared").default(false).notNull(),
   isPublic: boolean("isPublic").default(false).notNull(),
   inviteToken: varchar("inviteToken", { length: 64 }),
+  // Days a spun restaurant is excluded from the wheel; 0 = exclusion off.
+  exclusionDays: int("exclusionDays").default(3).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
