@@ -256,8 +256,16 @@ _Goal: better-than-random group decisions — the moat._
 - [x] Decision-grade stats: "blind spots" & "overdue" — `overdueRestaurants` /
       `daysSinceLastPick` (`shared/stats.ts`, tested) surface a "Time to revisit"
       panel (never-picked first, then longest-overdue) in the stats view.
-- [ ] Vetoes & dietary constraints (per person, per session).
-- [ ] Optional lightweight voting before/after the spin.
+- [x] Vetoes & lightweight voting (per person, per session) — a "This round"
+      panel on shared wheels lets each member veto ("not today", drops it from
+      the wheel) or vote ("I want this", biases the spin). State is ephemeral,
+      ref-counted in `server/realtime.ts`, broadcast live over the
+      `session.onSession` SSE subscription, and enforced server-side in
+      `spins.create` (vetoes filtered, votes folded into the weights via
+      `applyVetoes`/`applyVoteWeights` in `shared/session.ts`, tested). Votes
+      clear after each spin; "Clear round" resets everything.
+- [ ] Dietary constraints (per person/session, tag-based) — would extend the
+      session model with per-member excluded tags.
 - [ ] "Rotate cuisines" fairness variant and group-fairness stats (per-person
       pick balance) — build on the same weighting + stats primitives.
 

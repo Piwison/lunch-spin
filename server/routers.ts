@@ -7,14 +7,21 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { parseRestaurantList } from "@shared/import";
 import { pickWinner } from "@shared/pick";
-import { computeWeights, pickWeighted } from "@shared/weight";
+import { computeWeights, pickWeighted, type Weighted } from "@shared/weight";
+import { applyVoteWeights, vetoedIds, voteCounts } from "@shared/session";
 import {
+  clearSession,
+  clearVotes,
   emitSpin,
   getPresence,
+  getSession,
   joinPresence,
   leavePresence,
   presenceIterator,
+  sessionIterator,
   spinIterator,
+  toggleVeto,
+  toggleVote,
 } from "./realtime";
 import {
   addRestaurant,
@@ -245,21 +252,32 @@ export const appRouter = router({
         const rests = await getRestaurantsByWheel(input.wheelId);
         const valid = new Set(rests.map((r) => r.id));
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-        const eligible = input.candidateIds.filter((id) => valid.has(id) && !exclusions.has(id));
+        // Server reads the live session itself (anti-tamper): vetoed restaurants
+        // are out, votes bias the weighting.
+        const session = getSession(input.wheelId);
+        const vetoed = new Set(vetoedIds(session));
+        const eligible = input.candidateIds.filter(
+          (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id),
+        );
         if (eligible.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
         }
 
-        // Fairness mode weights the spin toward neglected restaurants; otherwise
-        // it's a uniform pick. Either way the server decides.
+        // Base weights: fairness mode favours neglected spots, else uniform.
+        // Votes then bias the spin on top. A plain wheel stays a uniform pick.
+        const votes = voteCounts(session);
+        const hasVotes = votes.size > 0;
         let restaurantId: number;
-        if (wheel.fairnessMode) {
-          const stats = await getRestaurantStats(input.wheelId);
-          const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
-          const weights = computeWeights(
-            eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })),
-          );
-          restaurantId = pickWeighted(weights);
+        if (wheel.fairnessMode || hasVotes) {
+          let base: Weighted[];
+          if (wheel.fairnessMode) {
+            const stats = await getRestaurantStats(input.wheelId);
+            const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
+            base = computeWeights(eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })));
+          } else {
+            base = eligible.map((id) => ({ restaurantId: id, weight: 1 }));
+          }
+          restaurantId = pickWeighted(applyVoteWeights(base, votes));
         } else {
           restaurantId = pickWinner(eligible);
         }
@@ -273,6 +291,8 @@ export const appRouter = router({
           spunBy: ctx.user.id,
           spunByName: ctx.user.name,
         });
+        // Votes belong to the round that just resolved — clear for the next one.
+        clearVotes(input.wheelId);
         return { id, restaurantId };
       }),
 
@@ -334,6 +354,49 @@ export const appRouter = router({
         } finally {
           leavePresence(input.wheelId, ctx.user.id);
         }
+      }),
+  }),
+
+  // ─── Session (vetoes & votes) ─────────────────────────────────────────────────
+
+  session: router({
+    // Live veto/vote state for the current round on a shared wheel.
+    onSession: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .subscription(async function* ({ ctx, input, signal }) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        yield getSession(input.wheelId);
+        for await (const _ of sessionIterator(input.wheelId, signal!)) {
+          yield getSession(input.wheelId);
+        }
+      }),
+
+    veto: protectedProcedure
+      .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        toggleVeto(input.wheelId, input.restaurantId, ctx.user.id);
+        return { success: true };
+      }),
+
+    vote: protectedProcedure
+      .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        toggleVote(input.wheelId, input.restaurantId, ctx.user.id);
+        return { success: true };
+      }),
+
+    clear: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        clearSession(input.wheelId);
+        return { success: true };
       }),
   }),
 

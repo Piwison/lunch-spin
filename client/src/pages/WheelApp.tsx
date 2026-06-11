@@ -8,12 +8,14 @@ import RestaurantTab from "@/components/RestaurantTab";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
+import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
+import { EMPTY_SESSION, vetoedIds, type SessionState } from "@shared/session";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -31,6 +33,7 @@ export default function WheelApp() {
   const [showResult, setShowResult] = useState(false);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
+  const [session, setSession] = useState<SessionState>(EMPTY_SESSION);
 
   useEffect(() => {
     if (!loading && !user) navigate("/");
@@ -81,15 +84,39 @@ export default function WheelApp() {
     }
   );
 
+  // Session: live vetoes & votes for this round.
+  trpc.session.onSession.useSubscription(
+    { wheelId: selectedWheelId! },
+    {
+      enabled: !!selectedWheelId && isShared,
+      onData: (state) => setSession(state),
+      onError: () => setSession(EMPTY_SESSION),
+    }
+  );
+
+  const vetoMutation = trpc.session.veto.useMutation();
+  const voteMutation = trpc.session.vote.useMutation();
+  const clearRound = trpc.session.clear.useMutation();
+
   useEffect(() => {
-    if (!isShared) setPresentUserIds([]);
+    if (!isShared) {
+      setPresentUserIds([]);
+      setSession(EMPTY_SESSION);
+    }
   }, [isShared, selectedWheelId]);
 
-  // Filter restaurants: AND logic on selected tags, exclude auto-excluded
-  const filteredRestaurants = useMemo(
+  // Round candidates: AND logic on selected tags, minus auto-excluded. These are
+  // what the group vetoes/votes on (vetoed ones still appear so they can be undone).
+  const roundCandidates = useMemo(
     () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
     [restaurants, selectedTagIds]
   );
+
+  // The wheel itself drops vetoed restaurants on top of that.
+  const filteredRestaurants = useMemo(() => {
+    const vetoed = new Set(vetoedIds(session));
+    return roundCandidates.filter((r) => !vetoed.has(r.id));
+  }, [roundCandidates, session]);
 
   const wheelSegments: WheelSegment[] = useMemo(() =>
     filteredRestaurants.map((r) => ({
@@ -251,6 +278,18 @@ export default function WheelApp() {
                         members={wheelData.members}
                         currentUserId={user.id}
                         presentUserIds={presentUserIds}
+                      />
+                    )}
+
+                    {/* Veto / vote for this round (shared wheels) */}
+                    {isShared && (
+                      <RoundPanel
+                        restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
+                        session={session}
+                        currentUserId={user.id}
+                        onVote={(id) => selectedWheelId && voteMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
+                        onVeto={(id) => selectedWheelId && vetoMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
+                        onClear={() => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId })}
                       />
                     )}
 
