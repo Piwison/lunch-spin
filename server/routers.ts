@@ -7,6 +7,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { parseRestaurantList } from "@shared/import";
 import { pickWinner } from "@shared/pick";
+import { computeWeights, pickWeighted } from "@shared/weight";
 import {
   emitSpin,
   getPresence,
@@ -78,10 +79,11 @@ export const appRouter = router({
         isShared: z.boolean(),
         isPublic: z.boolean(),
         exclusionDays: z.number().int().min(0).max(30).default(3),
+        fairnessMode: z.boolean().default(false),
       }))
       .mutation(async ({ ctx, input }) => {
         const inviteToken = input.isShared ? nanoid(16) : undefined;
-        const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays);
+        const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays, input.fairnessMode);
         return { id, inviteToken };
       }),
 
@@ -91,12 +93,13 @@ export const appRouter = router({
         name: z.string().min(1).max(128).optional(),
         isPublic: z.boolean().optional(),
         exclusionDays: z.number().int().min(0).max(30).optional(),
+        fairnessMode: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.id);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays });
+        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode });
         return { success: true };
       }),
 
@@ -247,7 +250,19 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
         }
 
-        const restaurantId = pickWinner(eligible);
+        // Fairness mode weights the spin toward neglected restaurants; otherwise
+        // it's a uniform pick. Either way the server decides.
+        let restaurantId: number;
+        if (wheel.fairnessMode) {
+          const stats = await getRestaurantStats(input.wheelId);
+          const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
+          const weights = computeWeights(
+            eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })),
+          );
+          restaurantId = pickWeighted(weights);
+        } else {
+          restaurantId = pickWinner(eligible);
+        }
         const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
         const restaurant = rests.find((r) => r.id === restaurantId);
         // Broadcast to everyone watching this shared wheel.

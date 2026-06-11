@@ -29,6 +29,13 @@
       "when": 1781142369664,
       "tag": "0003_wheel_exclusion_days",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1781198556078,
+      "tag": "0004_wheel_fairness_mode",
+      "breakpoints": true
     }
   ]
 }

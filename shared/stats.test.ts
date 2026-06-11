@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   averagePicks,
+  daysSinceLastPick,
   normalizeStatRow,
+  overdueRestaurants,
   rankStats,
   type RestaurantStat,
   topRestaurants,
@@ -58,5 +60,41 @@ describe("aggregates", () => {
 
   it("averages to 0 for an empty list", () => {
     expect(averagePicks([])).toBe(0);
+  });
+});
+
+describe("daysSinceLastPick", () => {
+  const now = d("2026-06-11T12:00:00Z");
+  it("returns whole days since the last pick", () => {
+    expect(daysSinceLastPick(d("2026-06-05T12:00:00Z"), now)).toBe(6);
+  });
+  it("returns null when never picked", () => {
+    expect(daysSinceLastPick(null, now)).toBeNull();
+  });
+});
+
+describe("overdueRestaurants", () => {
+  const now = d("2026-06-20T00:00:00Z");
+  const stats: RestaurantStat[] = [
+    { id: 1, name: "Recent", pickCount: 3, lastPickedAt: d("2026-06-18") }, // 2d ago — not overdue
+    { id: 2, name: "Old", pickCount: 1, lastPickedAt: d("2026-06-01") }, // 19d ago — overdue
+    { id: 3, name: "Ancient", pickCount: 1, lastPickedAt: d("2026-05-10") }, // 41d ago — most overdue
+    { id: 4, name: "BlindSpot", pickCount: 0, lastPickedAt: null }, // never — first
+  ];
+
+  it("lists never-picked first, then longest-overdue, excluding recent picks", () => {
+    const ids = overdueRestaurants(stats, { now, thresholdDays: 14 }).map((e) => e.stat.id);
+    expect(ids).toEqual([4, 3, 2]);
+  });
+
+  it("respects a custom threshold", () => {
+    const ids = overdueRestaurants(stats, { now, thresholdDays: 40 }).map((e) => e.stat.id);
+    expect(ids).toEqual([4, 3]); // only never-picked + the 41d one
+  });
+
+  it("reports daysSince (null for blind spots)", () => {
+    const entries = overdueRestaurants(stats, { now, thresholdDays: 14 });
+    expect(entries[0]).toEqual({ stat: stats[3], daysSince: null });
+    expect(entries[1]!.daysSince).toBe(41);
   });
 });

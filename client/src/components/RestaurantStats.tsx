@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   averagePicks as computeAveragePicks,
+  overdueRestaurants,
   rankStats,
   type RestaurantStat,
   topRestaurants as computeTopRestaurants,
@@ -43,6 +44,9 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
       value: r.pickCount,
     }));
   }, [topRestaurants]);
+
+  // Decision-grade view: blind spots (never picked) + long-overdue restaurants.
+  const overdue = useMemo(() => overdueRestaurants(stats, { thresholdDays: 14 }).slice(0, 6), [stats]);
 
   const totalPicks = useMemo(() => computeTotalPicks(stats), [stats]);
 
@@ -136,6 +140,35 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
               />
             </PieChart>
           </ResponsiveContainer>
+        </Card>
+      )}
+
+      {/* Overdue / blind spots */}
+      {overdue.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-1">Time to revisit</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Restaurants the group is overlooking — never picked, or not in a while.
+          </p>
+          <div className="space-y-3">
+            {overdue.map((e) => (
+              <div key={e.stat.id} className="flex items-center justify-between p-3 rounded-lg bg-card/50">
+                <p className="font-medium">{e.stat.name}</p>
+                <div className="text-right">
+                  {e.daysSince === null ? (
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: "oklch(0.65 0.25 280 / 0.18)", color: "oklch(0.75 0.2 285)", border: "1px solid oklch(0.65 0.25 280 / 0.35)" }}
+                    >
+                      never picked
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">{e.daysSince}d ago</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 

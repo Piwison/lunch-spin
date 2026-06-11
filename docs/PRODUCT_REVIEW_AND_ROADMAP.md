@@ -245,12 +245,21 @@ _Goal: a shared wheel is a shared moment, not a shared table._
 > `server/realtime.ts` interface. The plumbing is runtime-verified at the module
 > level; full multi-browser push couldn't be exercised in this environment.
 
-### Phase 3 — Make It Smart (4–6 weeks)
+### Phase 3 — Make It Smart (in progress)
 _Goal: better-than-random group decisions — the moat._
+- [x] Weighted wheels / fairness mode — a per-wheel `fairnessMode` toggle
+      (migration `0004_wheel_fairness_mode.sql`) weights the server-authoritative
+      spin toward neglected restaurants: weight grows with days since last pick,
+      never-picked get the max boost, capped so one ancient pick can't dominate
+      (`computeWeights` + `pickWeighted` in `shared/weight.ts`, tested). Set in
+      the Create Wheel and wheel-settings dialogs.
+- [x] Decision-grade stats: "blind spots" & "overdue" — `overdueRestaurants` /
+      `daysSinceLastPick` (`shared/stats.ts`, tested) surface a "Time to revisit"
+      panel (never-picked first, then longest-overdue) in the stats view.
 - [ ] Vetoes & dietary constraints (per person, per session).
-- [ ] Weighted wheels / fairness mode (favor neglected spots, rotate cuisines).
-- [ ] Decision-grade stats: "blind spots," "overdue," group fairness.
 - [ ] Optional lightweight voting before/after the spin.
+- [ ] "Rotate cuisines" fairness variant and group-fairness stats (per-person
+      pick balance) — build on the same weighting + stats primitives.
 
 ### Phase 4 — Grow (ongoing)
 - [ ] PWA + mobile share-target; "add this place to our wheel" from a link.

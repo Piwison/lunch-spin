@@ -30,9 +30,10 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
   const [isShared, setIsShared] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [exclusionDays, setExclusionDays] = useState("3");
+  const [fairnessMode, setFairnessMode] = useState(false);
   const [addStarterPack, setAddStarterPack] = useState(true);
   const [showInvite, setShowInvite] = useState<{ wheelId: number; token: string; name: string } | null>(null);
-  const [editWheel, setEditWheel] = useState<{ id: number; name: string; isShared: boolean; isPublic: boolean; exclusionDays: number } | null>(null);
+  const [editWheel, setEditWheel] = useState<{ id: number; name: string; isShared: boolean; isPublic: boolean; exclusionDays: number; fairnessMode: boolean } | null>(null);
 
   const utils = trpc.useUtils();
   const { data: wheels } = trpc.wheels.list.useQuery();
@@ -145,7 +146,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays });
+                      setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays, fairnessMode: wheel.fairnessMode });
                     }}
                     className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
                     title="Wheel settings"
@@ -187,7 +188,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
               placeholder="Wheel name (e.g. Office Lunch)"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays) })}
+              onKeyDown={(e) => e.key === "Enter" && newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode })}
               className="bg-secondary/50 border-border/50"
             />
             <div className="flex items-center justify-between">
@@ -214,11 +215,20 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
               </Select>
             </div>
             <div className="flex items-center justify-between">
+              <Label className="text-sm text-muted-foreground">Fairness mode</Label>
+              <Switch checked={fairnessMode} onCheckedChange={setFairnessMode} />
+            </div>
+            {fairnessMode && (
+              <p className="-mt-2 text-xs text-muted-foreground">
+                Spins lean toward restaurants you haven't picked in a while.
+              </p>
+            )}
+            <div className="flex items-center justify-between">
               <Label className="text-sm text-muted-foreground">Add starter restaurants</Label>
               <Switch checked={addStarterPack} onCheckedChange={setAddStarterPack} />
             </div>
             <Button
-              onClick={() => newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays) })}
+              onClick={() => newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode })}
               disabled={!newName.trim() || createWheel.isPending}
               style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
             >
@@ -279,12 +289,17 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Fairness mode</Label>
+                <Switch checked={editWheel.fairnessMode} onCheckedChange={(v) => setEditWheel({ ...editWheel, fairnessMode: v })} />
+              </div>
               <Button
                 onClick={() => editWheel.name.trim() && updateWheel.mutate({
                   id: editWheel.id,
                   name: editWheel.name.trim(),
                   isPublic: editWheel.isPublic,
                   exclusionDays: editWheel.exclusionDays,
+                  fairnessMode: editWheel.fairnessMode,
                 })}
                 disabled={!editWheel.name.trim() || updateWheel.isPending}
                 style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}

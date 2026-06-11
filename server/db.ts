@@ -74,10 +74,10 @@ export async function getUserById(id: number) {
 
 // ─── Wheels ───────────────────────────────────────────────────────────────────
 
-export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS) {
+export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS, fairnessMode = false) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null, exclusionDays });
+  const [result] = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null, exclusionDays, fairnessMode });
   return (result as any).insertId as number;
 }
 
@@ -107,7 +107,7 @@ export async function getUserWheels(userId: number) {
   return [...owned, ...joined];
 }
 
-export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null; exclusionDays: number }>) {
+export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null; exclusionDays: number; fairnessMode: boolean }>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(wheels).set(data).where(eq(wheels.id, id));

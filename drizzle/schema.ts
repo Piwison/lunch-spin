@@ -34,6 +34,8 @@ export const wheels = mysqlTable("wheels", {
   inviteToken: varchar("inviteToken", { length: 64 }),
   // Days a spun restaurant is excluded from the wheel; 0 = exclusion off.
   exclusionDays: int("exclusionDays").default(3).notNull(),
+  // Fairness mode: weight the spin toward neglected restaurants.
+  fairnessMode: boolean("fairnessMode").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

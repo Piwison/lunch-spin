@@ -48,3 +48,40 @@ export function totalPicks(stats: RestaurantStat[]): number {
 export function averagePicks(stats: RestaurantStat[]): number {
   return stats.length > 0 ? totalPicks(stats) / stats.length : 0;
 }
+
+/** Whole days since a restaurant was last picked; null if it never has been. */
+export function daysSinceLastPick(lastPickedAt: Date | null, now: Date = new Date()): number | null {
+  if (!lastPickedAt) return null;
+  return Math.floor((now.getTime() - lastPickedAt.getTime()) / 86400000);
+}
+
+export interface OverdueEntry {
+  stat: RestaurantStat;
+  daysSince: number | null; // null = never picked (a blind spot)
+}
+
+/**
+ * Decision-grade view: restaurants the group is neglecting. A restaurant is
+ * "overdue" if it has never been picked (a blind spot) or wasn't picked within
+ * `thresholdDays`. Never-picked come first, then the longest-overdue.
+ */
+export function overdueRestaurants(
+  stats: RestaurantStat[],
+  opts: { now?: Date; thresholdDays?: number } = {},
+): OverdueEntry[] {
+  const now = opts.now ?? new Date();
+  const thresholdDays = opts.thresholdDays ?? 14;
+  const entries: OverdueEntry[] = [];
+  for (const stat of stats) {
+    const daysSince = daysSinceLastPick(stat.lastPickedAt, now);
+    if (daysSince === null || daysSince >= thresholdDays) {
+      entries.push({ stat, daysSince });
+    }
+  }
+  return entries.sort((a, b) => {
+    if (a.daysSince === null && b.daysSince === null) return 0;
+    if (a.daysSince === null) return -1; // never-picked first
+    if (b.daysSince === null) return 1;
+    return b.daysSince - a.daysSince; // longest-overdue first
+  });
+}
