@@ -12,13 +12,15 @@ interface SpinWheelProps {
   onSpinEnd: (segment: WheelSegment) => void;
   isSpinning: boolean;
   onSpinStart: () => void;
+  /** Server-chosen winning restaurant id; the wheel animates to its segment. */
+  targetId?: number | null;
 }
 
 const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);
 const SPIN_DURATION = 5000; // ms
 const MIN_ROTATIONS = 6;
 
-export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart }: SpinWheelProps) {
+export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
@@ -273,10 +275,13 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
 
     // Derive the landing angle from the *current* resting angle so the wheel
     // always stops on segments[targetIdx] — the value we record and display.
+    // When the server chose a winner (targetId), animate to that segment.
+    const forcedIdx = targetId != null ? segments.findIndex((s) => s.id === targetId) : -1;
     const { targetIdx, targetAngle } = computeSpin({
       count: segments.length,
       currentAngle: currentAngleRef.current,
       minRotations: MIN_ROTATIONS,
+      targetIdx: forcedIdx >= 0 ? forcedIdx : undefined,
     });
 
     startAngleRef.current = currentAngleRef.current;
@@ -301,7 +306,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     };
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [isSpinning, segments, onSpinEnd]);
+  }, [isSpinning, segments, onSpinEnd, targetId]);
 
   const size = 400;
 

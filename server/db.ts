@@ -61,6 +61,17 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+  return result[0];
+}
+
 // ─── Wheels ───────────────────────────────────────────────────────────────────
 
 export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS) {
@@ -255,6 +266,29 @@ export async function getSpinHistory(wheelId: number) {
 
 // Returns a map of restaurantId → the timestamp it becomes available again.
 // `windowDays` of 0 disables exclusion entirely (empty map).
+// The most recent spin on a wheel, used to keep open shared wheels in sync via
+// polling. Returns undefined when there are no spins yet.
+export async function getLatestSpin(wheelId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select({
+      id: spinHistory.id,
+      restaurantId: spinHistory.restaurantId,
+      restaurantName: restaurants.name,
+      spunBy: spinHistory.spunBy,
+      spunByName: users.name,
+      spunAt: spinHistory.spunAt,
+    })
+    .from(spinHistory)
+    .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
+    .innerJoin(users, eq(spinHistory.spunBy, users.id))
+    .where(eq(spinHistory.wheelId, wheelId))
+    .orderBy(sql`${spinHistory.spunAt} DESC`)
+    .limit(1);
+  return result[0];
+}
+
 export async function getExclusions(wheelId: number, windowDays: number): Promise<Map<number, Date>> {
   const db = await getDb();
   if (!db || windowDays <= 0) return new Map();

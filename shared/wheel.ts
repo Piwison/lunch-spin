@@ -34,6 +34,9 @@ export function segmentCenterTargetAngle(targetIdx: number, count: number): numb
  * `rng()` chooses the segment; the second adds a few *whole* extra turns for
  * visual variety (whole turns leave the mod-2π landing position unchanged, so
  * the wheel always stops exactly on the chosen segment).
+ *
+ * When `targetIdx` is provided (e.g. a server-authoritative winner), the wheel
+ * animates to that segment instead of choosing one at random.
  */
 export function computeSpin(opts: {
   count: number;
@@ -41,12 +44,16 @@ export function computeSpin(opts: {
   minRotations: number;
   extraTurnSpread?: number;
   rng?: () => number;
+  targetIdx?: number;
 }): { targetIdx: number; targetAngle: number } {
   const { count, currentAngle, minRotations, extraTurnSpread = 3 } = opts;
   const rng = opts.rng ?? Math.random;
   if (count <= 0) throw new Error("computeSpin requires at least one segment");
 
-  const targetIdx = Math.min(count - 1, Math.floor(rng() * count));
+  const targetIdx =
+    opts.targetIdx != null
+      ? Math.max(0, Math.min(count - 1, opts.targetIdx))
+      : Math.min(count - 1, Math.floor(rng() * count));
   const targetCenter = segmentCenterTargetAngle(targetIdx, count);
 
   // Whole extra turns only, then the shortest forward delta onto the target.

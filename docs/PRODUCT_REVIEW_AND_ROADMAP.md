@@ -97,10 +97,9 @@ a spin by one doesn't surface for the other except on manual refetch. There's no
 - **`primaryTagId` is dead weight.** It's written on add/update but the UI colors
   segments from `r.tags[0]` (`WheelApp.tsx:64`). Two sources of "primary tag"
   truth that can disagree. Pick one.
-- **Spin outcome is client-trusted.** `Math.random()` in the browser decides the
-  winner and the client tells the server what it "landed on." Fine for friendly
-  use; exploitable for any competitive/shared scenario. Consider server-side
-  selection for shared wheels.
+- ~~**Spin outcome is client-trusted.**~~ Fixed in Phase 2: `spins.create`
+  picks the winner server-side from the re-validated eligible set; the wheel
+  animates to that segment (`pickWinner` + `computeSpin({ targetIdx })`, tested).
 - **`getExclusions` groups in app memory** — pulls all recent spins
   and de-dupes in JS. Fine at small scale, worth a windowed SQL query later.
 - ~~**3-day window is hardcoded** in two places (`db.ts`) and in the UI copy.~~
@@ -222,12 +221,26 @@ _Goal: first spin in under a minute; the result leads somewhere._
       skeleton while restaurants load and an inline error + retry button on
       failure (Restaurants/History already had these).
 
-### Phase 2 — Make Sharing Live (3–4 weeks)
+### Phase 2 — Make Sharing Live (in progress)
 _Goal: a shared wheel is a shared moment, not a shared table._
-- [ ] Real-time spins (SSE/WebSocket): everyone sees the same animation/result.
-- [ ] Presence + "who's here today" and per-session attendance.
-- [ ] Server-authoritative spin for shared wheels (anti-tamper, fairness).
-- [ ] Member roles/permissions surfaced in UI (creator vs member).
+- [x] Server-authoritative spin (anti-tamper, fairness) — `spins.create` picks
+      the winner on the server from the live eligible set (`pickWinner`, tested)
+      and records it; the client animates to that segment via the new
+      `computeSpin({ targetIdx })`. Applies to every wheel, not just shared,
+      so the animation and the recorded/displayed result can never disagree.
+- [~] Real-time spins — poll-based for now: open shared wheels poll
+      `spins.latest` every 4s and announce a teammate's pick (toast + refresh)
+      via the pure, tested `detectIncomingSpin`. Push-based sync (everyone sees
+      the *same animation* live) still needs SSE/WebSocket — see below.
+- [x] Member roles/permissions surfaced in UI — shared wheels show a team
+      roster (`WheelMembers`) with the creator marked by a crown and "You"
+      highlighted; the owner is always listed even if not in the members table.
+- [ ] Presence + "who's here today" (live, not just membership) — needs the
+      same transport as push spins.
+- [ ] _Next:_ swap polling for SSE — a tRPC subscription (`spins.onSpin`) fed by
+      an in-process emitter, with a `splitLink` + `httpSubscriptionLink` on the
+      client. Deferred here because multi-client push can't be verified in this
+      environment; the poll-based path ships the user-visible value meanwhile.
 
 ### Phase 3 — Make It Smart (4–6 weeks)
 _Goal: better-than-random group decisions — the moat._

@@ -63,6 +63,27 @@ describe("computeSpin", () => {
     expect(targetIdx).toBe(3);
   });
 
+  it("animates to a forced targetIdx (server-authoritative winner)", () => {
+    const count = 9;
+    for (let idx = 0; idx < count; idx++) {
+      const { targetIdx, targetAngle } = computeSpin({
+        count,
+        currentAngle: 3.7,
+        minRotations: 6,
+        targetIdx: idx,
+        // rng would pick segment 0; the forced index must win instead.
+        rng: seqRng([0, 0.5]),
+      });
+      expect(targetIdx).toBe(idx);
+      expect(segmentUnderPointer(targetAngle, count)).toBe(idx);
+    }
+  });
+
+  it("clamps an out-of-range forced targetIdx into bounds", () => {
+    expect(computeSpin({ count: 4, currentAngle: 0, minRotations: 1, targetIdx: 99 }).targetIdx).toBe(3);
+    expect(computeSpin({ count: 4, currentAngle: 0, minRotations: 1, targetIdx: -5 }).targetIdx).toBe(0);
+  });
+
   it("throws when there are no segments", () => {
     expect(() => computeSpin({ count: 0, currentAngle: 0, minRotations: 1 })).toThrow();
   });

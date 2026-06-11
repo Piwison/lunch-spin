@@ -6,6 +6,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { parseRestaurantList } from "@shared/import";
+import { pickWinner } from "@shared/pick";
 import {
   addRestaurant,
   addRestaurants,
@@ -15,11 +16,13 @@ import {
   deleteRestaurant,
   deleteWheel,
   getExclusions,
+  getLatestSpin,
   getRestaurantById,
   getRestaurantsByWheel,
   getRestaurantStats,
   getSpinHistory,
   getTagsForWheel,
+  getUserById,
   getUserWheels,
   getWheelById,
   getWheelByInviteToken,
@@ -58,7 +61,8 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.id, ctx.user.id);
         if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
         const members = await getWheelMembers(input.id);
-        return { ...wheel, members };
+        const owner = await getUserById(wheel.ownerId);
+        return { ...wheel, members, owner };
       }),
 
     create: protectedProcedure
@@ -215,6 +219,32 @@ export const appRouter = router({
   // ─── Spins ───────────────────────────────────────────────────────────────────
 
   spins: router({
+    // Server-authoritative spin: the server picks the winner among the eligible
+    // restaurants and records it, so a shared wheel can't be tampered with from
+    // the client. The candidate ids are the restaurants currently on the
+    // caller's wheel (after their tag filter); the server re-validates them
+    // against the wheel and the live exclusion window before choosing.
+    create: protectedProcedure
+      .input(z.object({ wheelId: z.number(), candidateIds: z.array(z.number()).min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        const valid = new Set(rests.map((r) => r.id));
+        const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
+        const eligible = input.candidateIds.filter((id) => valid.has(id) && !exclusions.has(id));
+        if (eligible.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
+        }
+
+        const restaurantId = pickWinner(eligible);
+        const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
+        return { id, restaurantId };
+      }),
+
     record: protectedProcedure
       .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
       .mutation(async ({ ctx, input }) => {
@@ -222,6 +252,15 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const id = await recordSpin(input.wheelId, input.restaurantId, ctx.user.id);
         return { id };
+      }),
+
+    latest: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const latest = await getLatestSpin(input.wheelId);
+        return latest ?? null;
       }),
 
     history: protectedProcedure

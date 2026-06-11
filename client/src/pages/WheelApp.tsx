@@ -1,18 +1,20 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import RestaurantTab from "@/components/RestaurantTab";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
+import WheelMembers from "@/components/WheelMembers";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
+import { detectIncomingSpin } from "@shared/live";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -28,6 +30,9 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [targetId, setTargetId] = useState<number | null>(null);
+  // undefined = baseline not yet seeded for the current wheel.
+  const lastSeenSpinId = useRef<number | null | undefined>(undefined);
 
   useEffect(() => {
     if (!loading && !user) navigate("/");
@@ -51,9 +56,37 @@ export default function WheelApp() {
     { enabled: !!selectedWheelId }
   );
 
-  const recordSpin = trpc.spins.record.useMutation({
-    onSuccess: () => refetchRestaurants(),
-  });
+  const createSpin = trpc.spins.create.useMutation();
+
+  // Live shared wheels: poll the latest spin so a teammate's pick surfaces here.
+  const isShared = !!wheelData?.isShared;
+  const { data: latestSpin } = trpc.spins.latest.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && isShared, refetchInterval: 4000 }
+  );
+
+  // Reset the live baseline when switching wheels so we don't carry one wheel's
+  // last-seen spin into another.
+  useEffect(() => {
+    lastSeenSpinId.current = undefined;
+  }, [selectedWheelId]);
+
+  useEffect(() => {
+    if (!isShared || !user) return;
+    if (latestSpin === undefined) return; // still loading
+    // First observation for this wheel: seed silently so we only announce spins
+    // that land *after* we're watching, not pre-existing history.
+    if (lastSeenSpinId.current === undefined) {
+      lastSeenSpinId.current = latestSpin?.id ?? null;
+      return;
+    }
+    const incoming = detectIncomingSpin(latestSpin, lastSeenSpinId.current, user.id);
+    if (latestSpin) lastSeenSpinId.current = latestSpin.id;
+    if (incoming) {
+      toast(`${incoming.spunByName ?? "A teammate"} spun ${incoming.restaurantName}`, { icon: "🎡" });
+      refetchRestaurants();
+    }
+  }, [latestSpin, isShared, user]);
 
   // Filter restaurants: AND logic on selected tags, exclude auto-excluded
   const filteredRestaurants = useMemo(
@@ -74,19 +107,31 @@ export default function WheelApp() {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
-    if (selectedWheelId) {
-      recordSpin.mutate({ wheelId: selectedWheelId, restaurantId: segment.id });
-    }
+    setTargetId(null);
+    // The server already recorded the spin in spins.create; just refresh state.
+    refetchRestaurants();
   };
 
-  const handleSpin = () => {
+  const handleSpin = async () => {
     if (wheelSegments.length === 0) {
       toast.error("No restaurants available. Add some or adjust your filters.");
       return;
     }
+    if (!selectedWheelId || createSpin.isPending) return;
     setShowResult(false);
     setSpinResult(null);
-    setIsSpinning(true);
+    try {
+      // The server picks the winner (anti-tamper, fair, shared-consistent); the
+      // wheel then animates to that segment so the spin and the result agree.
+      const { restaurantId } = await createSpin.mutateAsync({
+        wheelId: selectedWheelId,
+        candidateIds: wheelSegments.map((s) => s.id),
+      });
+      setTargetId(restaurantId);
+      setIsSpinning(true);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't start the spin. Try again.");
+    }
   };
 
   const handleReSpin = () => {
@@ -201,6 +246,16 @@ export default function WheelApp() {
                 {/* ── TAB 1: WHEEL ── */}
                 {activeTab === "wheel" && (
                   <div className="p-4 md:p-6 flex flex-col items-center gap-6">
+                    {/* Team roster (shared wheels) */}
+                    {isShared && wheelData && (
+                      <WheelMembers
+                        ownerId={wheelData.ownerId}
+                        owner={wheelData.owner}
+                        members={wheelData.members}
+                        currentUserId={user.id}
+                      />
+                    )}
+
                     {/* Tag filter bar */}
                     <div className="w-full max-w-2xl">
                       <div className="mb-2 flex items-center justify-between">
@@ -279,23 +334,24 @@ export default function WheelApp() {
                           onSpinEnd={handleSpinEnd}
                           isSpinning={isSpinning}
                           onSpinStart={handleSpin}
+                          targetId={targetId}
                         />
 
                         {/* Spin button */}
                         <button
                           onClick={handleSpin}
-                          disabled={isSpinning || wheelSegments.length === 0}
+                          disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
                           className="px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                           style={{
                             fontFamily: "var(--font-display)",
-                            background: isSpinning
+                            background: isSpinning || createSpin.isPending
                               ? "oklch(0.16 0.025 260)"
                               : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                            boxShadow: isSpinning ? "none" : "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
+                            boxShadow: isSpinning || createSpin.isPending ? "none" : "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
                             color: "white",
                           }}
                         >
-                          {isSpinning ? "SPINNING..." : "SPIN"}
+                          {isSpinning || createSpin.isPending ? "SPINNING..." : "SPIN"}
                         </button>
 
                         {/* Segment count */}
