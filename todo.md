@@ -59,9 +59,9 @@
 - [x] Vitest: statistics query logic (tested via existing test suite)
 
 ## Bug Fixes & UX Improvements (Round 3)
-- [ ] Fix login flow (cannot login)
-- [ ] Fix wheel creation silent failure (click create → no response, no error shown)
+- [x] Fix login flow (cannot login — OAuth flow verified correct; was deployed version issue)
+- [x] Fix wheel creation silent failure (ErrorChip now shows inline error on create failure)
 - [x] Add animated error/success toast chips to all mutations
-- [ ] Add loading states to all buttons during async operations
+- [x] Add loading states to all buttons during async operations
 - [x] Add inline error display in forms
-- [ ] Add interactive hover/active states to all interactive elements
+- [x] Add interactive hover/active states to all interactive elements

@@ -15,6 +15,34 @@
       "when": 1781111267114,
       "tag": "0001_sparkling_thunderbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1781114147175,
+      "tag": "0002_tag_wheel_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1781142369664,
+      "tag": "0003_wheel_exclusion_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1781198556078,
+      "tag": "0004_wheel_fairness_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1781241121899,
+      "tag": "0005_wheel_rotate_cuisines",
+      "breakpoints": true
     }
   ]
 }

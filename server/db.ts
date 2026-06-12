@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -13,6 +13,9 @@ import {
   wheels,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
+import { normalizeStatRow } from "@shared/stats";
+import type { WheelExport } from "@shared/transfer";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -59,12 +62,23 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+  return result[0];
+}
+
 // ─── Wheels ───────────────────────────────────────────────────────────────────
 
-export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string) {
+export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS, fairnessMode = false, rotateCuisines = false) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null });
+  const result = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null, exclusionDays, fairnessMode, rotateCuisines });
   return (result as any).insertId as number;
 }
 
@@ -94,7 +108,7 @@ export async function getUserWheels(userId: number) {
   return [...owned, ...joined];
 }
 
-export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null }>) {
+export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean }>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(wheels).set(data).where(eq(wheels.id, id));
@@ -135,19 +149,24 @@ export async function getWheelMembers(wheelId: number) {
 
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 
-export async function getAllTags() {
+// Returns global/system tags (wheelId IS NULL) plus the given wheel's own
+// custom tags — so one team's custom vocabulary never leaks into another's.
+export async function getTagsForWheel(wheelId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(tags);
+  return db
+    .select()
+    .from(tags)
+    .where(or(isNull(tags.wheelId), eq(tags.wheelId, wheelId)));
 }
 
-export async function createCustomTag(name: string, createdBy: number) {
+export async function createCustomTag(name: string, createdBy: number, wheelId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Assign a color from a palette based on name hash
   const colors = ["#f43f5e","#fb923c","#facc15","#4ade80","#22d3ee","#818cf8","#e879f9","#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const result = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy });
+  const result = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy, wheelId });
   return (result as any).insertId as number;
 }
 
@@ -182,6 +201,16 @@ export async function addRestaurant(wheelId: number, addedBy: number, name: stri
   return restaurantId;
 }
 
+// Bulk-insert restaurants by name only (used by paste import). Returns the
+// number of rows created.
+export async function addRestaurants(wheelId: number, addedBy: number, names: string[]): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (names.length === 0) return 0;
+  await db.insert(restaurants).values(names.map((name) => ({ wheelId, addedBy, name, notes: null })));
+  return names.length;
+}
+
 export async function updateRestaurant(id: number, name: string, notes: string | null, tagIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -198,6 +227,38 @@ export async function deleteRestaurant(id: number) {
   if (!db) throw new Error("DB unavailable");
   await db.delete(restaurantTags).where(eq(restaurantTags.restaurantId, id));
   await db.delete(restaurants).where(eq(restaurants.id, id));
+}
+
+const TAG_PALETTE = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
+
+// Create a fresh wheel from a portable export bundle: the wheel, its tags (reuse
+// matching global/system tags by name+category, else create wheel-scoped ones),
+// and its restaurants. Returns the new wheel id.
+export async function importWheelData(ownerId: number, data: WheelExport): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const wheelId = await createWheel(ownerId, data.name, false, false, undefined, data.exclusionDays, data.fairnessMode, data.rotateCuisines);
+
+  const key = (name: string, category: string) => `${category}:${name.toLowerCase()}`;
+  const tagMap = new Map<string, number>();
+  for (const t of await getTagsForWheel(wheelId)) tagMap.set(key(t.name, t.category), t.id);
+
+  for (const r of data.restaurants) {
+    const tagIds: number[] = [];
+    for (const tg of r.tags) {
+      const k = key(tg.name, tg.category);
+      let id = tagMap.get(k);
+      if (id == null) {
+        const color = TAG_PALETTE[tg.name.charCodeAt(0) % TAG_PALETTE.length]!;
+        const res = await db.insert(tags).values({ name: tg.name, category: tg.category, color, createdBy: ownerId, wheelId });
+        id = (res as any).insertId as number;
+        tagMap.set(k, id);
+      }
+      tagIds.push(id);
+    }
+    await addRestaurant(wheelId, ownerId, r.name, r.notes, tagIds);
+  }
+  return wheelId;
 }
 
 export async function getRestaurantById(id: number): Promise<Restaurant | undefined> {
@@ -236,38 +297,32 @@ export async function getSpinHistory(wheelId: number) {
     .orderBy(sql`${spinHistory.spunAt} DESC`);
 }
 
-export async function getExcludedRestaurantIds(wheelId: number): Promise<number[]> {
+// Returns a map of restaurantId → the timestamp it becomes available again.
+// `windowDays` of 0 disables exclusion entirely (empty map).
+export async function getExclusions(wheelId: number, windowDays: number): Promise<Map<number, Date>> {
   const db = await getDb();
-  if (!db) return [];
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-  // Get the most recent spin for each restaurant in the last 3 days
+  if (!db || windowDays <= 0) return new Map();
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const recent = await db
-    .select({ restaurantId: spinHistory.restaurantId, manuallyReenabled: spinHistory.manuallyReenabled })
+    .select({
+      restaurantId: spinHistory.restaurantId,
+      spunAt: spinHistory.spunAt,
+      manuallyReenabled: spinHistory.manuallyReenabled,
+    })
     .from(spinHistory)
-    .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${threeDaysAgo}`))
-    .orderBy(sql`${spinHistory.spunAt} DESC`);
-  // Group by restaurantId, take the latest entry
-  const seen = new Set<number>();
-  const excluded: number[] = [];
-  for (const row of recent) {
-    if (!seen.has(row.restaurantId)) {
-      seen.add(row.restaurantId);
-      if (!row.manuallyReenabled) {
-        excluded.push(row.restaurantId);
-      }
-    }
-  }
-  return excluded;
+    .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
+  const exclusions = computeExclusions(recent, { windowDays });
+  return new Map(exclusions.map((e) => [e.restaurantId, e.excludedUntil]));
 }
 
-export async function reenableRestaurant(wheelId: number, restaurantId: number) {
+export async function reenableRestaurant(wheelId: number, restaurantId: number, windowDays: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   await db
     .update(spinHistory)
     .set({ manuallyReenabled: true })
-    .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${threeDaysAgo}`));
+    .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
 }
 
 
@@ -279,7 +334,7 @@ export async function getRestaurantStats(wheelId: number) {
   
   // Get pick count and last picked date for each restaurant in the wheel
   const result = await db.execute(sql`
-    SELECT 
+    SELECT
       r.id,
       r.name,
       COUNT(sh.id) as pickCount,
@@ -290,19 +345,11 @@ export async function getRestaurantStats(wheelId: number) {
     GROUP BY r.id, r.name
     ORDER BY pickCount DESC, lastPickedAt DESC
   `);
-  
-  // Extract rows from Drizzle execute result (handles different wrapper formats)
-  let rows: any[] = [];
-  if (Array.isArray(result)) {
-    rows = result;
-  } else if (result && typeof result === 'object') {
-    rows = (result as any).rows ?? (result as any)[0] ?? [];
-  }
-  
-  return rows.map((row: any) => ({
-    id: Number(row.id ?? 0),
-    name: String(row.name ?? ''),
-    pickCount: Number(row.pickCount ?? 0),
-    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt) : null,
-  }));
+
+  // mysql2's `execute` resolves to a `[rows, fields]` tuple; unwrap to the rows
+  // array. (Mapping over the tuple itself yielded malformed rows with no name,
+  // which crashed the stats UI.) Tolerate a driver that already returns rows.
+  const raw = result as any;
+  const rows: any[] = Array.isArray(raw?.[0]) ? raw[0] : Array.isArray(raw) ? raw : [];
+  return rows.map(normalizeStatRow);
 }

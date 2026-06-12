@@ -202,15 +202,17 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                         })
                       }
                       disabled={reenable.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all active:scale-95 flex-shrink-0"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all active:scale-95 hover:brightness-125 flex-shrink-0 disabled:opacity-50"
                       style={{
                         background: "oklch(0.70 0.20 160 / 0.15)",
                         border: "1px solid oklch(0.70 0.20 160 / 0.4)",
                         color: "oklch(0.70 0.20 160)",
                       }}
                     >
-                      <RefreshCw size={11} />
-                      Re-enable
+                      {reenable.isPending
+                        ? <span className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
+                        : <RefreshCw size={11} />}
+                      {reenable.isPending ? "Enabling..." : "Re-enable"}
                     </button>
                   )}
                 </div>

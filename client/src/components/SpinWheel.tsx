@@ -11,6 +11,7 @@ interface SpinWheelProps {
   onSpinEnd: (segment: WheelSegment) => void;
   isSpinning: boolean;
   onSpinStart: () => void;
+  targetId?: number | null;
 }
 
 const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);

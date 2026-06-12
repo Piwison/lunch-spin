@@ -1,0 +1,1 @@
+ALTER TABLE `wheels` ADD `fairnessMode` boolean DEFAULT false NOT NULL;

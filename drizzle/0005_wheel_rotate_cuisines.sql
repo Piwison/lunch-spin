@@ -1,0 +1,1 @@
+ALTER TABLE `wheels` ADD `rotateCuisines` boolean DEFAULT false NOT NULL;

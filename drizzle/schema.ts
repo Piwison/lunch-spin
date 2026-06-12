@@ -32,6 +32,12 @@ export const wheels = mysqlTable("wheels", {
   isShared: boolean("isShared").default(false).notNull(),
   isPublic: boolean("isPublic").default(false).notNull(),
   inviteToken: varchar("inviteToken", { length: 64 }),
+  // Days a spun restaurant is excluded from the wheel; 0 = exclusion off.
+  exclusionDays: int("exclusionDays").default(3).notNull(),
+  // Fairness mode: weight the spin toward neglected restaurants.
+  fairnessMode: boolean("fairnessMode").default(false).notNull(),
+  // Rotate cuisines: damp recently-picked cuisines, boost neglected ones.
+  rotateCuisines: boolean("rotateCuisines").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -58,6 +64,7 @@ export const tags = mysqlTable("tags", {
   category: mysqlEnum("category", ["cuisine", "food_type", "custom"]).notNull(),
   color: varchar("color", { length: 32 }).notNull().default("#6366f1"),
   createdBy: int("createdBy"), // null = predefined system tag
+  wheelId: int("wheelId"), // null = global/system tag; otherwise scoped to one wheel
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
