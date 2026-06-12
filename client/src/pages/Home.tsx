@@ -102,7 +102,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="relative min-h-screen overflow-hidden flex items-center justify-center">
+    <div className="relative min-h-screen overflow-y-auto overflow-x-hidden flex flex-col items-center justify-center">
       {/* Shader background */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ zIndex: 0 }} />
 
@@ -119,11 +119,11 @@ export default function Home() {
       />
 
       {/* Content */}
-      <div className="relative z-10 text-center px-6 max-w-2xl mx-auto">
+      <div className="relative z-10 text-center px-4 md:px-6 max-w-2xl mx-auto py-8 md:py-0 my-auto">
         {/* Wheel icon */}
-        <div className="mb-8 flex justify-center">
+        <div className="mb-6 md:mb-8 flex justify-center">
           <div
-            className="w-24 h-24 rounded-full animate-float"
+            className="w-20 h-20 md:w-24 md:h-24 rounded-full animate-float"
             style={{
               background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ec4899, #ef4444)",
               boxShadow: "0 0 40px oklch(0.72 0.22 30 / 0.6), 0 0 80px oklch(0.72 0.22 30 / 0.3)",
@@ -132,7 +132,7 @@ export default function Home() {
         </div>
 
         <h1
-          className="text-6xl md:text-8xl font-bold mb-4 leading-none tracking-tight"
+          className="text-5xl md:text-8xl font-bold mb-3 md:mb-4 leading-none tracking-tight"
           style={{ fontFamily: "var(--font-display)" }}
         >
           <span className="gradient-text">SPIN</span>
@@ -140,7 +140,7 @@ export default function Home() {
           <span className="text-foreground/90">YOUR LUNCH</span>
         </h1>
 
-        <p className="text-muted-foreground text-lg md:text-xl mb-10 font-light leading-relaxed">
+        <p className="text-muted-foreground text-base md:text-xl mb-8 md:mb-10 font-light leading-relaxed">
           Stop debating. Start spinning. A cinematic wheel for teams who can't decide where to eat.
         </p>
 
@@ -165,11 +165,11 @@ export default function Home() {
         </div>
 
         {/* Feature pills */}
-        <div className="mt-16 flex flex-wrap gap-3 justify-center">
+        <div className="mt-12 md:mt-16 flex flex-wrap gap-2 md:gap-3 justify-center pb-8 md:pb-0">
           {["Team Wheels", "Smart Exclusion", "Tag Filtering", "Cinematic Design"].map((f) => (
             <span
               key={f}
-              className="px-4 py-1.5 rounded-full text-xs font-medium"
+              className="px-3 md:px-4 py-1 md:py-1.5 rounded-full text-xs font-medium"
               style={{
                 background: "oklch(0.16 0.03 260 / 0.8)",
                 border: "1px solid oklch(0.25 0.03 260)",
@@ -185,4 +185,20 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+// Add animation for floating wheel
+if (typeof document !== 'undefined' && !document.querySelector('style[data-float-animation]')) {
+  const style = document.createElement('style');
+  style.setAttribute('data-float-animation', 'true');
+  style.textContent = `
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+    .animate-float {
+      animation: float 3s ease-in-out infinite;
+    }
+  `;
+  document.head.appendChild(style);
 }
