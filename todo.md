@@ -69,3 +69,8 @@
 ## Bug Fixes (Round 4)
 - [x] Fix "cannot create wheel" — applied missing DB migrations (exclusionDays, fairnessMode, rotateCuisines columns)
 - [x] Fix "cannot log out" — SIGN OUT button was only navigating to "/" without calling logout(); now calls logout() then navigates
+
+## Bug Fixes (Round 5)
+- [x] Fix app crash on wheel creation — SSE subscriptions (onSpin, onPresence, onSession) crash the whole app
+- [x] Fix wheel settings edit — settings button now always visible on mobile (not just hover)
+- [x] Fix blurry wheel label text — added devicePixelRatio scaling to canvas for crisp HiDPI rendering

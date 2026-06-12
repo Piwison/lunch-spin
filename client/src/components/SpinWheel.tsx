@@ -132,7 +132,9 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const size = canvas.width;
+    // Use CSS size for coordinates since we scale the context by devicePixelRatio
+    const dpr = window.devicePixelRatio || 1;
+    const size = canvas.width / dpr;
     const cx = size / 2;
     const cy = size / 2;
     const r = size / 2 - 8;
@@ -252,14 +254,20 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     ctx.restore();
   }, [segments]);
 
-  // Sync canvas size
+  // Sync canvas size with devicePixelRatio for crisp rendering on HiDPI screens
   useEffect(() => {
     const canvas = canvasRef.current;
     const bg = bgCanvasRef.current;
     if (!canvas || !bg) return;
-    const size = Math.min(canvas.parentElement?.clientWidth ?? 400, 500);
-    canvas.width = size;
-    canvas.height = size;
+    const dpr = window.devicePixelRatio || 1;
+    const cssSize = Math.min(canvas.parentElement?.clientWidth ?? 400, 500);
+    canvas.width = cssSize * dpr;
+    canvas.height = cssSize * dpr;
+    canvas.style.width = cssSize + "px";
+    canvas.style.height = cssSize + "px";
+    const ctx = canvas.getContext("2d");
+    // Use setTransform to avoid accumulating scale on each resize
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawWheel(currentAngleRef.current);
   }, [segments, drawWheel]);
 

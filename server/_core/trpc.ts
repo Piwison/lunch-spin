@@ -5,6 +5,10 @@ import type { TrpcContext } from "./context";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  sse: {
+    enabled: true,
+    ping: { enabled: true, intervalMs: 20_000 },
+  },
 });
 
 export const router = t.router;

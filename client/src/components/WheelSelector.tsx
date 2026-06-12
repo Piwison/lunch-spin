@@ -187,8 +187,8 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 </span>
               </button>
 
-              {/* Actions on hover */}
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1">
+              {/* Actions — always visible on mobile, hover-reveal on desktop */}
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
                 {wheel.isShared && isOwner && (
                   <button
                     onClick={(e) => { e.stopPropagation(); regenInvite.mutate({ id: wheel.id }); }}
