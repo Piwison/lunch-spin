@@ -117,6 +117,17 @@
 @keyframes orb-spin {
   to { transform: rotate(360deg); }
 }
+/* Tab content entrance — quick fade + rise when switching tabs */
+@keyframes tab-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Breathing glow that invites a click on the primary SPIN button */
+@keyframes cta-pulse {
+  0%, 100% { box-shadow: 0 0 22px oklch(0.72 0.22 30 / 0.4), 0 4px 20px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 40px oklch(0.72 0.22 30 / 0.6), 0 0 64px oklch(0.65 0.25 280 / 0.3), 0 4px 20px rgba(0,0,0,0.4); }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 /* Conic sheen that sweeps a ring */
 @keyframes ring-rotate {
   to { transform: rotate(1turn); }
@@ -127,6 +138,9 @@
 .animate-spin-result { animation: spin-result 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
 .animate-orb-spin { animation: orb-spin 28s linear infinite; }
 .animate-ring-rotate { animation: ring-rotate 12s linear infinite; }
+.tab-enter { animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
+.cta-pulse { animation: cta-pulse 2.6s ease-in-out infinite; }
+.fade-in { animation: fade-in 0.25s ease-out; }
 
 /* Staggered reveal: start hidden, play once, hold final state. */
 .reveal { opacity: 0; animation: reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
@@ -147,7 +161,8 @@
 
 /* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate, .shine, .animate-pulse-glow {
+  .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate, .shine,
+  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in {
     animation: none !important;
   }
   .reveal { opacity: 1 !important; transform: none !important; }

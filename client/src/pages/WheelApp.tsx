@@ -325,7 +325,7 @@ export default function WheelApp() {
                 <p className="text-muted-foreground">Select or create a wheel to get started</p>
               </div>
             ) : (
-              <>
+              <div key={activeTab} className="tab-enter">
                 {/* ── TAB 1: WHEEL ── */}
                 {activeTab === "wheel" && (
                   <div className="p-4 md:p-6 pb-28 flex flex-col items-center gap-6">
@@ -483,11 +483,15 @@ export default function WheelApp() {
                           </div>
                         ) : (
                           <>
-                            {/* Spin button */}
+                            {/* Spin button — breathes invitingly when ready, lifts on hover */}
                             <button
                               onClick={handleSpin}
                               disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
-                              className="px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                              className={`px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 ${
+                                isSpinning || createSpin.isPending || wheelSegments.length === 0
+                                  ? ""
+                                  : "cta-pulse hover:-translate-y-0.5 hover:brightness-110"
+                              }`}
                               style={{
                                 fontFamily: "var(--font-display)",
                                 background: isSpinning || createSpin.isPending || wheelSegments.length === 0
@@ -554,7 +558,7 @@ export default function WheelApp() {
                     {/* Result overlay */}
                     {showResult && spinResult && (
                       <div
-                        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in"
                         style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}
                         onClick={() => setShowResult(false)}
                       >
@@ -567,7 +571,7 @@ export default function WheelApp() {
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <div className="text-5xl mb-4">🎉</div>
+                          <div className="text-5xl mb-4 animate-float">🎉</div>
                           <p className="text-sm text-muted-foreground mb-2 tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
                             TODAY'S LUNCH
                           </p>
@@ -640,7 +644,7 @@ export default function WheelApp() {
                     onReenabled={refetchRestaurants}
                   />
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
