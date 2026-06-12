@@ -6,6 +6,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { parseRestaurantList } from "@shared/import";
+import { serializeWheel, wheelExportSchema } from "@shared/transfer";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
@@ -39,6 +40,7 @@ import {
   getSpinHistory,
   getTagsForWheel,
   getUserById,
+  importWheelData,
   getUserWheels,
   getWheelById,
   getWheelByInviteToken,
@@ -142,6 +144,26 @@ export const appRouter = router({
         if (!wheel.isShared) throw new TRPCError({ code: "FORBIDDEN", message: "This wheel is not shared" });
         await addWheelMember(wheel.id, ctx.user.id);
         return { wheelId: wheel.id, wheelName: wheel.name };
+      }),
+
+    // Portable JSON bundle of a wheel + its restaurants (no ids).
+    export: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.id, ctx.user.id);
+        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
+        const rests = await getRestaurantsByWheel(input.id);
+        return serializeWheel(wheel, rests);
+      }),
+
+    // Create a fresh wheel for the caller from an export bundle.
+    import: protectedProcedure
+      .input(wheelExportSchema)
+      .mutation(async ({ ctx, input }) => {
+        const id = await importWheelData(ctx.user.id, input);
+        return { id };
       }),
   }),
 

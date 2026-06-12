@@ -15,6 +15,7 @@ import {
 import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
 import { normalizeStatRow } from "@shared/stats";
+import type { WheelExport } from "@shared/transfer";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -226,6 +227,38 @@ export async function deleteRestaurant(id: number) {
   if (!db) throw new Error("DB unavailable");
   await db.delete(restaurantTags).where(eq(restaurantTags.restaurantId, id));
   await db.delete(restaurants).where(eq(restaurants.id, id));
+}
+
+const TAG_PALETTE = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
+
+// Create a fresh wheel from a portable export bundle: the wheel, its tags (reuse
+// matching global/system tags by name+category, else create wheel-scoped ones),
+// and its restaurants. Returns the new wheel id.
+export async function importWheelData(ownerId: number, data: WheelExport): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const wheelId = await createWheel(ownerId, data.name, false, false, undefined, data.exclusionDays, data.fairnessMode, data.rotateCuisines);
+
+  const key = (name: string, category: string) => `${category}:${name.toLowerCase()}`;
+  const tagMap = new Map<string, number>();
+  for (const t of await getTagsForWheel(wheelId)) tagMap.set(key(t.name, t.category), t.id);
+
+  for (const r of data.restaurants) {
+    const tagIds: number[] = [];
+    for (const tg of r.tags) {
+      const k = key(tg.name, tg.category);
+      let id = tagMap.get(k);
+      if (id == null) {
+        const color = TAG_PALETTE[tg.name.charCodeAt(0) % TAG_PALETTE.length]!;
+        const [res] = await db.insert(tags).values({ name: tg.name, category: tg.category, color, createdBy: ownerId, wheelId });
+        id = (res as any).insertId as number;
+        tagMap.set(k, id);
+      }
+      tagIds.push(id);
+    }
+    await addRestaurant(wheelId, ownerId, r.name, r.notes, tagIds);
+  }
+  return wheelId;
 }
 
 export async function getRestaurantById(id: number): Promise<Restaurant | undefined> {

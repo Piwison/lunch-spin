@@ -1,8 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, ChevronRight, Trash2, Share2, Copy, Settings } from "lucide-react";
+import { Plus, Globe, Lock, ChevronRight, Trash2, Share2, Copy, Settings, Download, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { STARTER_RESTAURANTS } from "@shared/starter";
+import { parseWheelImport } from "@shared/transfer";
 
 interface WheelSelectorProps {
   selectedWheelId: number | null;
@@ -35,9 +37,53 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
   const [addStarterPack, setAddStarterPack] = useState(true);
   const [showInvite, setShowInvite] = useState<{ wheelId: number; token: string; name: string } | null>(null);
   const [editWheel, setEditWheel] = useState<{ id: number; name: string; isShared: boolean; isPublic: boolean; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean } | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
 
   const utils = trpc.useUtils();
   const { data: wheels } = trpc.wheels.list.useQuery();
+
+  const handleExport = async (wheelId: number, name: string) => {
+    try {
+      const data = await utils.wheels.export.fetch({ id: wheelId });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(name || "wheel").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-wheel.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Wheel exported");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    }
+  };
+
+  const importWheel = trpc.wheels.import.useMutation({
+    onSuccess: (data) => {
+      utils.wheels.list.invalidate();
+      onSelect(data.id);
+      setShowImport(false);
+      setImportText("");
+      toast.success("Wheel imported!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const submitImport = () => {
+    try {
+      const parsed = parseWheelImport(importText);
+      importWheel.mutate(parsed);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invalid wheel file");
+    }
+  };
+
+  const onImportFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => setImportText(String(reader.result ?? ""));
+    reader.readAsText(file);
+  };
 
   // Default the starter pack on for a user's very first wheel only.
   useEffect(() => {
@@ -143,6 +189,13 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                     <Share2 size={12} />
                   </button>
                 )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleExport(wheel.id, wheel.name); }}
+                  className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Export wheel"
+                >
+                  <Download size={12} />
+                </button>
                 {isOwner && (
                   <button
                     onClick={(e) => {
@@ -175,6 +228,14 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
         >
           <Plus size={16} className="flex-shrink-0" />
           <span className="hidden md:block text-sm">New Wheel</span>
+        </button>
+
+        <button
+          onClick={() => { setImportText(""); setShowImport(true); }}
+          className="mx-2 flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150"
+        >
+          <Upload size={16} className="flex-shrink-0" />
+          <span className="hidden md:block text-sm">Import</span>
         </button>
       </aside>
 
@@ -323,6 +384,43 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Import wheel dialog */}
+      <Dialog open={showImport} onOpenChange={(open) => { if (!open) { setShowImport(false); setImportText(""); } }}>
+        <DialogContent className="glass border-border/50 max-w-md">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>IMPORT WHEEL</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 pt-2">
+            <p className="text-xs text-muted-foreground">
+              Paste a wheel export, or load a <code>.json</code> file. It's added as a new wheel you own.
+            </p>
+            <label className="self-start text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5">
+              <Upload size={12} /> Choose file…
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); }}
+              />
+            </label>
+            <Textarea
+              placeholder='{ "name": "Office Lunch", "restaurants": [ … ] }'
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              className="bg-secondary/50 border-border/50 resize-none font-mono text-xs"
+              rows={8}
+            />
+            <Button
+              onClick={submitImport}
+              disabled={!importText.trim() || importWheel.isPending}
+              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+            >
+              {importWheel.isPending ? "Importing..." : "Import Wheel"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>
