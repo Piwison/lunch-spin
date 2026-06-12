@@ -26,6 +26,7 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) navigate("/");
@@ -184,46 +185,59 @@ export default function WheelApp() {
               <>
                 {/* ── TAB 1: WHEEL ── */}
                 {activeTab === "wheel" && (
-                  <div className="p-4 md:p-6 flex flex-col items-center gap-6">
-                    {/* Tag filter bar */}
+                  <div className="p-4 md:p-6 flex flex-col items-center gap-3 h-full overflow-y-auto">
+                    {/* Collapsible filter bar */}
                     <div className="w-full max-w-2xl">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-                          FILTER BY TAGS
-                        </span>
-                        {selectedTagIds.length > 0 && (
-                          <button
-                            onClick={() => setSelectedTagIds([])}
-                            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-                          >
-                            <X size={12} /> Clear all
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[...cuisineTags, ...foodTypeTags, ...customTags].map((tag) => {
-                          const isActive = selectedTagIds.includes(tag.id);
-                          return (
+                      <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold tracking-widest transition-colors"
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          background: showFilters ? "oklch(0.20 0.04 260)" : "oklch(0.16 0.025 260)",
+                          color: selectedTagIds.length > 0 ? "oklch(0.72 0.22 30)" : "oklch(0.55 0.02 260)",
+                          border: selectedTagIds.length > 0 ? "1px solid oklch(0.72 0.22 30 / 0.3)" : "1px solid oklch(0.25 0.03 260)",
+                        }}
+                      >
+                        <span>FILTER BY TAGS {selectedTagIds.length > 0 && `(${selectedTagIds.length})`}</span>
+                        <span style={{ transform: showFilters ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▼</span>
+                      </button>
+                      
+                      {showFilters && (
+                        <div className="mt-2 p-3 rounded-lg" style={{ background: "oklch(0.12 0.02 260)" }}>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[...cuisineTags, ...foodTypeTags, ...customTags].map((tag) => {
+                              const isActive = selectedTagIds.includes(tag.id);
+                              return (
+                                <button
+                                  key={tag.id}
+                                  onClick={() => toggleTag(tag.id)}
+                                  className="px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
+                                  style={{
+                                    background: isActive ? tag.color + "33" : "oklch(0.16 0.025 260)",
+                                    border: `1px solid ${isActive ? tag.color : "oklch(0.25 0.03 260)"}`,
+                                    color: isActive ? tag.color : "oklch(0.65 0.02 260)",
+                                    boxShadow: isActive ? `0 0 8px ${tag.color}44` : "none",
+                                  }}
+                                >
+                                  {tag.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {selectedTagIds.length > 0 && (
                             <button
-                              key={tag.id}
-                              onClick={() => toggleTag(tag.id)}
-                              className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
-                              style={{
-                                background: isActive ? tag.color + "33" : "oklch(0.16 0.025 260)",
-                                border: `1px solid ${isActive ? tag.color : "oklch(0.25 0.03 260)"}`,
-                                color: isActive ? tag.color : "oklch(0.65 0.02 260)",
-                                boxShadow: isActive ? `0 0 8px ${tag.color}44` : "none",
-                              }}
+                              onClick={() => setSelectedTagIds([])}
+                              className="mt-2 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
                             >
-                              {tag.name}
+                              <X size={12} /> Clear all filters
                             </button>
-                          );
-                        })}
-                      </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Empty state warning */}
                       {selectedTagIds.length > 0 && filteredRestaurants.length === 0 && (
-                        <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+                        <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
                           style={{ background: "oklch(0.60 0.22 25 / 0.15)", border: "1px solid oklch(0.60 0.22 25 / 0.4)", color: "oklch(0.80 0.15 40)" }}>
                           <AlertTriangle size={14} />
                           No restaurants match all selected tags. Try removing some filters.
@@ -231,8 +245,8 @@ export default function WheelApp() {
                       )}
                     </div>
 
-                    {/* Wheel */}
-                    <div className="w-full max-w-md flex flex-col items-center gap-6">
+                    {/* Wheel - Primary focus */}
+                    <div className="w-full max-w-md flex flex-col items-center gap-4 flex-1 justify-center">
                       <SpinWheel
                         segments={wheelSegments}
                         onSpinEnd={handleSpinEnd}
