@@ -64,7 +64,7 @@ export async function getUserByOpenId(openId: string) {
 export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null });
+  const result = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null });
   return (result as any).insertId as number;
 }
 
@@ -147,7 +147,7 @@ export async function createCustomTag(name: string, createdBy: number) {
   // Assign a color from a palette based on name hash
   const colors = ["#f43f5e","#fb923c","#facc15","#4ade80","#22d3ee","#818cf8","#e879f9","#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const [result] = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy });
+  const result = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy });
   return (result as any).insertId as number;
 }
 
@@ -174,7 +174,7 @@ export async function addRestaurant(wheelId: number, addedBy: number, name: stri
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  const [result] = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, primaryTagId });
+  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, primaryTagId });
   const restaurantId = (result as any).insertId as number;
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId, tagId })));
@@ -212,7 +212,7 @@ export async function getRestaurantById(id: number): Promise<Restaurant | undefi
 export async function recordSpin(wheelId: number, restaurantId: number, spunBy: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
+  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
   return (result as any).insertId as number;
 }
 
