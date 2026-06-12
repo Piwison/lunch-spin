@@ -278,7 +278,7 @@ export async function getRestaurantStats(wheelId: number) {
   if (!db) throw new Error("DB unavailable");
   
   // Get pick count and last picked date for each restaurant in the wheel
-  const stats = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT 
       r.id,
       r.name,
@@ -291,10 +291,18 @@ export async function getRestaurantStats(wheelId: number) {
     ORDER BY pickCount DESC, lastPickedAt DESC
   `);
   
-  return (stats as any[]).map((row: any) => ({
-    id: row.id,
-    name: row.name,
-    pickCount: row.pickCount || 0,
+  // Extract rows from Drizzle execute result (handles different wrapper formats)
+  let rows: any[] = [];
+  if (Array.isArray(result)) {
+    rows = result;
+  } else if (result && typeof result === 'object') {
+    rows = (result as any).rows ?? (result as any)[0] ?? [];
+  }
+  
+  return rows.map((row: any) => ({
+    id: Number(row.id ?? 0),
+    name: String(row.name ?? ''),
+    pickCount: Number(row.pickCount ?? 0),
     lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt) : null,
   }));
 }
