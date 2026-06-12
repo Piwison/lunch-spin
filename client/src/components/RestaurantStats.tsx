@@ -53,9 +53,11 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
 
   const totalPicks = useMemo(() => computeTotalPicks(stats), [stats]);
 
+  // Show an em-dash rather than "0.0" before any spin — a zero decimal reads
+  // as a bug, not an empty state.
   const averagePicks = useMemo(() => {
-    return stats.length > 0 ? computeAveragePicks(stats).toFixed(1) : 0;
-  }, [stats]);
+    return totalPicks > 0 ? computeAveragePicks(stats).toFixed(1) : "—";
+  }, [stats, totalPicks]);
 
   if (isLoading) {
     return (
@@ -78,40 +80,54 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
     <div className="space-y-6">
       {/* Stats Summary */}
       <div className="grid grid-cols-3 gap-4">
+        {/* The hero metric is accented; the other two are neutral metadata —
+            a consistent "primary vs. supporting" system, not arbitrary colour. */}
         <Card className="p-4">
           <div className="text-sm font-medium text-muted-foreground">Total Spins</div>
           <div className="text-2xl font-bold text-primary mt-1">{totalPicks}</div>
         </Card>
         <Card className="p-4">
           <div className="text-sm font-medium text-muted-foreground">Restaurants</div>
-          <div className="text-2xl font-bold text-accent mt-1">{stats.length}</div>
+          <div className="text-2xl font-bold text-foreground mt-1">{stats.length}</div>
         </Card>
         <Card className="p-4">
           <div className="text-sm font-medium text-muted-foreground">Avg Picks</div>
-          <div className="text-2xl font-bold text-accent-foreground mt-1">{averagePicks}</div>
+          <div className="text-2xl font-bold text-foreground mt-1">{averagePicks}</div>
         </Card>
       </div>
 
-      {/* Pick Frequency Bar Chart */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Pick Frequency</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={barData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.20 0.025 260)" />
-            <XAxis dataKey="name" stroke="oklch(0.55 0.02 260)" />
-            <YAxis stroke="oklch(0.55 0.02 260)" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "oklch(0.12 0.025 260)",
-                border: "1px solid oklch(0.25 0.03 260)",
-                borderRadius: "0.5rem",
-              }}
-              labelStyle={{ color: "oklch(0.95 0.01 260)" }}
-            />
-            <Bar dataKey="picks" fill="oklch(0.72 0.22 30)" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
+      {/* Charts only make sense once there's at least one spin — an all-zero
+          chart reads as "broken", so show a waiting state until then. */}
+      {totalPicks === 0 ? (
+        <Card className="p-8 text-center">
+          <div className="text-4xl mb-3 opacity-30">📊</div>
+          <p className="font-medium">No spins yet</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Hit SPIN on the wheel and your pick frequency will show up here.
+          </p>
+        </Card>
+      ) : (
+        <>
+          {/* Pick Frequency Bar Chart */}
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">Pick Frequency</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={barData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.20 0.025 260)" />
+                <XAxis dataKey="name" stroke="oklch(0.55 0.02 260)" />
+                <YAxis stroke="oklch(0.55 0.02 260)" allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "oklch(0.12 0.025 260)",
+                    border: "1px solid oklch(0.25 0.03 260)",
+                    borderRadius: "0.5rem",
+                  }}
+                  labelStyle={{ color: "oklch(0.95 0.01 260)" }}
+                />
+                <Bar dataKey="picks" fill="oklch(0.72 0.22 30)" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
 
       {/* Top 5 Pie Chart */}
       {topRestaurants.length > 0 && (
@@ -144,6 +160,8 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
             </PieChart>
           </ResponsiveContainer>
         </Card>
+      )}
+        </>
       )}
 
       {/* Overdue / blind spots */}

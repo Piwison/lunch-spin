@@ -173,7 +173,10 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 <span className="hidden md:block text-sm truncate flex-1" style={{ color: isSelected ? "oklch(0.90 0.01 260)" : "oklch(0.65 0.02 260)" }}>
                   {wheel.name}
                 </span>
-                <span className="hidden md:block text-muted-foreground/50">
+                <span
+                  className="hidden md:block text-muted-foreground/50"
+                  title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
+                >
                   {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
                 </span>
               </button>

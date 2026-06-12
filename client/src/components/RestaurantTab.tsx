@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { segmentColor } from "@/lib/palette";
 import { toast } from "sonner";
 
 interface RestaurantTabProps {
@@ -187,7 +188,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {restaurants?.map((r) => (
+          {restaurants?.map((r, i) => {
+            const dotColor = segmentColor(r.tags[0]?.color, i);
+            return (
             <div
               key={r.id}
               className="flex items-start gap-3 px-4 py-3 rounded-xl transition-all duration-150"
@@ -197,10 +200,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
                 opacity: r.isExcluded ? 0.6 : 1,
               }}
             >
-              {/* Color dot */}
+              {/* Color dot — matches this restaurant's slice on the wheel. */}
               <div
                 className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
-                style={{ background: r.tags[0]?.color ?? "#6366f1", boxShadow: `0 0 6px ${r.tags[0]?.color ?? "#6366f1"}88` }}
+                title={r.tags[0]?.name ? `Tagged "${r.tags[0].name}" — its colour on the wheel` : "Its colour on the wheel"}
+                style={{ background: dotColor, boxShadow: `0 0 6px ${dotColor}88` }}
               />
 
               <div className="flex-1 min-w-0">
@@ -247,7 +251,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

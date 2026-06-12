@@ -16,6 +16,7 @@ import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Chev
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
+import { segmentColor } from "@/lib/palette";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -144,10 +145,12 @@ export default function WheelApp() {
   }, [roundCandidates, session]);
 
   const wheelSegments: WheelSegment[] = useMemo(() =>
-    filteredRestaurants.map((r) => ({
+    filteredRestaurants.map((r, i) => ({
       id: r.id,
       label: r.name,
-      color: r.tags[0]?.color ?? "#6366f1",
+      // A restaurant's primary-tag colour, or a distinct palette hue so an
+      // untagged wheel is still vivid instead of one monochromatic blob.
+      color: segmentColor(r.tags[0]?.color, i),
     })),
     [filteredRestaurants]
   );
@@ -375,14 +378,21 @@ export default function WheelApp() {
                               </span>
                             )}
                           </button>
-                          {selectedTagIds.length > 0 && (
-                            <button
-                              onClick={() => setSelectedTagIds([])}
-                              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-                            >
-                              <X size={12} /> Clear all
-                            </button>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {selectedTagIds.length > 0 && (
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                Showing {filteredRestaurants.length} of {restaurants?.length ?? 0}
+                              </span>
+                            )}
+                            {selectedTagIds.length > 0 && (
+                              <button
+                                onClick={() => setSelectedTagIds([])}
+                                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                              >
+                                <X size={12} /> Clear all
+                              </button>
+                            )}
+                          </div>
                         </div>
                         {showFilters && (
                           <div className="flex flex-wrap gap-1.5">

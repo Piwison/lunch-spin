@@ -2,6 +2,14 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { Users, Clock, Tags, Sparkles } from "lucide-react";
+
+const FEATURES = [
+  { icon: Users, label: "Team Wheels", desc: "Decide together, live" },
+  { icon: Clock, label: "Smart Exclusion", desc: "No repeats for days" },
+  { icon: Tags, label: "Tag Filtering", desc: "Narrow by craving" },
+  { icon: Sparkles, label: "Cinematic Design", desc: "A spin worth watching" },
+];
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -132,12 +140,12 @@ export default function Home() {
         </div>
 
         <h1
-          className="text-6xl md:text-8xl font-bold mb-4 leading-none tracking-tight"
+          className="text-6xl md:text-8xl font-bold mb-4 leading-none tracking-tight gradient-text"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          <span className="gradient-text">SPIN</span>
+          SPIN
           <br />
-          <span className="text-foreground/90">YOUR LUNCH</span>
+          YOUR LUNCH
         </h1>
 
         <p className="text-muted-foreground text-lg md:text-xl mb-10 font-light leading-relaxed">
@@ -153,7 +161,9 @@ export default function Home() {
               className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-full text-sm font-semibold transition-all duration-200 active:scale-95"
               style={{
                 background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.4)",
+                // Glow blends both ends of the button gradient so it reads as the
+                // button's own light, not a clash with the cool ambient behind it.
+                boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.35), 0 0 48px oklch(0.65 0.25 280 / 0.25)",
                 color: "white",
                 fontFamily: "var(--font-display)",
                 letterSpacing: "0.05em",
@@ -164,23 +174,37 @@ export default function Home() {
           )}
         </div>
 
-        {/* Feature pills */}
-        <div className="mt-16 flex flex-wrap gap-3 justify-center">
-          {["Team Wheels", "Smart Exclusion", "Tag Filtering", "Cinematic Design"].map((f) => (
-            <span
-              key={f}
-              className="px-4 py-1.5 rounded-full text-xs font-medium"
-              style={{
-                background: "oklch(0.16 0.03 260 / 0.8)",
-                border: "1px solid oklch(0.25 0.03 260)",
-                color: "oklch(0.65 0.04 260)",
-                fontFamily: "var(--font-display)",
-                letterSpacing: "0.08em",
-              }}
-            >
-              {f.toUpperCase()}
-            </span>
-          ))}
+        {/* Feature cards — framed with an icon + one-liner so they sell, not just label. */}
+        <div className="mt-16">
+          <p
+            className="text-xs tracking-widest mb-4"
+            style={{ color: "oklch(0.55 0.03 260)", fontFamily: "var(--font-display)", letterSpacing: "0.18em" }}
+          >
+            BUILT FOR THE 11:45 SCRAMBLE
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {FEATURES.map(({ icon: Icon, label, desc }) => (
+              <div
+                key={label}
+                className="flex flex-col items-center text-center gap-1.5 px-3 py-4 rounded-2xl"
+                style={{
+                  background: "oklch(0.14 0.025 260 / 0.7)",
+                  border: "1px solid oklch(0.22 0.03 260)",
+                }}
+              >
+                <Icon size={18} style={{ color: "oklch(0.75 0.18 40)" }} />
+                <span
+                  className="text-xs font-semibold"
+                  style={{ color: "oklch(0.88 0.02 260)", fontFamily: "var(--font-display)", letterSpacing: "0.04em" }}
+                >
+                  {label}
+                </span>
+                <span className="text-[11px] leading-tight" style={{ color: "oklch(0.58 0.03 260)" }}>
+                  {desc}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
