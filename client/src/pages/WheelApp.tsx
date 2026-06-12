@@ -12,7 +12,7 @@ import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, ChevronDown } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -28,6 +28,7 @@ export default function WheelApp() {
     params.wheelId ? parseInt(params.wheelId) : null
   );
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -311,7 +312,10 @@ export default function WheelApp() {
           )}
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            className="flex-1 overflow-y-auto"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0px)" }}
+          >
             {!selectedWheelId ? (
               <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
                 <div className="text-5xl opacity-20">🎡</div>
@@ -321,7 +325,7 @@ export default function WheelApp() {
               <>
                 {/* ── TAB 1: WHEEL ── */}
                 {activeTab === "wheel" && (
-                  <div className="p-4 md:p-6 flex flex-col items-center gap-6">
+                  <div className="p-4 md:p-6 pb-28 flex flex-col items-center gap-6">
                     {/* Team roster (shared wheels) */}
                     {isShared && wheelData && (
                       <WheelMembers
@@ -347,51 +351,72 @@ export default function WheelApp() {
                       />
                     )}
 
-                    {/* Tag filter bar */}
-                    <div className="w-full max-w-2xl">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-                          FILTER BY TAGS
-                        </span>
-                        {selectedTagIds.length > 0 && (
+                    {/* Tag filter bar — only once there's something to filter, and
+                        collapsed by default so it never dominates the empty wheel. */}
+                    {(restaurants?.length ?? 0) > 0 && (
+                      <div className="w-full max-w-2xl">
+                        <div className="mb-2 flex items-center justify-between">
                           <button
-                            onClick={() => setSelectedTagIds([])}
-                            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                            onClick={() => setShowFilters((s) => !s)}
+                            className="text-xs font-semibold text-muted-foreground tracking-widest flex items-center gap-1.5 hover:text-foreground transition-colors"
+                            style={{ fontFamily: "var(--font-display)" }}
                           >
-                            <X size={12} /> Clear all
+                            <ChevronDown
+                              size={13}
+                              style={{ transform: showFilters ? "none" : "rotate(-90deg)", transition: "transform 150ms" }}
+                            />
+                            FILTER BY TAGS
+                            {selectedTagIds.length > 0 && (
+                              <span
+                                className="ml-1 px-1.5 rounded-full text-[10px] leading-4"
+                                style={{ background: "oklch(0.65 0.25 280 / 0.2)", color: "oklch(0.78 0.18 285)" }}
+                              >
+                                {selectedTagIds.length}
+                              </span>
+                            )}
                           </button>
+                          {selectedTagIds.length > 0 && (
+                            <button
+                              onClick={() => setSelectedTagIds([])}
+                              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                            >
+                              <X size={12} /> Clear all
+                            </button>
+                          )}
+                        </div>
+                        {showFilters && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {[...cuisineTags, ...foodTypeTags, ...customTags].map((tag) => {
+                              const isActive = selectedTagIds.includes(tag.id);
+                              return (
+                                <button
+                                  key={tag.id}
+                                  onClick={() => toggleTag(tag.id)}
+                                  className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
+                                  style={{
+                                    background: isActive ? tag.color + "33" : "oklch(0.16 0.025 260)",
+                                    border: `1px solid ${isActive ? tag.color : "oklch(0.25 0.03 260)"}`,
+                                    color: isActive ? tag.color : "oklch(0.65 0.02 260)",
+                                    boxShadow: isActive ? `0 0 8px ${tag.color}44` : "none",
+                                  }}
+                                >
+                                  {tag.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Empty state warning */}
+                        {selectedTagIds.length > 0 && filteredRestaurants.length === 0 && (
+                          <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+                            style={{ background: "oklch(0.60 0.22 25 / 0.15)", border: "1px solid oklch(0.60 0.22 25 / 0.4)", color: "oklch(0.80 0.15 40)" }}>
+                            <AlertTriangle size={14} />
+                            No restaurants match all selected tags. Try removing some filters.
+                          </div>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[...cuisineTags, ...foodTypeTags, ...customTags].map((tag) => {
-                          const isActive = selectedTagIds.includes(tag.id);
-                          return (
-                            <button
-                              key={tag.id}
-                              onClick={() => toggleTag(tag.id)}
-                              className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
-                              style={{
-                                background: isActive ? tag.color + "33" : "oklch(0.16 0.025 260)",
-                                border: `1px solid ${isActive ? tag.color : "oklch(0.25 0.03 260)"}`,
-                                color: isActive ? tag.color : "oklch(0.65 0.02 260)",
-                                boxShadow: isActive ? `0 0 8px ${tag.color}44` : "none",
-                              }}
-                            >
-                              {tag.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Empty state warning */}
-                      {selectedTagIds.length > 0 && filteredRestaurants.length === 0 && (
-                        <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
-                          style={{ background: "oklch(0.60 0.22 25 / 0.15)", border: "1px solid oklch(0.60 0.22 25 / 0.4)", color: "oklch(0.80 0.15 40)" }}>
-                          <AlertTriangle size={14} />
-                          No restaurants match all selected tags. Try removing some filters.
-                        </div>
-                      )}
-                    </div>
+                    )}
 
                     {/* Wheel */}
                     {restaurantsLoading ? (
@@ -428,27 +453,63 @@ export default function WheelApp() {
                           targetId={targetId}
                         />
 
-                        {/* Spin button */}
-                        <button
-                          onClick={handleSpin}
-                          disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
-                          className="px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-                          style={{
-                            fontFamily: "var(--font-display)",
-                            background: isSpinning || createSpin.isPending
-                              ? "oklch(0.16 0.025 260)"
-                              : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                            boxShadow: isSpinning || createSpin.isPending ? "none" : "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
-                            color: "white",
-                          }}
-                        >
-                          {isSpinning || createSpin.isPending ? "SPINNING..." : "SPIN"}
-                        </button>
+                        {(restaurants?.length ?? 0) === 0 ? (
+                          /* First run: no restaurants yet. The primary action is to
+                             ADD some — a real button, not passive canvas text. */
+                          <div className="flex flex-col items-center gap-2">
+                            <button
+                              onClick={() => setActiveTab("restaurants")}
+                              className="flex items-center gap-2 px-8 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 active:scale-95"
+                              style={{
+                                fontFamily: "var(--font-display)",
+                                background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+                                boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
+                                color: "white",
+                              }}
+                            >
+                              <Plus size={18} /> ADD RESTAURANTS
+                            </button>
+                            <p className="text-xs text-muted-foreground">Add a few places, then spin to decide.</p>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Spin button */}
+                            <button
+                              onClick={handleSpin}
+                              disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
+                              className="px-10 py-3 rounded-full font-bold text-base tracking-widest transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                              style={{
+                                fontFamily: "var(--font-display)",
+                                background: isSpinning || createSpin.isPending || wheelSegments.length === 0
+                                  ? "oklch(0.16 0.025 260)"
+                                  : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+                                boxShadow: isSpinning || createSpin.isPending || wheelSegments.length === 0 ? "none" : "0 0 30px oklch(0.72 0.22 30 / 0.5), 0 4px 20px rgba(0,0,0,0.4)",
+                                color: "white",
+                              }}
+                            >
+                              {isSpinning || createSpin.isPending ? "SPINNING..." : "SPIN"}
+                            </button>
 
-                        {/* Segment count */}
-                        <p className="text-xs text-muted-foreground">
-                          {filteredRestaurants.length} restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
-                        </p>
+                            {/* Status line — count when spinnable, a clear reason when not. */}
+                            {wheelSegments.length === 0 ? (
+                              <div
+                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs max-w-md text-center"
+                                style={{ background: "oklch(0.60 0.22 25 / 0.12)", border: "1px solid oklch(0.60 0.22 25 / 0.35)", color: "oklch(0.80 0.15 40)" }}
+                              >
+                                <AlertTriangle size={14} className="flex-shrink-0" />
+                                <span>
+                                  Nothing to spin right now — every restaurant is
+                                  {selectedTagIds.length > 0 ? " filtered out or " : " "}
+                                  excluded or vetoed. Adjust filters or re-enable one in History.
+                                </span>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                {filteredRestaurants.length} restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
+                              </p>
+                            )}
+                          </>
+                        )}
 
                         {/* Smart-exclusion: tell the story of what's being skipped and why */}
                         {restaurants && restaurants.some(r => r.isExcluded) && (

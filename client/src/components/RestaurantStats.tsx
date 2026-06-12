@@ -30,11 +30,14 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
 
   // Prepare data for bar chart (all restaurants)
   const barData = useMemo(() => {
-    return rankStats(stats).map((r) => ({
-      name: r.name.length > 20 ? r.name.substring(0, 17) + "..." : r.name,
-      picks: r.pickCount,
-      fullName: r.name,
-    }));
+    return rankStats(stats).map((r) => {
+      const name = r.name ?? "";
+      return {
+        name: name.length > 20 ? name.substring(0, 17) + "..." : name,
+        picks: r.pickCount,
+        fullName: name,
+      };
+    });
   }, [stats]);
 
   // Prepare data for pie chart (top 5)

@@ -32,6 +32,14 @@ describe("normalizeStatRow", () => {
     expect(row.pickCount).toBe(0);
     expect(row.lastPickedAt).toBeNull();
   });
+
+  it("always yields a string name, even from a malformed row", () => {
+    // A driver/tuple mishap can hand us a row with no name; the stats UI calls
+    // name.length, so this must never be null/undefined.
+    const row = normalizeStatRow({ id: 1, name: undefined as unknown as string, pickCount: 0, lastPickedAt: null });
+    expect(row.name).toBe("");
+    expect(typeof row.name).toBe("string");
+  });
 });
 
 describe("rankStats", () => {

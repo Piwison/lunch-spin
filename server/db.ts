@@ -333,8 +333,8 @@ export async function getRestaurantStats(wheelId: number) {
   if (!db) throw new Error("DB unavailable");
   
   // Get pick count and last picked date for each restaurant in the wheel
-  const stats = await db.execute(sql`
-    SELECT 
+  const result = await db.execute(sql`
+    SELECT
       r.id,
       r.name,
       COUNT(sh.id) as pickCount,
@@ -345,6 +345,11 @@ export async function getRestaurantStats(wheelId: number) {
     GROUP BY r.id, r.name
     ORDER BY pickCount DESC, lastPickedAt DESC
   `);
-  
-  return (stats as any[]).map(normalizeStatRow);
+
+  // mysql2's `execute` resolves to a `[rows, fields]` tuple; unwrap to the rows
+  // array. (Mapping over the tuple itself yielded malformed rows with no name,
+  // which crashed the stats UI.) Tolerate a driver that already returns rows.
+  const raw = result as any;
+  const rows: any[] = Array.isArray(raw?.[0]) ? raw[0] : Array.isArray(raw) ? raw : [];
+  return rows.map(normalizeStatRow);
 }

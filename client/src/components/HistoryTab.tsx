@@ -59,7 +59,7 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
   }
 
   return (
-    <div className="p-4 md:p-6 flex flex-col gap-6 max-w-4xl mx-auto w-full">
+    <div className="p-4 md:p-6 pb-28 flex flex-col gap-6 max-w-4xl mx-auto w-full">
       {/* Statistics Section */}
       {stats && stats.length > 0 && (
         <div>

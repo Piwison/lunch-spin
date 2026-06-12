@@ -20,8 +20,10 @@ export function normalizeStatRow(row: {
   lastPickedAt: unknown;
 }): RestaurantStat {
   return {
-    id: row.id,
-    name: row.name,
+    id: Number(row.id),
+    // Defensive: a stray/malformed row must never produce a non-string name,
+    // or the stats UI (which calls name.length) crashes the whole History tab.
+    name: typeof row.name === "string" ? row.name : String(row.name ?? ""),
     pickCount: Number(row.pickCount ?? 0) || 0,
     lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt as string) : null,
   };

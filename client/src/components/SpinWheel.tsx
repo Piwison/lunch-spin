@@ -319,13 +319,14 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
         style={{ width: "100%", height: "100%", maxWidth: 500, maxHeight: 500 }}
       />
 
-      {/* Pointer arrow */}
+      {/* Pointer — sits at the top of the wheel and points down into it.
+          Neutral white so an idle/empty wheel reads as "ready", not a warning. */}
       <div
-        className="absolute z-20 top-0 left-1/2 -translate-x-1/2 -translate-y-1"
-        style={{ filter: "drop-shadow(0 0 8px oklch(0.72 0.22 30))" }}
+        className="absolute z-20 left-1/2 -translate-x-1/2"
+        style={{ top: "-3px", filter: "drop-shadow(0 2px 5px rgba(0,0,0,0.55))" }}
       >
-        <svg width="24" height="32" viewBox="0 0 24 32" fill="none">
-          <path d="M12 2L22 22H2L12 2Z" fill="oklch(0.72 0.22 30)" stroke="white" strokeWidth="1.5" />
+        <svg width="26" height="30" viewBox="0 0 26 30" fill="none">
+          <path d="M13 28L3 5H23L13 28Z" fill="#ffffff" stroke="oklch(0.20 0.02 260)" strokeWidth="1.5" strokeLinejoin="round" />
         </svg>
       </div>
 
