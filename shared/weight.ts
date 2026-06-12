@@ -32,6 +32,45 @@ export function computeWeights(items: WeightInput[], opts: { now?: Date } = {}):
   });
 }
 
+// Cuisine-rotation multipliers. A cuisine picked very recently is damped toward
+// MIN; one not picked in a while (or never) is boosted toward MAX. A cuisine
+// picked `NEUTRAL_DAYS` ago is left unchanged (factor 1).
+export const CUISINE_FACTOR_MIN = 0.25;
+export const CUISINE_FACTOR_MAX = 3;
+export const CUISINE_NEUTRAL_DAYS = 3;
+
+export interface CuisineItem {
+  restaurantId: number;
+  cuisineId: number | null; // null = no cuisine tag
+}
+
+function cuisineFactor(cuisineId: number | null, lastPicked: Map<number, Date>, now: Date): number {
+  if (cuisineId == null) return 1;
+  const last = lastPicked.get(cuisineId);
+  if (!last) return CUISINE_FACTOR_MAX; // never picked → strongly favour
+  const days = (now.getTime() - last.getTime()) / 86400000;
+  return Math.max(CUISINE_FACTOR_MIN, Math.min(CUISINE_FACTOR_MAX, days / CUISINE_NEUTRAL_DAYS));
+}
+
+/**
+ * Scale base weights to rotate cuisines: restaurants whose cuisine was just
+ * picked are damped, neglected cuisines are boosted. Composes with any base
+ * weighting (uniform, fairness, votes).
+ */
+export function applyCuisineRotation(
+  base: Weighted[],
+  items: CuisineItem[],
+  cuisineLastPicked: Map<number, Date>,
+  opts: { now?: Date } = {},
+): Weighted[] {
+  const now = opts.now ?? new Date();
+  const cuisineOf = new Map(items.map((i) => [i.restaurantId, i.cuisineId]));
+  return base.map((w) => ({
+    restaurantId: w.restaurantId,
+    weight: w.weight * cuisineFactor(cuisineOf.get(w.restaurantId) ?? null, cuisineLastPicked, now),
+  }));
+}
+
 /**
  * Weighted random pick. `rng` is injectable so the choice is deterministic
  * under test. Falls back to a uniform pick if all weights are non-positive.

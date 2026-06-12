@@ -245,7 +245,7 @@ _Goal: a shared wheel is a shared moment, not a shared table._
 > `server/realtime.ts` interface. The plumbing is runtime-verified at the module
 > level; full multi-browser push couldn't be exercised in this environment.
 
-### Phase 3 — Make It Smart (in progress)
+### Phase 3 — Make It Smart ✅
 _Goal: better-than-random group decisions — the moat._
 - [x] Weighted wheels / fairness mode — a per-wheel `fairnessMode` toggle
       (migration `0004_wheel_fairness_mode.sql`) weights the server-authoritative
@@ -264,10 +264,19 @@ _Goal: better-than-random group decisions — the moat._
       `spins.create` (vetoes filtered, votes folded into the weights via
       `applyVetoes`/`applyVoteWeights` in `shared/session.ts`, tested). Votes
       clear after each spin; "Clear round" resets everything.
-- [ ] Dietary constraints (per person/session, tag-based) — would extend the
-      session model with per-member excluded tags.
-- [ ] "Rotate cuisines" fairness variant and group-fairness stats (per-person
-      pick balance) — build on the same weighting + stats primitives.
+- [x] Dietary constraints (per person, per session) — each member can "avoid"
+      tags for the round (e.g. someone's vegetarian today); the group respects
+      the union and restaurants carrying an avoided tag drop from the wheel.
+      `excludedDietaryTagIds`/`applyDietary` (`shared/session.ts`, tested),
+      enforced server-side in `spins.create`, live via `session.dietary` +
+      `onSession`, "Avoid today" chips in the round panel.
+- [x] "Rotate cuisines" fairness variant — per-wheel `rotateCuisines` toggle
+      (migration `0005_wheel_rotate_cuisines.sql`) that damps a just-picked
+      cuisine and boosts neglected ones, composing with fairness + votes
+      (`applyCuisineRotation` in `shared/weight.ts`, tested).
+- [x] Group-fairness stats — `picksByPerson` (`shared/stats.ts`, tested) drives
+      a "Who's picking" bar breakdown on shared wheels so one person isn't
+      always deciding.
 
 ### Phase 4 — Grow (ongoing)
 - [ ] PWA + mobile share-target; "add this place to our wheel" from a link.

@@ -1,8 +1,9 @@
 import { trpc } from "@/lib/trpc";
-import { RefreshCw, Clock } from "lucide-react";
+import { RefreshCw, Clock, Users } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
+import { picksByPerson } from "@shared/stats";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -71,6 +72,36 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
           <RestaurantStats stats={stats} isLoading={statsLoading} />
         </div>
       )}
+
+      {/* Group fairness — who's been driving the spins (shared wheels) */}
+      {wheel?.isShared && (() => {
+        const people = picksByPerson(history ?? []);
+        if (people.length < 2) return null;
+        const max = people[0]!.count;
+        return (
+          <div>
+            <h2 className="text-lg font-bold tracking-tight mb-1" style={{ fontFamily: "var(--font-display)" }}>
+              WHO'S PICKING
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">Spins per person — keep it balanced.</p>
+            <div className="flex flex-col gap-2">
+              {people.map((p) => (
+                <div key={p.userId} className="flex items-center gap-3">
+                  <Users size={14} className="text-muted-foreground flex-shrink-0" />
+                  <span className="text-sm w-28 truncate">{p.name ?? "Unknown"}</span>
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "oklch(0.16 0.025 260)" }}>
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${(p.count / max) * 100}%`, background: "linear-gradient(90deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))" }}
+                    />
+                  </div>
+                  <span className="text-sm text-muted-foreground w-10 text-right">{p.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* History Section */}
       <div>

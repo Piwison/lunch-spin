@@ -36,6 +36,13 @@
       "when": 1781198556078,
       "tag": "0004_wheel_fairness_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1781241121899,
+      "tag": "0005_wheel_rotate_cuisines",
+      "breakpoints": true
     }
   ]
 }

@@ -84,6 +84,7 @@ sessionEmitter.setMaxListeners(0);
 interface SessionMaps {
   vetoes: Map<number, Set<number>>; // restaurantId -> userIds
   votes: Map<number, Set<number>>;
+  dietary: Map<number, Set<number>>; // userId -> avoided tagIds
 }
 
 // wheelId -> ephemeral round state. Cleared on process restart (it's a "right
@@ -93,7 +94,7 @@ const sessions = new Map<number, SessionMaps>();
 function sessionFor(wheelId: number): SessionMaps {
   let s = sessions.get(wheelId);
   if (!s) {
-    s = { vetoes: new Map(), votes: new Map() };
+    s = { vetoes: new Map(), votes: new Map(), dietary: new Map() };
     sessions.set(wheelId, s);
   }
   return s;
@@ -117,8 +118,12 @@ function marksOf(map: Map<number, Set<number>>) {
 
 export function getSession(wheelId: number): SessionState {
   const s = sessions.get(wheelId);
-  if (!s) return { vetoes: [], votes: [] };
-  return { vetoes: marksOf(s.vetoes), votes: marksOf(s.votes) };
+  if (!s) return { vetoes: [], votes: [], dietary: [] };
+  return {
+    vetoes: marksOf(s.vetoes),
+    votes: marksOf(s.votes),
+    dietary: Array.from(s.dietary, ([userId, tagIds]) => ({ userId, tagIds: Array.from(tagIds) })),
+  };
 }
 
 export function toggleVeto(wheelId: number, restaurantId: number, userId: number): void {
@@ -131,6 +136,21 @@ export function toggleVote(wheelId: number, restaurantId: number, userId: number
   sessionEmitter.emit(String(wheelId));
 }
 
+// Toggle a user's "avoid this tag today" dietary constraint.
+export function toggleDietary(wheelId: number, tagId: number, userId: number): void {
+  const dietary = sessionFor(wheelId).dietary;
+  const set = dietary.get(userId);
+  if (set?.has(tagId)) {
+    set.delete(tagId);
+    if (set.size === 0) dietary.delete(userId);
+  } else if (set) {
+    set.add(tagId);
+  } else {
+    dietary.set(userId, new Set([tagId]));
+  }
+  sessionEmitter.emit(String(wheelId));
+}
+
 /** Clear the votes only (e.g. a fresh round after a spin); vetoes persist. */
 export function clearVotes(wheelId: number): void {
   const s = sessions.get(wheelId);
@@ -139,12 +159,13 @@ export function clearVotes(wheelId: number): void {
   sessionEmitter.emit(String(wheelId));
 }
 
-/** Reset the whole round — both vetoes and votes. */
+/** Reset the whole round — vetoes, votes, and dietary constraints. */
 export function clearSession(wheelId: number): void {
   const s = sessions.get(wheelId);
   if (!s) return;
   s.vetoes.clear();
   s.votes.clear();
+  s.dietary.clear();
   sessions.delete(wheelId);
   sessionEmitter.emit(String(wheelId));
 }

@@ -36,6 +36,8 @@ export const wheels = mysqlTable("wheels", {
   exclusionDays: int("exclusionDays").default(3).notNull(),
   // Fairness mode: weight the spin toward neglected restaurants.
   fairnessMode: boolean("fairnessMode").default(false).notNull(),
+  // Rotate cuisines: damp recently-picked cuisines, boost neglected ones.
+  rotateCuisines: boolean("rotateCuisines").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

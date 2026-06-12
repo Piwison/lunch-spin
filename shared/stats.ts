@@ -85,3 +85,23 @@ export function overdueRestaurants(
     return b.daysSince - a.daysSince; // longest-overdue first
   });
 }
+
+export interface PersonPicks {
+  userId: number;
+  name: string | null;
+  count: number;
+}
+
+/**
+ * Group fairness: how many spins each member has driven. Most-active first.
+ * A lopsided list is the signal that one person is always deciding.
+ */
+export function picksByPerson(history: { spunBy: number; spunByName: string | null }[]): PersonPicks[] {
+  const byUser = new Map<number, PersonPicks>();
+  for (const h of history) {
+    const cur = byUser.get(h.spunBy);
+    if (cur) cur.count++;
+    else byUser.set(h.spunBy, { userId: h.spunBy, name: h.spunByName, count: 1 });
+  }
+  return Array.from(byUser.values()).sort((a, b) => b.count - a.count);
+}

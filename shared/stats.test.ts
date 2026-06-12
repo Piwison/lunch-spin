@@ -4,6 +4,7 @@ import {
   daysSinceLastPick,
   normalizeStatRow,
   overdueRestaurants,
+  picksByPerson,
   rankStats,
   type RestaurantStat,
   topRestaurants,
@@ -96,5 +97,24 @@ describe("overdueRestaurants", () => {
     const entries = overdueRestaurants(stats, { now, thresholdDays: 14 });
     expect(entries[0]).toEqual({ stat: stats[3], daysSince: null });
     expect(entries[1]!.daysSince).toBe(41);
+  });
+});
+
+describe("picksByPerson", () => {
+  it("tallies spins per member, most-active first", () => {
+    const history = [
+      { spunBy: 1, spunByName: "Alex" },
+      { spunBy: 2, spunByName: "Sam" },
+      { spunBy: 1, spunByName: "Alex" },
+      { spunBy: 1, spunByName: "Alex" },
+    ];
+    expect(picksByPerson(history)).toEqual([
+      { userId: 1, name: "Alex", count: 3 },
+      { userId: 2, name: "Sam", count: 1 },
+    ]);
+  });
+
+  it("returns an empty list for no history", () => {
+    expect(picksByPerson([])).toEqual([]);
   });
 });

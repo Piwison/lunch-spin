@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { computeWeights, pickWeighted, WEIGHT_CAP_DAYS, type Weighted } from "./weight";
+import {
+  applyCuisineRotation,
+  computeWeights,
+  CUISINE_FACTOR_MAX,
+  CUISINE_FACTOR_MIN,
+  pickWeighted,
+  WEIGHT_CAP_DAYS,
+  type Weighted,
+} from "./weight";
 
 const now = new Date("2026-06-11T12:00:00Z");
 const daysAgo = (d: number) => new Date(now.getTime() - d * 86400000);
@@ -59,5 +67,26 @@ describe("pickWeighted", () => {
   it("falls back to uniform when all weights are zero", () => {
     const z: Weighted[] = [{ restaurantId: 1, weight: 0 }, { restaurantId: 2, weight: 0 }];
     expect([1, 2]).toContain(pickWeighted(z, () => 0.7));
+  });
+});
+
+describe("applyCuisineRotation", () => {
+  const base: Weighted[] = [
+    { restaurantId: 1, weight: 2 }, // cuisine A, picked today → damped
+    { restaurantId: 2, weight: 2 }, // cuisine B, never picked → boosted
+    { restaurantId: 3, weight: 2 }, // no cuisine → neutral
+  ];
+  const items = [
+    { restaurantId: 1, cuisineId: 100 },
+    { restaurantId: 2, cuisineId: 200 },
+    { restaurantId: 3, cuisineId: null },
+  ];
+  const lastPicked = new Map([[100, now]]); // cuisine 100 picked "now"
+
+  it("damps a just-picked cuisine and boosts a neglected one", () => {
+    const out = applyCuisineRotation(base, items, lastPicked, { now });
+    expect(out[0]!.weight).toBeCloseTo(2 * CUISINE_FACTOR_MIN); // picked today
+    expect(out[1]!.weight).toBeCloseTo(2 * CUISINE_FACTOR_MAX); // never picked
+    expect(out[2]!.weight).toBe(2); // no cuisine → unchanged
   });
 });

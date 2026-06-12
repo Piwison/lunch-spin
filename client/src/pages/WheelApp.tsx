@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
-import { EMPTY_SESSION, vetoedIds, type SessionState } from "@shared/session";
+import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -96,6 +96,7 @@ export default function WheelApp() {
 
   const vetoMutation = trpc.session.veto.useMutation();
   const voteMutation = trpc.session.vote.useMutation();
+  const dietaryMutation = trpc.session.dietary.useMutation();
   const clearRound = trpc.session.clear.useMutation();
 
   useEffect(() => {
@@ -112,10 +113,12 @@ export default function WheelApp() {
     [restaurants, selectedTagIds]
   );
 
-  // The wheel itself drops vetoed restaurants on top of that.
+  // The wheel itself drops vetoed restaurants and any with an avoided (dietary)
+  // tag, on top of that.
   const filteredRestaurants = useMemo(() => {
     const vetoed = new Set(vetoedIds(session));
-    return roundCandidates.filter((r) => !vetoed.has(r.id));
+    const notVetoed = roundCandidates.filter((r) => !vetoed.has(r.id));
+    return applyDietary(notVetoed, excludedDietaryTagIds(session));
   }, [roundCandidates, session]);
 
   const wheelSegments: WheelSegment[] = useMemo(() =>
@@ -281,14 +284,16 @@ export default function WheelApp() {
                       />
                     )}
 
-                    {/* Veto / vote for this round (shared wheels) */}
+                    {/* Veto / vote / dietary for this round (shared wheels) */}
                     {isShared && (
                       <RoundPanel
                         restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
+                        tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color }))}
                         session={session}
                         currentUserId={user.id}
                         onVote={(id) => selectedWheelId && voteMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
                         onVeto={(id) => selectedWheelId && vetoMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
+                        onDietary={(tagId) => selectedWheelId && dietaryMutation.mutate({ wheelId: selectedWheelId, tagId })}
                         onClear={() => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId })}
                       />
                     )}

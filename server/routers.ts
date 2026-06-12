@@ -7,8 +7,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { parseRestaurantList } from "@shared/import";
 import { pickWinner } from "@shared/pick";
-import { computeWeights, pickWeighted, type Weighted } from "@shared/weight";
-import { applyVoteWeights, vetoedIds, voteCounts } from "@shared/session";
+import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
+import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import {
   clearSession,
   clearVotes,
@@ -20,6 +20,7 @@ import {
   presenceIterator,
   sessionIterator,
   spinIterator,
+  toggleDietary,
   toggleVeto,
   toggleVote,
 } from "./realtime";
@@ -87,10 +88,11 @@ export const appRouter = router({
         isPublic: z.boolean(),
         exclusionDays: z.number().int().min(0).max(30).default(3),
         fairnessMode: z.boolean().default(false),
+        rotateCuisines: z.boolean().default(false),
       }))
       .mutation(async ({ ctx, input }) => {
         const inviteToken = input.isShared ? nanoid(16) : undefined;
-        const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays, input.fairnessMode);
+        const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays, input.fairnessMode, input.rotateCuisines);
         return { id, inviteToken };
       }),
 
@@ -101,12 +103,13 @@ export const appRouter = router({
         isPublic: z.boolean().optional(),
         exclusionDays: z.number().int().min(0).max(30).optional(),
         fairnessMode: z.boolean().optional(),
+        rotateCuisines: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.id);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode });
+        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode, rotateCuisines: input.rotateCuisines });
         return { success: true };
       }),
 
@@ -256,19 +259,27 @@ export const appRouter = router({
         // are out, votes bias the weighting.
         const session = getSession(input.wheelId);
         const vetoed = new Set(vetoedIds(session));
+        // Dietary constraints: any restaurant carrying an avoided tag is out.
+        const avoidedTags = new Set(excludedDietaryTagIds(session));
+        const dietaryBlocked = new Set(
+          avoidedTags.size === 0
+            ? []
+            : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
+        );
         const eligible = input.candidateIds.filter(
-          (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id),
+          (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
         );
         if (eligible.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
         }
 
         // Base weights: fairness mode favours neglected spots, else uniform.
-        // Votes then bias the spin on top. A plain wheel stays a uniform pick.
+        // Cuisine rotation and votes then bias the spin on top. A plain wheel
+        // with no signals stays a uniform pick.
         const votes = voteCounts(session);
         const hasVotes = votes.size > 0;
         let restaurantId: number;
-        if (wheel.fairnessMode || hasVotes) {
+        if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes) {
           let base: Weighted[];
           if (wheel.fairnessMode) {
             const stats = await getRestaurantStats(input.wheelId);
@@ -276,6 +287,24 @@ export const appRouter = router({
             base = computeWeights(eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })));
           } else {
             base = eligible.map((id) => ({ restaurantId: id, weight: 1 }));
+          }
+          if (wheel.rotateCuisines) {
+            // Each restaurant's cuisine, and when that cuisine was last picked.
+            const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t) => t.category === "cuisine")?.id ?? null]));
+            const history = await getSpinHistory(input.wheelId);
+            const cuisineLastPicked = new Map<number, Date>();
+            for (const h of history) {
+              const c = cuisineOf.get(h.restaurantId);
+              if (c == null) continue;
+              const at = new Date(h.spunAt);
+              const cur = cuisineLastPicked.get(c);
+              if (!cur || at > cur) cuisineLastPicked.set(c, at);
+            }
+            base = applyCuisineRotation(
+              base,
+              eligible.map((id) => ({ restaurantId: id, cuisineId: cuisineOf.get(id) ?? null })),
+              cuisineLastPicked,
+            );
           }
           restaurantId = pickWeighted(applyVoteWeights(base, votes));
         } else {
@@ -387,6 +416,15 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         toggleVote(input.wheelId, input.restaurantId, ctx.user.id);
+        return { success: true };
+      }),
+
+    dietary: protectedProcedure
+      .input(z.object({ wheelId: z.number(), tagId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        toggleDietary(input.wheelId, input.tagId, ctx.user.id);
         return { success: true };
       }),
 
