@@ -1,8 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useLocation } from "wouter";
-import { Users, Clock, Tags, Sparkles } from "lucide-react";
+import { Users, Clock, Tags, Sparkles, ArrowRight } from "lucide-react";
 
 const FEATURES = [
   { icon: Users, label: "Team Wheels", desc: "Decide together, live" },
@@ -15,6 +15,17 @@ export default function Home() {
   const { user, loading } = useAuth();
   const [, navigate] = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const orbRef = useRef<HTMLDivElement>(null);
+
+  // Pointer parallax: the hero wheel drifts toward the cursor for a sense of
+  // depth. We write transform directly (no re-render) and keep it subtle.
+  const handlePointer = (e: ReactMouseEvent) => {
+    const el = orbRef.current;
+    if (!el) return;
+    const x = e.clientX / window.innerWidth - 0.5;
+    const y = e.clientY / window.innerHeight - 0.5;
+    el.style.transform = `translate(${x * 22}px, ${y * 22}px)`;
+  };
 
   // Redirect authenticated users to app
   useEffect(() => {
@@ -110,7 +121,10 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="relative min-h-screen overflow-hidden flex items-center justify-center">
+    <div
+      className="relative min-h-screen overflow-hidden flex items-center justify-center"
+      onMouseMove={handlePointer}
+    >
       {/* Shader background */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ zIndex: 0 }} />
 
@@ -127,38 +141,73 @@ export default function Home() {
       />
 
       {/* Content */}
-      <div className="relative z-10 text-center px-6 max-w-2xl mx-auto">
-        {/* Wheel icon */}
-        <div className="mb-8 flex justify-center">
-          <div
-            className="w-24 h-24 rounded-full animate-float"
-            style={{
-              background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ec4899, #ef4444)",
-              boxShadow: "0 0 40px oklch(0.72 0.22 30 / 0.6), 0 0 80px oklch(0.72 0.22 30 / 0.3)",
-            }}
-          />
+      <div className="relative z-10 text-center px-6 max-w-2xl mx-auto py-16">
+        {/* Living wheel — a slow-spinning preview of the actual product, with a
+            fixed pointer on top and a rotating rim sheen. Drifts on pointer move. */}
+        <div className="mb-10 flex justify-center reveal" style={{ animationDelay: "60ms" }}>
+          <div ref={orbRef} style={{ transition: "transform 0.3s ease-out" }}>
+            <div className="relative animate-float">
+              {/* Pointer */}
+              <div
+                className="absolute left-1/2 -translate-x-1/2 -top-3 z-30"
+                style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}
+              >
+                <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
+                  <path d="M11 24L2 5H20L11 24Z" fill="#fff" stroke="oklch(0.20 0.02 260)" strokeWidth="1.4" strokeLinejoin="round" />
+                </svg>
+              </div>
+              {/* Rotating rim sheen */}
+              <div
+                className="absolute rounded-full animate-ring-rotate"
+                style={{
+                  inset: "-7px",
+                  background: "conic-gradient(from 0deg, transparent, oklch(0.95 0.02 60 / 0.7), transparent 40%)",
+                  filter: "blur(2px)",
+                }}
+              />
+              {/* Spinning wheel face */}
+              <div
+                className="w-32 h-32 rounded-full animate-orb-spin"
+                style={{
+                  background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ec4899, #ef4444)",
+                  boxShadow: "0 0 44px oklch(0.72 0.22 30 / 0.55), 0 0 90px oklch(0.65 0.25 280 / 0.3), inset 0 0 0 2px rgba(255,255,255,0.08)",
+                }}
+              />
+              {/* Center hub */}
+              <div
+                className="absolute inset-0 m-auto w-7 h-7 rounded-full"
+                style={{
+                  background: "radial-gradient(circle at 35% 30%, #2a2a40, #0d0d1a)",
+                  boxShadow: "0 0 0 2px rgba(255,255,255,0.12), 0 2px 8px rgba(0,0,0,0.6)",
+                }}
+              />
+            </div>
+          </div>
         </div>
 
         <h1
-          className="text-6xl md:text-8xl font-bold mb-4 leading-none tracking-tight gradient-text"
-          style={{ fontFamily: "var(--font-display)" }}
+          className="text-6xl md:text-8xl font-bold mb-4 leading-none tracking-tight gradient-text reveal"
+          style={{ fontFamily: "var(--font-display)", animationDelay: "160ms" }}
         >
           SPIN
           <br />
           YOUR LUNCH
         </h1>
 
-        <p className="text-muted-foreground text-lg md:text-xl mb-10 font-light leading-relaxed">
+        <p
+          className="text-muted-foreground text-lg md:text-xl mb-10 font-light leading-relaxed reveal"
+          style={{ animationDelay: "300ms" }}
+        >
           Stop debating. Start spinning. A cinematic wheel for teams who can't decide where to eat.
         </p>
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+        <div className="flex flex-col sm:flex-row gap-4 justify-center reveal" style={{ animationDelay: "420ms" }}>
           {loading ? (
             <div className="h-12 w-40 rounded-full bg-white/5 animate-pulse" />
           ) : (
             <a
               href={getLoginUrl()}
-              className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-full text-sm font-semibold transition-all duration-200 active:scale-95"
+              className="group inline-flex items-center justify-center gap-2 px-8 py-3 rounded-full text-sm font-semibold transition-all duration-300 active:scale-95 hover:-translate-y-0.5"
               style={{
                 background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
                 // Glow blends both ends of the button gradient so it reads as the
@@ -169,13 +218,14 @@ export default function Home() {
                 letterSpacing: "0.05em",
               }}
             >
-              GET STARTED
+              <span className="shine">GET STARTED</span>
+              <ArrowRight size={16} className="transition-transform duration-300 group-hover:translate-x-1" />
             </a>
           )}
         </div>
 
         {/* Feature cards — framed with an icon + one-liner so they sell, not just label. */}
-        <div className="mt-16">
+        <div className="mt-16 reveal" style={{ animationDelay: "560ms" }}>
           <p
             className="text-xs tracking-widest mb-4"
             style={{ color: "oklch(0.55 0.03 260)", fontFamily: "var(--font-display)", letterSpacing: "0.18em" }}
@@ -183,16 +233,23 @@ export default function Home() {
             BUILT FOR THE 11:45 SCRAMBLE
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {FEATURES.map(({ icon: Icon, label, desc }) => (
+            {FEATURES.map(({ icon: Icon, label, desc }, i) => (
               <div
                 key={label}
-                className="flex flex-col items-center text-center gap-1.5 px-3 py-4 rounded-2xl"
+                className="group hover-lift flex flex-col items-center text-center gap-1.5 px-3 py-4 rounded-2xl reveal"
                 style={{
                   background: "oklch(0.14 0.025 260 / 0.7)",
                   border: "1px solid oklch(0.22 0.03 260)",
+                  animationDelay: `${640 + i * 90}ms`,
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "oklch(0.55 0.18 40 / 0.6)"; e.currentTarget.style.boxShadow = "0 10px 30px oklch(0.72 0.22 30 / 0.18)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "oklch(0.22 0.03 260)"; e.currentTarget.style.boxShadow = "none"; }}
               >
-                <Icon size={18} style={{ color: "oklch(0.75 0.18 40)" }} />
+                <Icon
+                  size={18}
+                  className="transition-transform duration-300 group-hover:scale-125 group-hover:-translate-y-0.5"
+                  style={{ color: "oklch(0.78 0.2 40)" }}
+                />
                 <span
                   className="text-xs font-semibold"
                   style={{ color: "oklch(0.88 0.02 260)", fontFamily: "var(--font-display)", letterSpacing: "0.04em" }}
