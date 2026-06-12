@@ -34,6 +34,18 @@ export default function WheelApp() {
   const [targetId, setTargetId] = useState<number | null>(null);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [session, setSession] = useState<SessionState>(EMPTY_SESSION);
+  const [sharedText, setSharedText] = useState<string | null>(null);
+
+  // PWA share-target: someone shared a place/link into the app (/app?text=…).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const shared = (p.get("text") || p.get("title") || p.get("url") || "").trim();
+    if (shared) {
+      setSharedText(shared);
+      // Drop the query so a refresh doesn't re-trigger the prompt.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) navigate("/");
@@ -98,6 +110,15 @@ export default function WheelApp() {
   const voteMutation = trpc.session.vote.useMutation();
   const dietaryMutation = trpc.session.dietary.useMutation();
   const clearRound = trpc.session.clear.useMutation();
+
+  const addShared = trpc.restaurants.addBulk.useMutation({
+    onSuccess: (res) => {
+      setSharedText(null);
+      refetchRestaurants();
+      toast.success(`Added ${res.added} restaurant${res.added !== 1 ? "s" : ""} to the wheel`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   useEffect(() => {
     if (!isShared) {
@@ -260,6 +281,34 @@ export default function WheelApp() {
               </button>
             ))}
           </div>
+
+          {/* Shared-in content (PWA share target) */}
+          {sharedText && (
+            <div
+              className="px-4 py-2.5 flex items-center gap-3 border-b"
+              style={{ background: "oklch(0.65 0.25 280 / 0.12)", borderColor: "oklch(0.65 0.25 280 / 0.3)" }}
+            >
+              <MapPin size={15} className="flex-shrink-0" style={{ color: "oklch(0.75 0.2 285)" }} />
+              <span className="text-sm flex-1 min-w-0 truncate">
+                Add <strong>{sharedText}</strong>{selectedWheelId ? "" : " — pick a wheel first"}
+              </span>
+              <button
+                onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
+                disabled={!selectedWheelId || addShared.isPending}
+                className="px-3 py-1 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 flex-shrink-0"
+                style={{ background: "oklch(0.65 0.25 280)", color: "white", fontFamily: "var(--font-display)" }}
+              >
+                {addShared.isPending ? "Adding…" : "Add"}
+              </button>
+              <button
+                onClick={() => setSharedText(null)}
+                className="p-1 rounded text-muted-foreground hover:text-foreground flex-shrink-0"
+                aria-label="Dismiss"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto">

@@ -278,11 +278,28 @@ _Goal: better-than-random group decisions — the moat._
       a "Who's picking" bar breakdown on shared wheels so one person isn't
       always deciding.
 
-### Phase 4 — Grow (ongoing)
-- [ ] PWA + mobile share-target; "add this place to our wheel" from a link.
-- [ ] Places/maps autocomplete when adding restaurants (name, geo, hours).
-- [ ] Notifications ("lunch poll opens at 11:30").
-- [ ] Multi-provider auth; export/import wheels.
+### Phase 4 — Grow (in progress)
+- [x] Export / import wheels — portable, versioned JSON bundle (no ids) via one
+      shared zod schema (`shared/transfer.ts`, tested); `wheels.export`/`import`
+      procedures and Export/Import UI in the wheel sidebar.
+- [x] PWA + mobile share-target — `manifest.webmanifest` (installable,
+      standalone, maskable icon), a conservative offline-shell service worker
+      (registered in prod, never caches `/api`/SSE), and a `share_target` that
+      lands shared text/links on `/app` where a banner offers "Add to this
+      wheel" (via `restaurants.addBulk`).
+- [ ] _Deferred (needs external credentials/infra not available in this
+      environment):_
+  - Places/maps autocomplete — requires a Google Places API key + billing.
+  - Scheduled notifications ("lunch poll opens at 11:30") — requires Web Push
+    (VAPID keys) or email plus a scheduler/cron.
+  - Multi-provider auth — requires registering OAuth apps (Google/GitHub/…)
+    and provider secrets; today auth is the Manus OAuth SDK.
+  > Each is a thin, well-scoped addition once the credential/infrastructure is
+  > provisioned; none are blocked by the codebase.
+
+> **PWA icon:** ships as a single scalable SVG (`/icon.svg`). Some app stores /
+> older Android prefer rasterised 192px & 512px PNGs — a one-time export when
+> real branding art exists.
 
 ---
 
