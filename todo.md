@@ -57,3 +57,11 @@
 - [x] Statistics component with charts (pick frequency bar chart, top 5 restaurants)
 - [x] Integrate stats panel into History tab
 - [x] Vitest: statistics query logic (tested via existing test suite)
+
+## Bug Fixes & UX Improvements (Round 3)
+- [ ] Fix login flow (cannot login)
+- [ ] Fix wheel creation silent failure (click create → no response, no error shown)
+- [x] Add animated error/success toast chips to all mutations
+- [ ] Add loading states to all buttons during async operations
+- [x] Add inline error display in forms
+- [ ] Add interactive hover/active states to all interactive elements
