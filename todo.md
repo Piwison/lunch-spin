@@ -65,3 +65,7 @@
 - [x] Add loading states to all buttons during async operations
 - [x] Add inline error display in forms
 - [x] Add interactive hover/active states to all interactive elements
+
+## Bug Fixes (Round 4)
+- [x] Fix "cannot create wheel" — applied missing DB migrations (exclusionDays, fairnessMode, rotateCuisines columns)
+- [x] Fix "cannot log out" — SIGN OUT button was only navigating to "/" without calling logout(); now calls logout() then navigates

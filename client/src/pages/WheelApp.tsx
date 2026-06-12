@@ -26,7 +26,7 @@ const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
 ];
 
 export default function WheelApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [, navigate] = useLocation();
   const params = useParams<{ wheelId?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("wheel");
@@ -265,8 +265,8 @@ export default function WheelApp() {
             </span>
           )}
           <button
-            onClick={() => navigate("/")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground transition-all duration-200 hover:bg-white/5"
+            onClick={() => logout().then(() => navigate("/"))}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground transition-all duration-200 hover:bg-white/5 active:scale-95"
             style={{ fontFamily: "var(--font-display)", letterSpacing: "0.05em" }}
           >
             <LogOut size={12} />
