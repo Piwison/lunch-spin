@@ -1,0 +1,28 @@
+{
+  "name": "Lunch Wheel",
+  "short_name": "Lunch Wheel",
+  "description": "Spin to decide where the group eats — smart exclusions, fairness, and live shared decisions.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080b14",
+  "theme_color": "#080b14",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/app",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
