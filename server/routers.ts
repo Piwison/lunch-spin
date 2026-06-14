@@ -4,7 +4,9 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
+import { invokeLLM } from "./_core/llm";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { buildSuggestPrompt, parseSuggestion, SUGGEST_SCHEMA, type SuggestCandidate } from "@shared/aiSuggest";
 import { parseRestaurantList } from "@shared/import";
 import { serializeWheel, wheelExportSchema } from "@shared/transfer";
 import { pickWinner } from "@shared/pick";
@@ -469,6 +471,117 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         return getRestaurantStats(input.wheelId);
+      }),
+  }),
+
+  // ─── AI ───────────────────────────────────────────────────────────────────
+
+  ai: router({
+    // "Decide for me" — advisory only. The model suggests one of the live
+    // eligible restaurants (same eligibility rules as a real spin, so it never
+    // proposes an excluded/vetoed/dietary-blocked spot). The canonical record
+    // still flows through spins.create / spins.record — this does not pick on
+    // the server's behalf. Degrades to a random eligible pick if the LLM is
+    // unavailable or returns something unusable.
+    suggest: protectedProcedure
+      .input(
+        z.object({
+          wheelId: z.number(),
+          candidateIds: z.array(z.number()).min(1),
+          mood: z.string().max(200).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        const byId = new Map(rests.map((r) => [r.id, r]));
+        const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
+        const session = getSession(input.wheelId);
+        const vetoed = new Set(vetoedIds(session));
+        const avoidedTags = new Set(excludedDietaryTagIds(session));
+        const dietaryBlocked = new Set(
+          avoidedTags.size === 0
+            ? []
+            : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
+        );
+        const eligibleIds = input.candidateIds.filter(
+          (id) => byId.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
+        );
+        if (eligibleIds.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to suggest" });
+        }
+
+        // Days since each spot was last picked (for variety context).
+        const stats = await getRestaurantStats(input.wheelId);
+        const now = Date.now();
+        const daysSince = new Map<number, number | null>();
+        for (const s of stats) {
+          const last = s.lastPickedAt ? new Date(s.lastPickedAt as unknown as string).getTime() : NaN;
+          daysSince.set(s.id, Number.isNaN(last) ? null : Math.floor((now - last) / 86_400_000));
+        }
+
+        const candidates: SuggestCandidate[] = eligibleIds.map((id) => {
+          const r = byId.get(id)!;
+          return {
+            id,
+            name: r.name,
+            tags: r.tags.map((t) => t.name),
+            cuisine: r.tags.find((t) => t.category === "cuisine")?.name ?? null,
+            notes: r.notes ?? null,
+            daysSinceLastPick: daysSince.get(id) ?? null,
+          };
+        });
+
+        // Most-recent distinct picks, newest first, for "avoid repeating".
+        const history = await getSpinHistory(input.wheelId);
+        const sorted = [...history].sort(
+          (a, b) => new Date(b.spunAt).getTime() - new Date(a.spunAt).getTime(),
+        );
+        const recentPicks: string[] = [];
+        for (const h of sorted) {
+          if (h.restaurantName && !recentPicks.includes(h.restaurantName)) {
+            recentPicks.push(h.restaurantName);
+            if (recentPicks.length >= 5) break;
+          }
+        }
+
+        const messages = buildSuggestPrompt(candidates, {
+          recentPicks,
+          mood: input.mood,
+          timeOfDay: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+        });
+
+        let suggestion = null as ReturnType<typeof parseSuggestion>;
+        try {
+          const result = await invokeLLM({ messages, outputSchema: SUGGEST_SCHEMA, maxTokens: 200 });
+          const content = result.choices?.[0]?.message?.content;
+          const text = typeof content === "string"
+            ? content
+            : Array.isArray(content)
+              ? content.map((p) => (typeof p === "string" ? p : "text" in p ? p.text : "")).join("")
+              : "";
+          suggestion = parseSuggestion(text, eligibleIds);
+        } catch (err) {
+          console.warn("[ai.suggest] LLM call failed, falling back to random pick:", err);
+        }
+
+        if (suggestion) {
+          const r = byId.get(suggestion.restaurantId)!;
+          return { restaurantId: suggestion.restaurantId, name: r.name, reason: suggestion.reason, ai: true };
+        }
+
+        // Fallback: an honest random eligible pick so the button always works.
+        const fallbackId = pickWinner(eligibleIds);
+        return {
+          restaurantId: fallbackId,
+          name: byId.get(fallbackId)!.name,
+          reason: "The AI was unavailable, so here's a random pick.",
+          ai: false,
+        };
       }),
   }),
 });

@@ -10,7 +10,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Sparkles } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -45,6 +45,7 @@ export default function WheelApp() {
   const tabIndicatorRef = useRef<HTMLSpanElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
+  const [aiReason, setAiReason] = useState<string | null>(null);
 
   // PWA share-target
   useEffect(() => {
@@ -79,6 +80,8 @@ export default function WheelApp() {
   );
 
   const createSpin = trpc.spins.create.useMutation();
+  const aiSuggest = trpc.ai.suggest.useMutation();
+  const recordSpin = trpc.spins.record.useMutation();
   const isShared = !!wheelData?.isShared;
 
   // Live shared wheels SSE
@@ -170,6 +173,7 @@ export default function WheelApp() {
     setShowResult(false);
     setSpinResult(null);
     setSpinError(null);
+    setAiReason(null);
     try {
       const { restaurantId } = await createSpin.mutateAsync({
         wheelId: selectedWheelId,
@@ -179,6 +183,34 @@ export default function WheelApp() {
       setIsSpinning(true);
     } catch (e) {
       setSpinError(e instanceof Error ? e.message : "Couldn't start the spin. Try again.");
+    }
+  };
+
+  // "Decide for me" — the AI proposes one of the eligible restaurants; we record
+  // that exact pick (server-authoritative record) and reuse the spin animation
+  // to land the wheel on it, showing the AI's reason in the result overlay.
+  const aiPending = aiSuggest.isPending || recordSpin.isPending;
+  const handleAiSpin = async () => {
+    if (wheelSegments.length === 0) {
+      setSpinError("No restaurants available. Add some or adjust your filters.");
+      return;
+    }
+    if (!selectedWheelId || aiPending || createSpin.isPending || isSpinning) return;
+    setShowResult(false);
+    setSpinResult(null);
+    setSpinError(null);
+    setAiReason(null);
+    try {
+      const suggestion = await aiSuggest.mutateAsync({
+        wheelId: selectedWheelId,
+        candidateIds: wheelSegments.map((s) => s.id),
+      });
+      await recordSpin.mutateAsync({ wheelId: selectedWheelId, restaurantId: suggestion.restaurantId });
+      setAiReason(suggestion.reason);
+      setTargetId(suggestion.restaurantId);
+      setIsSpinning(true);
+    } catch (e) {
+      setSpinError(e instanceof Error ? e.message : "The AI couldn't pick right now. Try again.");
     }
   };
 
@@ -655,6 +687,22 @@ export default function WheelApp() {
                               </span>
                             </button>
 
+                            {/* "Decide for me" — AI picks one of the eligible spots */}
+                            <button
+                              onClick={handleAiSpin}
+                              disabled={isSpinning || aiPending || createSpin.isPending || wheelSegments.length === 0}
+                              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold tracking-[0.08em] transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed hover:-translate-y-0.5 hover:bg-white/8"
+                              style={{
+                                fontFamily: "var(--font-display)",
+                                background: "oklch(0.16 0.03 280 / 0.6)",
+                                border: "1px solid oklch(0.65 0.25 280 / 0.45)",
+                                color: "oklch(0.80 0.12 290)",
+                              }}
+                            >
+                              <Sparkles size={14} />
+                              {aiPending ? "THINKING…" : "CAN'T DECIDE? ASK AI"}
+                            </button>
+
                             {/* Status line */}
                             {wheelSegments.length === 0 ? (
                               <div
@@ -784,6 +832,19 @@ export default function WheelApp() {
               >
                 {spinResult.label}
               </h2>
+              {aiReason && (
+                <div
+                  className="flex items-start gap-2 mb-6 -mt-3 px-4 py-2.5 rounded-xl text-xs text-left max-w-xs mx-auto"
+                  style={{
+                    background: "oklch(0.65 0.25 280 / 0.10)",
+                    border: "1px solid oklch(0.65 0.25 280 / 0.30)",
+                    color: "oklch(0.82 0.10 290)",
+                  }}
+                >
+                  <Sparkles size={13} className="flex-shrink-0 mt-0.5" />
+                  <span>{aiReason}</span>
+                </div>
+              )}
               <div className="flex flex-col gap-2.5">
                 <button
                   onClick={() => openDirections(spinResult.label)}
