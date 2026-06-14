@@ -96,6 +96,18 @@ reclaimed after idle). Anything not committed is lost.
    rebase additive commits onto the new `main` (`git cherry-pick`) rather than
    forcing across histories. Treat GitHub `main` as downstream of Manus, not the
    other way around.
+7. **Manus deploy fixes land as Manus-only commits — push them back.** When Manus
+   redeploys, it may fix runtime bugs in *its* workspace and never push them (e.g.
+   the `serveStatic()` production path: it resolved to `server/_core/public` instead
+   of `dist/public`, so `manifest.webmanifest`/`sw.js` 404'd in prod). The fix sat
+   in a Manus-only commit while GitHub `main` stayed behind, re-opening the GitHub↔
+   Manus drift we'd just closed. → After any Manus deploy that includes code fixes,
+   `git fetch origin main` and confirm the deploy's commits actually reached GitHub;
+   if not, have Manus **push them as a normal fast-forward** (never an orphan/force
+   — see #6). Reconcile divergence with a real merge that keeps both sides; verify
+   `git merge-base --is-ancestor <old-head> origin/main` after. The round-trip is:
+   GitHub `main` → Manus pulls & deploys → Manus pushes any deploy fixes back → CI
+   re-greens. Both copies must end identical.
 
 ## Skills index (in `.claude/skills/`)
 
