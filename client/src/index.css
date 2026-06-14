@@ -113,6 +113,42 @@
 .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 .animate-spin-result { animation: spin-result 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
 
+/* ─── Motion primitives ─────────────────────────────────────────────────────────
+   These back the animation classes used across the app (reveal, fade-in,
+   orb-spin, ring-rotate, cta-pulse, tab-enter). Without them those classes are
+   no-ops. Staggering is done inline via animation-delay. */
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@keyframes ring-rotate { to { transform: rotate(1turn); } }
+@keyframes tab-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes cta-pulse {
+  0%, 100% { box-shadow: 0 0 22px oklch(0.72 0.22 30 / 0.4), 0 4px 20px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 40px oklch(0.72 0.22 30 / 0.6), 0 0 64px oklch(0.65 0.25 280 / 0.3), 0 4px 20px rgba(0,0,0,0.4); }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.reveal { opacity: 0; animation: reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.animate-orb-spin { animation: orb-spin 28s linear infinite; }
+.animate-ring-rotate { animation: ring-rotate 12s linear infinite; }
+.tab-enter { animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
+.cta-pulse { animation: cta-pulse 2.6s ease-in-out infinite; }
+.fade-in { animation: fade-in 0.25s ease-out; }
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate,
+  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in {
+    animation: none !important;
+  }
+  .reveal { opacity: 1 !important; transform: none !important; }
+}
+
 /* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
