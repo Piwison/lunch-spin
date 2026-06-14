@@ -12,13 +12,14 @@ const LEADING_ARTICLE = /^(?:the|a|an|some)\s+/i;
 
 /**
  * Split a freeform blob into candidate names. Handles newlines, commas,
- * semicolons, bullets, and " and " / "&" separators; strips leading command
+ * semicolons, bullets, and the " and " separator; strips leading command
  * verbs (and a following article), surrounding quotes, and trailing
  * punctuation; dedupes case-insensitively. A bare leading article is kept so
- * real names like "The Corner Spot" survive.
+ * real names like "The Corner Spot" survive, and "&" is preserved so names like
+ * "Ben & Jerry's" aren't torn in two.
  */
 export function parseAddList(text: string): string[] {
-  const rawTokens = text.split(/[\n,;]|\s+&\s+|\s+\band\b\s+/i);
+  const rawTokens = text.split(/[\n,;]|\s+\band\b\s+/i);
 
   const seen = new Set<string>();
   const names: string[] = [];

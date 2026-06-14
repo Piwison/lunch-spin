@@ -33,6 +33,13 @@ describe("parseAddList", () => {
     expect(parseAddList("Taco Stand, taco stand, TACO STAND")).toEqual(["Taco Stand"]);
   });
 
+  it("keeps '&' inside a name", () => {
+    expect(parseAddList("Ben & Jerry's, Mac & Cheese Co")).toEqual([
+      "Ben & Jerry's",
+      "Mac & Cheese Co",
+    ]);
+  });
+
   it("drops empties", () => {
     expect(parseAddList(",,\n  \n,")).toEqual([]);
   });

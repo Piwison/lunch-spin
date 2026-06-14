@@ -18,7 +18,7 @@ const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);
 const SPIN_DURATION = 5000; // ms
 const MIN_ROTATIONS = 6;
 
-export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart }: SpinWheelProps) {
+export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
@@ -279,7 +279,10 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
   useEffect(() => {
     if (!isSpinning || segments.length === 0) return;
 
-    const targetIdx = Math.floor(Math.random() * segments.length);
+    // Land on the server-chosen segment so the displayed winner matches the
+    // recorded/broadcast pick. Fall back to random only if no/unknown target.
+    const chosenIdx = targetId == null ? -1 : segments.findIndex((s) => s.id === targetId);
+    const targetIdx = chosenIdx >= 0 ? chosenIdx : Math.floor(Math.random() * segments.length);
     const sliceAngle = (Math.PI * 2) / segments.length;
     // Pointer is at top (−π/2). We want targetIdx segment to land there.
     const targetCenter = -Math.PI / 2 - (targetIdx * sliceAngle + sliceAngle / 2);
@@ -308,7 +311,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     };
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [isSpinning, segments, onSpinEnd]);
+  }, [isSpinning, segments, onSpinEnd, targetId]);
 
   const size = 400;
 

@@ -91,20 +91,26 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const confirmSmartAdd = async () => {
     if (!proposals) return;
     setAdding(true);
+    // Track what's still pending so a partial-failure retry never re-adds a spot
+    // that already went in (restaurants.add does not dedupe server-side).
+    const remaining = new Set(picked);
     let added = 0;
     try {
-      for (let i = 0; i < proposals.length; i++) {
-        if (!picked.has(i)) continue;
+      for (const i of Array.from(picked)) {
         const p = proposals[i];
         await smartAddOne.mutateAsync({ wheelId, name: p.name, notes: null, tagIds: p.cuisineTagId ? [p.cuisineTagId] : [] });
+        remaining.delete(i);
         added++;
       }
       invalidate();
       toast.success(`Added ${added} restaurant${added !== 1 ? "s" : ""}`);
       closeSmart();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't add all of them");
+      setPicked(remaining); // only the not-yet-added stay selected
       invalidate();
+      toast.error(added > 0
+        ? `Added ${added}, but couldn't add the rest — retry the remaining.`
+        : (e instanceof Error ? e.message : "Couldn't add them"));
     } finally {
       setAdding(false);
     }
