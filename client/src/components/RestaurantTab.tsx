@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
-import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, Sparkles, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +33,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const [importText, setImportText] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
+  const [showSmart, setShowSmart] = useState(false);
+  const [smartText, setSmartText] = useState("");
+  const [proposals, setProposals] = useState<{ name: string; cuisineTagId: number | null; cuisineTagName: string | null }[] | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [adding, setAdding] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
@@ -67,6 +72,44 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
     },
     onError: (e) => toast.error(e.message),
   });
+  const smartParse = trpc.smart.parseAdd.useMutation({ onError: (e) => toast.error(e.message) });
+  // A side-effect-free add used for the Smart-add batch (the main addRestaurant
+  // mutation closes the dialog + toasts per call, which we don't want in a loop).
+  const smartAddOne = trpc.restaurants.add.useMutation();
+
+  const closeSmart = () => { setShowSmart(false); setSmartText(""); setProposals(null); setPicked(new Set()); };
+
+  const runSmartParse = async () => {
+    if (!smartText.trim()) return;
+    const res = await smartParse.mutateAsync({ wheelId, text: smartText });
+    const existing = new Set((restaurants ?? []).map((r) => r.name.trim().toLowerCase()));
+    setProposals(res.proposals);
+    // Pre-select everything that isn't already on the wheel.
+    setPicked(new Set(res.proposals.map((p, i) => (existing.has(p.name.toLowerCase()) ? -1 : i)).filter((i) => i >= 0)));
+  };
+
+  const confirmSmartAdd = async () => {
+    if (!proposals) return;
+    setAdding(true);
+    let added = 0;
+    try {
+      for (let i = 0; i < proposals.length; i++) {
+        if (!picked.has(i)) continue;
+        const p = proposals[i];
+        await smartAddOne.mutateAsync({ wheelId, name: p.name, notes: null, tagIds: p.cuisineTagId ? [p.cuisineTagId] : [] });
+        added++;
+      }
+      invalidate();
+      toast.success(`Added ${added} restaurant${added !== 1 ? "s" : ""}`);
+      closeSmart();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add all of them");
+      invalidate();
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const createTag = trpc.tags.createCustom.useMutation({
     onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setShowTagCreate(false); setTagError(null); toast.success("Tag created!"); },
     onError: (e) => setTagError(e.message),
@@ -147,6 +190,19 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { closeSmart(); setShowSmart(true); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            style={{
+              background: "oklch(0.16 0.03 280 / 0.5)",
+              border: "1px solid oklch(0.65 0.25 280 / 0.4)",
+              color: "oklch(0.80 0.12 290)",
+              fontFamily: "var(--font-display)",
+              letterSpacing: "0.06em",
+            }}
+          >
+            <Sparkles size={13} /> SMART ADD
+          </button>
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
             className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
@@ -344,6 +400,93 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               ) : editId !== null ? "Save Changes" : "Add Restaurant"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Smart add dialog — parse a loose blob, confirm, then add */}
+      <Dialog open={showSmart} onOpenChange={(open) => { if (!open) closeSmart(); }}>
+        <DialogContent className="glass border-border/50 max-w-md">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>
+              <span className="inline-flex items-center gap-2"><Sparkles size={15} /> SMART ADD</span>
+            </DialogTitle>
+          </DialogHeader>
+          {proposals === null ? (
+            <div className="flex flex-col gap-3 pt-2">
+              <p className="text-xs text-muted-foreground">
+                Type or paste however you like — "Joe's Pizza, the new ramen spot and two taco places".
+                We'll tidy it into a list and tag cuisines we recognise. You confirm before anything is added.
+              </p>
+              <Textarea
+                placeholder={"add Joe's Pizza, the new ramen spot, Pho 99 and a taco place"}
+                value={smartText}
+                onChange={(e) => setSmartText(e.target.value)}
+                className="bg-secondary/50 border-border/50 resize-none text-sm"
+                rows={6}
+                autoFocus
+              />
+              <Button
+                onClick={runSmartParse}
+                disabled={!smartText.trim() || smartParse.isPending}
+                style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              >
+                {smartParse.isPending ? <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Parsing…</span> : "Parse list"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 pt-2">
+              {proposals.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Couldn't find any restaurant names in that. Try again.</p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Found {proposals.length}. Tap to include/exclude — {picked.size} selected.
+                  </p>
+                  <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1">
+                    {proposals.map((p, i) => {
+                      const dup = (restaurants ?? []).some((r) => r.name.trim().toLowerCase() === p.name.toLowerCase());
+                      const on = picked.has(i);
+                      return (
+                        <button
+                          key={i}
+                          disabled={dup}
+                          onClick={() => setPicked((prev) => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; })}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-left transition-all active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{
+                            background: on ? "oklch(0.65 0.25 280 / 0.16)" : "oklch(0.14 0.025 260)",
+                            border: `1px solid ${on ? "oklch(0.65 0.25 280 / 0.5)" : "oklch(0.22 0.025 260)"}`,
+                          }}
+                        >
+                          <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0" style={{ background: on ? "oklch(0.65 0.25 280)" : "transparent", border: on ? "none" : "1px solid oklch(0.30 0.03 260)" }}>
+                            {on && <Check size={11} className="text-white" />}
+                          </span>
+                          <span className="flex-1 truncate" style={{ color: "oklch(0.90 0.02 260)" }}>{p.name}</span>
+                          {dup ? (
+                            <span className="text-[10px] text-muted-foreground flex-shrink-0">on wheel</span>
+                          ) : p.cuisineTagName ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: "oklch(0.16 0.03 280 / 0.6)", color: "oklch(0.78 0.10 290)" }}>{p.cuisineTagName}</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => { setProposals(null); setPicked(new Set()); }} disabled={adding} className="flex-1">
+                  Back
+                </Button>
+                <Button
+                  onClick={confirmSmartAdd}
+                  disabled={picked.size === 0 || adding}
+                  className="flex-1"
+                  style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+                >
+                  {adding ? <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Adding…</span> : `Add ${picked.size}`}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
