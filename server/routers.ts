@@ -5,6 +5,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { applyMoodBoost, explainPick, moodBoost, moodKeywords, type SmartCandidate } from "@shared/smartPick";
+import { resolveAddList } from "@shared/parseAddList";
 import { parseRestaurantList } from "@shared/import";
 import { serializeWheel, wheelExportSchema } from "@shared/transfer";
 import { pickWinner } from "@shared/pick";
@@ -469,6 +471,133 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         return getRestaurantStats(input.wheelId);
+      }),
+  }),
+
+  // ─── Smart Pick (free, no LLM) ──────────────────────────────────────────────
+
+  smart: router({
+    // "Decide for me" — a free heuristic. Same eligibility + weighting as a real
+    // spin (fairness/rotation/votes), plus an optional mood boost, then a short
+    // truthful reason. Server-authoritative: it picks, records, and broadcasts
+    // exactly like spins.create — the client never gets to choose the winner.
+    pick: protectedProcedure
+      .input(
+        z.object({
+          wheelId: z.number(),
+          candidateIds: z.array(z.number()).min(1),
+          moodChips: z.array(z.string().max(40)).max(8).optional(),
+          moodText: z.string().max(200).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        const byId = new Map(rests.map((r) => [r.id, r]));
+        const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
+        const session = getSession(input.wheelId);
+        const vetoed = new Set(vetoedIds(session));
+        const avoidedTags = new Set(excludedDietaryTagIds(session));
+        const dietaryBlocked = new Set(
+          avoidedTags.size === 0
+            ? []
+            : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
+        );
+        const eligibleIds = input.candidateIds.filter(
+          (id) => byId.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
+        );
+        if (eligibleIds.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to pick from" });
+        }
+
+        // Days since each spot was last picked (for weighting + the reason).
+        const stats = await getRestaurantStats(input.wheelId);
+        const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
+        const now = Date.now();
+        const daysSince = (id: number): number | null => {
+          const raw = lastPicked.get(id);
+          const t = raw ? new Date(raw as unknown as string).getTime() : NaN;
+          return Number.isNaN(t) ? null : Math.floor((now - t) / 86_400_000);
+        };
+
+        const candidates: SmartCandidate[] = eligibleIds.map((id) => {
+          const r = byId.get(id)!;
+          return {
+            id,
+            name: r.name,
+            tags: r.tags.map((t) => t.name),
+            cuisine: r.tags.find((t) => t.category === "cuisine")?.name ?? null,
+            daysSinceLastPick: daysSince(id),
+          };
+        });
+
+        // Base weights mirror spins.create: fairness (or uniform) → cuisine
+        // rotation → votes → mood boost. Equal weights collapse to a uniform pick.
+        let base: Weighted[];
+        if (wheel.fairnessMode) {
+          base = computeWeights(
+            eligibleIds.map((id) => ({ restaurantId: id, lastPickedAt: (lastPicked.get(id) as Date | null) ?? null })),
+          );
+        } else {
+          base = eligibleIds.map((id) => ({ restaurantId: id, weight: 1 }));
+        }
+        if (wheel.rotateCuisines) {
+          const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t) => t.category === "cuisine")?.id ?? null]));
+          const history = await getSpinHistory(input.wheelId);
+          const cuisineLastPicked = new Map<number, Date>();
+          for (const h of history) {
+            const cId = cuisineOf.get(h.restaurantId);
+            if (cId == null) continue;
+            const at = new Date(h.spunAt);
+            const cur = cuisineLastPicked.get(cId);
+            if (!cur || at > cur) cuisineLastPicked.set(cId, at);
+          }
+          base = applyCuisineRotation(
+            base,
+            eligibleIds.map((id) => ({ restaurantId: id, cuisineId: cuisineOf.get(id) ?? null })),
+            cuisineLastPicked,
+          );
+        }
+        base = applyVoteWeights(base, voteCounts(session));
+
+        const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });
+        base = applyMoodBoost(base, moodBoost(candidates, keywords));
+
+        const restaurantId = pickWeighted(base);
+        const chosen = candidates.find((c) => c.id === restaurantId)!;
+        const reason = explainPick({ chosen, moodKeywords: keywords, totalCandidates: eligibleIds.length });
+
+        // Record + broadcast exactly like a normal spin (shared wheels included).
+        const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
+        emitSpin(input.wheelId, {
+          id,
+          restaurantId,
+          restaurantName: chosen.name,
+          spunBy: ctx.user.id,
+          spunByName: ctx.user.name,
+        });
+        clearVotes(input.wheelId);
+        return { restaurantId, name: chosen.name, reason };
+      }),
+
+    // "Smart add" — parse a loose blob into clean names + a best-effort cuisine
+    // mapped ONLY to existing wheel tags. Read-only: returns a proposal the
+    // client confirms; the actual writes go through restaurants.add/addBulk.
+    parseAdd: protectedProcedure
+      .input(z.object({ wheelId: z.number(), text: z.string().min(1).max(4000) }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const tags = await getTagsForWheel(input.wheelId);
+        const proposals = resolveAddList(
+          input.text,
+          tags.map((t) => ({ id: t.id, name: t.name, category: t.category })),
+        );
+        return { proposals };
       }),
   }),
 });

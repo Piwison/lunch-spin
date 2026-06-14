@@ -10,7 +10,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Sparkles } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -24,6 +24,9 @@ const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
   { id: "restaurants", label: "Restaurants", icon: Utensils },
   { id: "history", label: "History", icon: History },
 ];
+
+// Quick mood presets for Smart Pick (free-text also supported).
+const MOOD_CHIPS = ["Light", "Spicy", "Quick", "Healthy", "Comfort", "Veg"];
 
 export default function WheelApp() {
   const { user, loading, logout } = useAuth();
@@ -45,6 +48,10 @@ export default function WheelApp() {
   const tabIndicatorRef = useRef<HTMLSpanElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
+  const [aiReason, setAiReason] = useState<string | null>(null);
+  const [moodOpen, setMoodOpen] = useState(false);
+  const [moodChips, setMoodChips] = useState<string[]>([]);
+  const [moodText, setMoodText] = useState("");
 
   // PWA share-target
   useEffect(() => {
@@ -79,6 +86,7 @@ export default function WheelApp() {
   );
 
   const createSpin = trpc.spins.create.useMutation();
+  const smartPick = trpc.smart.pick.useMutation();
   const isShared = !!wheelData?.isShared;
 
   // Live shared wheels SSE
@@ -170,6 +178,7 @@ export default function WheelApp() {
     setShowResult(false);
     setSpinResult(null);
     setSpinError(null);
+    setAiReason(null);
     try {
       const { restaurantId } = await createSpin.mutateAsync({
         wheelId: selectedWheelId,
@@ -179,6 +188,35 @@ export default function WheelApp() {
       setIsSpinning(true);
     } catch (e) {
       setSpinError(e instanceof Error ? e.message : "Couldn't start the spin. Try again.");
+    }
+  };
+
+  // "Smart Pick" — the server applies the wheel's weighting + an optional mood
+  // boost, records and broadcasts the pick (no client choice), and returns a
+  // short reason. We reuse the spin animation to land on it.
+  const aiPending = smartPick.isPending;
+  const handleSmartPick = async () => {
+    if (wheelSegments.length === 0) {
+      setSpinError("No restaurants available. Add some or adjust your filters.");
+      return;
+    }
+    if (!selectedWheelId || aiPending || createSpin.isPending || isSpinning) return;
+    setShowResult(false);
+    setSpinResult(null);
+    setSpinError(null);
+    setAiReason(null);
+    try {
+      const picked = await smartPick.mutateAsync({
+        wheelId: selectedWheelId,
+        candidateIds: wheelSegments.map((s) => s.id),
+        moodChips: moodChips.length ? moodChips : undefined,
+        moodText: moodText.trim() ? moodText.trim() : undefined,
+      });
+      setAiReason(picked.reason);
+      setTargetId(picked.restaurantId);
+      setIsSpinning(true);
+    } catch (e) {
+      setSpinError(e instanceof Error ? e.message : "Couldn't pick right now. Try again.");
     }
   };
 
@@ -655,6 +693,86 @@ export default function WheelApp() {
                               </span>
                             </button>
 
+                            {/* "Smart Pick" — heuristic pick, optional mood */}
+                            <div className="flex flex-col items-center gap-2.5 w-full max-w-xs">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={handleSmartPick}
+                                  disabled={isSpinning || aiPending || createSpin.isPending || wheelSegments.length === 0}
+                                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold tracking-[0.08em] transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed hover:-translate-y-0.5 hover:bg-white/8"
+                                  style={{
+                                    fontFamily: "var(--font-display)",
+                                    background: "oklch(0.16 0.03 280 / 0.6)",
+                                    border: "1px solid oklch(0.65 0.25 280 / 0.45)",
+                                    color: "oklch(0.80 0.12 290)",
+                                  }}
+                                >
+                                  <Sparkles size={14} />
+                                  {aiPending ? "PICKING…" : "SMART PICK"}
+                                </button>
+                                <button
+                                  onClick={() => setMoodOpen((v) => !v)}
+                                  title="Set a mood"
+                                  className="flex items-center gap-1 px-3 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:bg-white/8"
+                                  style={{
+                                    fontFamily: "var(--font-display)",
+                                    background: moodChips.length || moodText.trim() ? "oklch(0.65 0.25 280 / 0.18)" : "oklch(0.16 0.025 260)",
+                                    border: "1px solid oklch(0.25 0.03 260)",
+                                    color: "oklch(0.75 0.08 290)",
+                                  }}
+                                >
+                                  Mood
+                                  {(moodChips.length > 0 || moodText.trim().length > 0) && (
+                                    <span className="ml-0.5 w-1.5 h-1.5 rounded-full" style={{ background: "oklch(0.70 0.22 300)" }} />
+                                  )}
+                                  <ChevronDown size={12} className={`transition-transform ${moodOpen ? "rotate-180" : ""}`} />
+                                </button>
+                              </div>
+
+                              {moodOpen && (
+                                <div
+                                  className="w-full flex flex-col gap-2.5 p-3 rounded-2xl tab-enter"
+                                  style={{ background: "oklch(0.12 0.025 260 / 0.7)", border: "1px solid oklch(0.22 0.03 260)" }}
+                                >
+                                  <div className="flex flex-wrap gap-1.5 justify-center">
+                                    {MOOD_CHIPS.map((m) => {
+                                      const on = moodChips.includes(m);
+                                      return (
+                                        <button
+                                          key={m}
+                                          onClick={() => setMoodChips((prev) => (on ? prev.filter((x) => x !== m) : [...prev, m]))}
+                                          className="px-3 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95"
+                                          style={{
+                                            background: on ? "oklch(0.65 0.25 280 / 0.30)" : "oklch(0.16 0.025 260)",
+                                            border: `1px solid ${on ? "oklch(0.65 0.25 280 / 0.6)" : "oklch(0.25 0.03 260)"}`,
+                                            color: on ? "oklch(0.90 0.08 290)" : "oklch(0.65 0.02 260)",
+                                          }}
+                                        >
+                                          {m}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  <input
+                                    value={moodText}
+                                    onChange={(e) => setMoodText(e.target.value)}
+                                    maxLength={200}
+                                    placeholder="or describe a vibe — e.g. something light"
+                                    className="w-full px-3 py-2 rounded-xl text-xs bg-transparent outline-none"
+                                    style={{ border: "1px solid oklch(0.25 0.03 260)", color: "oklch(0.85 0.02 260)" }}
+                                  />
+                                  {(moodChips.length > 0 || moodText.trim().length > 0) && (
+                                    <button
+                                      onClick={() => { setMoodChips([]); setMoodText(""); }}
+                                      className="text-[11px] self-end text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                      Clear mood
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
                             {/* Status line */}
                             {wheelSegments.length === 0 ? (
                               <div
@@ -784,6 +902,19 @@ export default function WheelApp() {
               >
                 {spinResult.label}
               </h2>
+              {aiReason && (
+                <div
+                  className="flex items-start gap-2 mb-6 -mt-3 px-4 py-2.5 rounded-xl text-xs text-left max-w-xs mx-auto"
+                  style={{
+                    background: "oklch(0.65 0.25 280 / 0.10)",
+                    border: "1px solid oklch(0.65 0.25 280 / 0.30)",
+                    color: "oklch(0.82 0.10 290)",
+                  }}
+                >
+                  <Sparkles size={13} className="flex-shrink-0 mt-0.5" />
+                  <span>{aiReason}</span>
+                </div>
+              )}
               <div className="flex flex-col gap-2.5">
                 <button
                   onClick={() => openDirections(spinResult.label)}
