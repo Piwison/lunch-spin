@@ -108,6 +108,25 @@ reclaimed after idle). Anything not committed is lost.
    `git merge-base --is-ancestor <old-head> origin/main` after. The round-trip is:
    GitHub `main` → Manus pulls & deploys → Manus pushes any deploy fixes back → CI
    re-greens. Both copies must end identical.
+8. **Vercel serverless API took three tries to route.** Moving prod to Vercel +
+   TiDB (off Manus), the Express API runs as one serverless function. Three
+   distinct failures, in order: (a) `api/[[...path]].ts` (Next-style *optional*
+   double-bracket) wasn't recognized → every `/api/*` 404'd; single-bracket
+   `api/[...path].ts` fixed that. (b) Then `ERR_MODULE_NOT_FOUND` for
+   `../server/_core/app`: Vercel's zero-config TS function builder transpiles the
+   entry but doesn't bundle relative/`@shared/*`-aliased imports → pre-bundle the
+   function with esbuild (`pnpm build` → committed `api/index.js` from
+   `server/_core/vercelHandler.ts`). (c) Then `/api/healthz` (one segment) worked
+   but `/api/auth/google/login` (multi-segment) 404'd — the `[...path]` filename
+   catch-all didn't reliably match nested paths. → **Final, stable setup:** a
+   plainly-named `api/index.js` + a `vercel.json` `{ "/api/(.*)" → "/api" }`
+   rewrite (no dynamic-route filename magic). Lessons: don't trust Vercel's
+   filename catch-all for nested paths — use an explicit rewrite; bundle the
+   function yourself so imports resolve; re-run `pnpm build` and **commit
+   `api/index.js`** after any `server/`/`shared/` change the API uses; and make
+   the terminal 404 echo `req.url` so "reached Express" vs "Vercel routing miss"
+   is visible from the response body. The legacy `[OAuth] OAUTH_SERVER_URL not
+   configured` log is harmless cold-start noise from `oauth.ts`, unrelated.
 
 ## Skills index (in `.claude/skills/`)
 
