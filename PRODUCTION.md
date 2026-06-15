@@ -49,9 +49,17 @@ Verify the tables exist (users, wheels, restaurants, tags, spin_history, …).
 (See mistake-log #2: generated ≠ applied — always run `migrate` against prod.)
 
 ## 5. Deploy on Vercel (free)
-The repo includes `vercel.json` + `api/[[...path]].ts` (the Express app runs as a
+The repo includes `vercel.json` + `api/[...path].js` (the Express app runs as a
 serverless function; the Vite client is served from `dist/public` by Vercel's CDN;
 `/api/*` → the function; other paths → SPA `index.html`).
+
+`api/[...path].js` is a generated esbuild bundle (built by `pnpm build` from
+`server/_core/vercelHandler.ts`, committed so Vercel's function-detection step sees
+it). This avoids Vercel's TS function builder trying to resolve the `../server/_core`
+relative import and `@shared/*` path aliases itself, which previously failed with
+`ERR_MODULE_NOT_FOUND`. **If you change anything under `server/` or `shared/` that
+the API depends on, re-run `pnpm build` and commit the regenerated
+`api/[...path].js`.**
 
 1. Merge to `main` first (PR `claude/serverless-realtime → main`).
 2. Vercel → **Add New → Project** → import this repo. Framework preset: **Other**
