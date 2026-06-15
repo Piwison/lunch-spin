@@ -18,9 +18,9 @@ with self-hosted Google sign-in.
 
 ## 1. Database — TiDB Cloud Serverless (free, MySQL-compatible)
 1. Create a **TiDB Cloud** account → create a **Serverless** cluster (free tier).
-2. **Connect** → create a database (e.g. `lunchwheel`) → copy the connection
-   string. It looks like:
-   `mysql://<user>:<pass>@<host>:4000/lunchwheel?ssl={"minVersion":"TLSv1.2"}`
+2. **Connect** → create a database (the free Serverless plan ships a `test`
+   database you can use as-is) → copy the connection string. It looks like:
+   `mysql://<user>:<pass>@<host>:4000/test?ssl={"minVersion":"TLSv1.2"}`
    (TiDB requires TLS — keep the `ssl` part.)
 3. Save it as `DATABASE_URL` for later.
 
