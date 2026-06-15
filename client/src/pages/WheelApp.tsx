@@ -43,7 +43,6 @@ export default function WheelApp() {
   const [showResult, setShowResult] = useState(false);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
-  const [session, setSession] = useState<SessionState>(EMPTY_SESSION);
   const [sharedText, setSharedText] = useState<string | null>(null);
   const tabIndicatorRef = useRef<HTMLSpanElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -89,41 +88,76 @@ export default function WheelApp() {
   const smartPick = trpc.smart.pick.useMutation();
   const isShared = !!wheelData?.isShared;
 
-  // Live shared wheels SSE
-  trpc.spins.onSpin.useSubscription(
+  // ── Shared-wheel realtime via polling (serverless-friendly) ───────────────
+  // Presence: heartbeat + roster ~10s, paused when the tab is hidden.
+  const presencePing = trpc.presence.ping.useMutation();
+  useEffect(() => {
+    if (!selectedWheelId || !isShared) {
+      setPresentUserIds([]);
+      return;
+    }
+    let active = true;
+    const tick = async () => {
+      if (document.hidden) return;
+      try {
+        const list = await presencePing.mutateAsync({ wheelId: selectedWheelId });
+        if (active) setPresentUserIds(list.map((u) => u.userId));
+      } catch {
+        if (active) setPresentUserIds([]);
+      }
+    };
+    tick();
+    const iv = setInterval(tick, 10_000);
+    return () => {
+      active = false;
+      clearInterval(iv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWheelId, isShared]);
+
+  // Round state (veto/vote/dietary): poll ~3s; derive session straight from it.
+  const sessionStateQuery = trpc.session.state.useQuery(
     { wheelId: selectedWheelId! },
-    {
-      enabled: !!selectedWheelId && isShared,
-      onData: (event) => {
-        if (!user || event.spunBy === user.id) return;
-        toast(`${event.spunByName ?? "A teammate"} spun ${event.restaurantName}`, { icon: "🎡" });
+    { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
+  );
+  const session: SessionState = sessionStateQuery.data ?? EMPTY_SESSION;
+
+  // Latest spin: poll ~3s and surface a teammate's spin (skip our own).
+  const lastSpinIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    lastSpinIdRef.current = null;
+  }, [selectedWheelId]);
+  const latestSpinQuery = trpc.spins.latest.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
+  );
+  useEffect(() => {
+    const latest = latestSpinQuery.data;
+    if (!latest) return;
+    if (lastSpinIdRef.current === null) {
+      lastSpinIdRef.current = latest.id; // baseline on first load — don't toast history
+      return;
+    }
+    if (latest.id !== lastSpinIdRef.current) {
+      lastSpinIdRef.current = latest.id;
+      if (user && latest.spunBy !== user.id) {
+        toast(`${latest.spunByName ?? "A teammate"} spun ${latest.restaurantName}`, { icon: "🎡" });
         refetchRestaurants();
-      },
+      }
     }
-  );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestSpinQuery.data, user]);
 
-  trpc.presence.onPresence.useSubscription(
-    { wheelId: selectedWheelId! },
-    {
-      enabled: !!selectedWheelId && isShared,
-      onData: (list) => setPresentUserIds(list.map((u) => u.userId)),
-      onError: () => setPresentUserIds([]),
-    }
-  );
-
-  trpc.session.onSession.useSubscription(
-    { wheelId: selectedWheelId! },
-    {
-      enabled: !!selectedWheelId && isShared,
-      onData: (state) => setSession(state),
-      onError: () => setSession(EMPTY_SESSION),
-    }
-  );
-
-  const vetoMutation = trpc.session.veto.useMutation();
-  const voteMutation = trpc.session.vote.useMutation();
-  const dietaryMutation = trpc.session.dietary.useMutation();
-  const clearRound = trpc.session.clear.useMutation();
+  // Refetch the round state right after my own action so it reflects instantly
+  // (instead of waiting for the next ~3s poll).
+  const utils = trpc.useUtils();
+  const refreshSession = () => {
+    if (selectedWheelId) utils.session.state.invalidate({ wheelId: selectedWheelId });
+  };
+  const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
+  const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
+  const dietaryMutation = trpc.session.dietary.useMutation({ onSuccess: refreshSession });
+  const clearRound = trpc.session.clear.useMutation({ onSuccess: refreshSession });
 
   const addShared = trpc.restaurants.addBulk.useMutation({
     onSuccess: (res) => {
@@ -133,13 +167,6 @@ export default function WheelApp() {
     },
     onError: (e) => toast.error(e.message),
   });
-
-  useEffect(() => {
-    if (!isShared) {
-      setPresentUserIds([]);
-      setSession(EMPTY_SESSION);
-    }
-  }, [isShared, selectedWheelId]);
 
   const roundCandidates = useMemo(
     () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds),

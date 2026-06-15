@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -6,12 +6,15 @@ import {
   Tag,
   restaurantTags,
   restaurants,
+  roundMarks,
   spinHistory,
   tags,
   users,
   wheelMembers,
+  wheelPresence,
   wheels,
 } from "../drizzle/schema";
+import type { MarkKind, RoundMarkRow } from "@shared/realtimeState";
 import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
 import { normalizeStatRow } from "@shared/stats";
@@ -352,4 +355,95 @@ export async function getRestaurantStats(wheelId: number) {
   const raw = result as any;
   const rows: any[] = Array.isArray(raw?.[0]) ? raw[0] : Array.isArray(raw) ? raw : [];
   return rows.map(normalizeStatRow);
+}
+
+// ─── Serverless realtime (polling-backed) ────────────────────────────────────
+
+/** Upsert this user's heartbeat for a wheel. */
+export async function pingPresence(wheelId: number, userId: number, name: string | null): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db
+    .insert(wheelPresence)
+    .values({ wheelId, userId, name, lastSeen: now })
+    .onDuplicateKeyUpdate({ set: { lastSeen: now, name } });
+}
+
+/** Presence heartbeats for a wheel seen at/after `cutoff`. */
+export async function getActivePresence(wheelId: number, cutoff: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({ userId: wheelPresence.userId, name: wheelPresence.name, lastSeen: wheelPresence.lastSeen })
+    .from(wheelPresence)
+    .where(and(eq(wheelPresence.wheelId, wheelId), gte(wheelPresence.lastSeen, cutoff)));
+}
+
+/** Toggle one round mark (veto/vote on a restaurant, or dietary on a tag). */
+export async function toggleRoundMark(wheelId: number, kind: MarkKind, refId: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const where = and(
+    eq(roundMarks.wheelId, wheelId),
+    eq(roundMarks.kind, kind),
+    eq(roundMarks.refId, refId),
+    eq(roundMarks.userId, userId),
+  );
+  const existing = await db.select({ userId: roundMarks.userId }).from(roundMarks).where(where).limit(1);
+  if (existing.length > 0) {
+    await db.delete(roundMarks).where(where);
+  } else {
+    // Idempotent insert so a concurrent double-toggle can't crash on the PK.
+    await db
+      .insert(roundMarks)
+      .values({ wheelId, kind, refId, userId })
+      .onDuplicateKeyUpdate({ set: { userId } });
+  }
+}
+
+/** All round marks for a wheel (shape consumed by buildSessionState). */
+export async function getRoundMarks(wheelId: number): Promise<RoundMarkRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId })
+    .from(roundMarks)
+    .where(eq(roundMarks.wheelId, wheelId));
+}
+
+/** Clear just the votes for a wheel (after a spin resolves). */
+export async function clearRoundVotes(wheelId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.kind, "vote")));
+}
+
+/** Clear all round marks for a wheel. */
+export async function clearRoundAll(wheelId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+}
+
+/** Most recent spin on a wheel (for the polled "someone spun" broadcast). */
+export async function getLatestSpin(wheelId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({
+      id: spinHistory.id,
+      restaurantId: spinHistory.restaurantId,
+      restaurantName: restaurants.name,
+      spunBy: spinHistory.spunBy,
+      spunByName: users.name,
+      spunAt: spinHistory.spunAt,
+    })
+    .from(spinHistory)
+    .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
+    .innerJoin(users, eq(spinHistory.spunBy, users.id))
+    .where(eq(spinHistory.wheelId, wheelId))
+    .orderBy(desc(spinHistory.id))
+    .limit(1);
+  return rows[0] ?? null;
 }

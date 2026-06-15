@@ -12,21 +12,16 @@ import { serializeWheel, wheelExportSchema } from "@shared/transfer";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
+import { activePresence, buildSessionState } from "@shared/realtimeState";
 import {
-  clearSession,
-  clearVotes,
-  emitSpin,
-  getPresence,
-  getSession,
-  joinPresence,
-  leavePresence,
-  presenceIterator,
-  sessionIterator,
-  spinIterator,
-  toggleDietary,
-  toggleVeto,
-  toggleVote,
-} from "./realtime";
+  clearRoundAll,
+  clearRoundVotes,
+  getActivePresence,
+  getLatestSpin,
+  getRoundMarks,
+  pingPresence,
+  toggleRoundMark,
+} from "./db";
 import {
   addRestaurant,
   addRestaurants,
@@ -53,6 +48,10 @@ import {
   updateRestaurant,
   updateWheel,
 } from "./db";
+
+// A presence heartbeat counts as "online" for this long after the last ping.
+// Kept ≥ 2.5× the client's ~10s ping interval so one dropped beat doesn't flicker.
+const PRESENCE_TTL_MS = 25_000;
 
 export const appRouter = router({
   system: systemRouter,
@@ -281,7 +280,7 @@ export const appRouter = router({
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
         // Server reads the live session itself (anti-tamper): vetoed restaurants
         // are out, votes bias the weighting.
-        const session = getSession(input.wheelId);
+        const session = buildSessionState(await getRoundMarks(input.wheelId));
         const vetoed = new Set(vetoedIds(session));
         // Dietary constraints: any restaurant carrying an avoided tag is out.
         const avoidedTags = new Set(excludedDietaryTagIds(session));
@@ -335,27 +334,20 @@ export const appRouter = router({
           restaurantId = pickWinner(eligible);
         }
         const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
-        const restaurant = rests.find((r) => r.id === restaurantId);
-        // Broadcast to everyone watching this shared wheel.
-        emitSpin(input.wheelId, {
-          id,
-          restaurantId,
-          restaurantName: restaurant?.name ?? "",
-          spunBy: ctx.user.id,
-          spunByName: ctx.user.name,
-        });
+        // The spin is persisted; other members pick it up via spins.latest.
         // Votes belong to the round that just resolved — clear for the next one.
-        clearVotes(input.wheelId);
+        await clearRoundVotes(input.wheelId);
         return { id, restaurantId };
       }),
 
-    // Live spin broadcasts for an open shared wheel (SSE subscription).
-    onSpin: protectedProcedure
+    // Most recent spin on a wheel — clients poll this to surface "someone spun"
+    // on shared wheels (replaces the old SSE broadcast).
+    latest: protectedProcedure
       .input(z.object({ wheelId: z.number() }))
-      .subscription(async function* ({ ctx, input, signal }) {
+      .query(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        yield* spinIterator(input.wheelId, signal!);
+        return getLatestSpin(input.wheelId);
       }),
 
     record: protectedProcedure
@@ -393,36 +385,31 @@ export const appRouter = router({
     // "Who's here right now" for a shared wheel. Joining/leaving is driven by the
     // lifetime of this SSE subscription; the server ref-counts connections so a
     // user with multiple tabs shows once and disappears only when all close.
-    onPresence: protectedProcedure
+    // Heartbeat + roster in one call: the client polls this (~10s); a user is
+    // "online" while their last ping is within the TTL. Multiple tabs collapse
+    // to one row (keyed by user), and stale rows simply age out.
+    ping: protectedProcedure
       .input(z.object({ wheelId: z.number() }))
-      .subscription(async function* ({ ctx, input, signal }) {
+      .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        joinPresence(input.wheelId, ctx.user.id, ctx.user.name);
-        try {
-          yield getPresence(input.wheelId);
-          for await (const _ of presenceIterator(input.wheelId, signal!)) {
-            yield getPresence(input.wheelId);
-          }
-        } finally {
-          leavePresence(input.wheelId, ctx.user.id);
-        }
+        await pingPresence(input.wheelId, ctx.user.id, ctx.user.name);
+        const now = Date.now();
+        const rows = await getActivePresence(input.wheelId, new Date(now - PRESENCE_TTL_MS));
+        return activePresence(rows, now, PRESENCE_TTL_MS);
       }),
   }),
 
   // ─── Session (vetoes & votes) ─────────────────────────────────────────────────
 
   session: router({
-    // Live veto/vote state for the current round on a shared wheel.
-    onSession: protectedProcedure
+    // Current round's veto/vote/dietary state — clients poll this (~3s).
+    state: protectedProcedure
       .input(z.object({ wheelId: z.number() }))
-      .subscription(async function* ({ ctx, input, signal }) {
+      .query(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        yield getSession(input.wheelId);
-        for await (const _ of sessionIterator(input.wheelId, signal!)) {
-          yield getSession(input.wheelId);
-        }
+        return buildSessionState(await getRoundMarks(input.wheelId));
       }),
 
     veto: protectedProcedure
@@ -430,7 +417,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        toggleVeto(input.wheelId, input.restaurantId, ctx.user.id);
+        await toggleRoundMark(input.wheelId, "veto", input.restaurantId, ctx.user.id);
         return { success: true };
       }),
 
@@ -439,7 +426,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        toggleVote(input.wheelId, input.restaurantId, ctx.user.id);
+        await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
         return { success: true };
       }),
 
@@ -448,7 +435,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        toggleDietary(input.wheelId, input.tagId, ctx.user.id);
+        await toggleRoundMark(input.wheelId, "dietary", input.tagId, ctx.user.id);
         return { success: true };
       }),
 
@@ -457,7 +444,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        clearSession(input.wheelId);
+        await clearRoundAll(input.wheelId);
         return { success: true };
       }),
   }),
@@ -499,7 +486,7 @@ export const appRouter = router({
         const rests = await getRestaurantsByWheel(input.wheelId);
         const byId = new Map(rests.map((r) => [r.id, r]));
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-        const session = getSession(input.wheelId);
+        const session = buildSessionState(await getRoundMarks(input.wheelId));
         const vetoed = new Set(vetoedIds(session));
         const avoidedTags = new Set(excludedDietaryTagIds(session));
         const dietaryBlocked = new Set(
@@ -571,16 +558,9 @@ export const appRouter = router({
         const chosen = candidates.find((c) => c.id === restaurantId)!;
         const reason = explainPick({ chosen, moodKeywords: keywords, totalCandidates: eligibleIds.length });
 
-        // Record + broadcast exactly like a normal spin (shared wheels included).
-        const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
-        emitSpin(input.wheelId, {
-          id,
-          restaurantId,
-          restaurantName: chosen.name,
-          spunBy: ctx.user.id,
-          spunByName: ctx.user.name,
-        });
-        clearVotes(input.wheelId);
+        // Record like a normal spin; members pick it up via spins.latest.
+        await recordSpin(input.wheelId, restaurantId, ctx.user.id);
+        await clearRoundVotes(input.wheelId);
         return { restaurantId, name: chosen.name, reason };
       }),
 
