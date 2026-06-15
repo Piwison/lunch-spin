@@ -1,13 +1,11 @@
-// Bundled by `pnpm build` (esbuild) into api/[...path].js — the Vercel
-// serverless function entry. Kept separate from app.ts so the bundle's
-// default export is a ready-to-use request handler.
+// Bundled by `pnpm build` (esbuild) into api/index.js — the single Vercel
+// serverless function. `vercel.json` rewrites every `/api/*` path (any depth)
+// to this function via a plain filename (no `[...path]` dynamic-route magic,
+// which proved unreliable for multi-segment paths). Kept separate from app.ts
+// so the bundle's default export is a ready-to-use request handler.
 //
-// Vercel routes only `/api/*` to this catch-all function, but the path it
-// hands to the function can arrive WITHOUT the leading `/api` segment
-// (observed in prod: `/auth/google/login` instead of `/api/auth/google/login`,
-// which 404'd). Our Express routes are all mounted under `/api/...`, so we
-// re-assert that prefix here before delegating. This is a no-op when the
-// prefix is already present, so it's safe regardless of Vercel's behavior.
+// Belt-and-suspenders: if Vercel ever hands us a path missing the leading
+// `/api` segment, re-assert it before delegating (no-op when already present).
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createApp } from "./app";
 
