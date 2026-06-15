@@ -1827,7 +1827,13 @@ function createApp() {
 
 // server/_core/vercelHandler.ts
 var app = createApp();
-var vercelHandler_default = app;
+function handler(req, res) {
+  const url = req.url ?? "/";
+  if (!url.startsWith("/api")) {
+    req.url = "/api" + (url.startsWith("/") ? url : "/" + url);
+  }
+  return app(req, res);
+}
 export {
-  vercelHandler_default as default
+  handler as default
 };
