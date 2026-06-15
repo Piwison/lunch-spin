@@ -1821,7 +1821,9 @@ function createApp() {
     "/api/trpc",
     createExpressMiddleware({ router: appRouter, createContext })
   );
-  app2.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
+  app2.use(
+    (req, res) => res.status(404).json({ error: "Not found", path: req.url, originalUrl: req.originalUrl })
+  );
   return app2;
 }
 

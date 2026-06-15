@@ -24,7 +24,11 @@ export function createApp(): Express {
     "/api/trpc",
     createExpressMiddleware({ router: appRouter, createContext })
   );
-  // Terminal JSON 404 for any unmatched API path (avoids HTML error bodies).
-  app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
+  // Terminal JSON 404 for anything unmatched. Echoes the path the app actually
+  // received so a Vercel routing mismatch is debuggable from the response body
+  // (instead of Express's default HTML "Cannot GET ..." page).
+  app.use((req, res) =>
+    res.status(404).json({ error: "Not found", path: req.url, originalUrl: req.originalUrl })
+  );
   return app;
 }
