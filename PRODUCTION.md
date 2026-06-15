@@ -4,9 +4,10 @@ A step-by-step to run this app in your own production environment. The app is a
 single Node server (tRPC API + built client + SSE realtime) backed by MySQL,
 with self-hosted Google sign-in.
 
-> **Recommended free stack:** Render (web service) + TiDB Cloud Serverless (MySQL).
-> Trade-off: Render's free tier sleeps after ~15 min idle (cold start on first
-> hit). For always-on free, use an Oracle Cloud Always-Free VM instead (§6b).
+> **Recommended free stack:** Vercel (frontend + serverless API) + TiDB Cloud
+> Serverless (MySQL). Realtime is polling-based (Milestone 3), so it runs fine on
+> serverless and has no single-instance constraint. The Dockerfile/Render path
+> still works for an always-on alternative (§6b).
 
 ---
 
@@ -47,16 +48,25 @@ DATABASE_URL='<prod url>' pnpm exec drizzle-kit migrate
 Verify the tables exist (users, wheels, restaurants, tags, spin_history, …).
 (See mistake-log #2: generated ≠ applied — always run `migrate` against prod.)
 
-## 5. Deploy on Render (free)
-1. Push the branch with this config to `main` (merge the auth PR first).
-2. Render → **New → Blueprint** → connect this repo (it reads `render.yaml`).
-3. In the service's **Environment**, set the `sync: false` secrets:
-   `DATABASE_URL`, `JWT_SECRET`, `APP_ORIGIN`, `GOOGLE_CLIENT_ID`,
-   `GOOGLE_CLIENT_SECRET`, `OWNER_OPEN_ID` (see §7).
-4. Deploy. Render builds (`pnpm install && pnpm build`), starts (`pnpm start`),
-   and health-checks `/healthz`.
-5. Note your URL (`https://<name>.onrender.com`) → set it as `APP_ORIGIN` and add
-   `<url>/api/auth/google/callback` to the Google redirect URIs (§2.4). Redeploy.
+## 5. Deploy on Vercel (free)
+The repo includes `vercel.json` + `api/[[...path]].ts` (the Express app runs as a
+serverless function; the Vite client is served from `dist/public` by Vercel's CDN;
+`/api/*` → the function; other paths → SPA `index.html`).
+
+1. Merge to `main` first (PR `claude/serverless-realtime → main`).
+2. Vercel → **Add New → Project** → import this repo. Framework preset: **Other**
+   (it reads `vercel.json`: build `pnpm build`, output `dist/public`).
+3. **Settings → Environment Variables** — add: `DATABASE_URL`, `JWT_SECRET`,
+   `APP_ORIGIN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OWNER_OPEN_ID`,
+   `VITE_APP_ID=lunch-wheel`, `NODE_ENV=production`.
+4. Deploy. Note your URL (`https://<project>.vercel.app`).
+5. Set `APP_ORIGIN` to that URL and add `<url>/api/auth/google/callback` to the
+   Google redirect URIs (§2.4) → redeploy.
+6. Liveness probe: `GET /api/healthz` (also `/healthz` via rewrite).
+
+> If the function build fails to resolve `@shared/*` imports, ensure Vercel uses
+> the repo's `tsconfig.json` paths (it normally does via esbuild). Polling
+> realtime means no always-on server is needed.
 
 ## 6. Domain (optional)
 - **Free:** use the `*.onrender.com` subdomain — nothing to do.
@@ -86,8 +96,10 @@ Set `OWNER_OPEN_ID` to your `google:<sub>` value, then redeploy.
 - Open in a second browser/account → shared wheel presence + live spin broadcast.
 
 ## Operational notes
-- **Single instance only** (SSE + in-memory presence/sessions). Don't scale the
-  web service horizontally without adding a Redis adapter (`realtime.ts`).
+- **Realtime is polling-based** (presence/votes/spins persisted in TiDB), so the
+  app scales horizontally and runs on serverless — no single-instance constraint.
 - **No Manus dependency** at runtime: auth is Google; the LLM was removed
   (Smart Pick is heuristic). Forge/storage env vars are not required.
+- Run migrations through **0006** (`pnpm exec drizzle-kit migrate`) — adds the
+  `wheel_presence` + `round_marks` tables.
 - **CI** (`.github/workflows/ci.yml`) runs check/test/build on every push.

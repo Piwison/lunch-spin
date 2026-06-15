@@ -3,6 +3,7 @@ import {
   int,
   mysqlEnum,
   mysqlTable,
+  primaryKey,
   text,
   timestamp,
   varchar,
@@ -111,3 +112,21 @@ export const spinHistory = mysqlTable("spin_history", {
 
 export type SpinHistory = typeof spinHistory.$inferSelect;
 export type InsertSpinHistory = typeof spinHistory.$inferInsert;
+
+// ─── Serverless realtime (polling-backed) ────────────────────────────────────
+// Presence: a heartbeat row per (wheel, user); "online" = recent lastSeen.
+export const wheelPresence = mysqlTable("wheel_presence", {
+  wheelId: int("wheelId").notNull(),
+  userId: int("userId").notNull(),
+  name: text("name"),
+  lastSeen: timestamp("lastSeen").defaultNow().notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.wheelId, t.userId] }) }));
+
+// Round marks: per-wheel veto/vote (refId = restaurantId) and dietary
+// (refId = tagId) selections. Replaces the old in-memory session maps.
+export const roundMarks = mysqlTable("round_marks", {
+  wheelId: int("wheelId").notNull(),
+  kind: mysqlEnum("kind", ["veto", "vote", "dietary"]).notNull(),
+  refId: int("refId").notNull(),
+  userId: int("userId").notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.wheelId, t.kind, t.refId, t.userId] }) }));

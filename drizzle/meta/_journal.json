@@ -43,6 +43,13 @@
       "when": 1781241121899,
       "tag": "0005_wheel_rotate_cuisines",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1781528677625,
+      "tag": "0006_boring_ego",
+      "breakpoints": true
     }
   ]
 }
