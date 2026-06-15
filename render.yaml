@@ -1,0 +1,31 @@
+# Render Blueprint — one-click-ish deploy of the Node web service.
+# In Render: New → Blueprint → connect this repo. Then set the `sync: false`
+# secrets in the dashboard. Free plan sleeps after ~15 min idle (cold start).
+services:
+  - type: web
+    name: lunch-wheel
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_APP_ID
+        value: lunch-wheel
+      # Secrets — set these in the Render dashboard (never commit them):
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: OWNER_OPEN_ID
+        sync: false
