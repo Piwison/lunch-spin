@@ -830,9 +830,21 @@ function notReady(res) {
   }
   return false;
 }
+var stripSlash = (s) => s.replace(/\/$/, "");
+function isSecureRequest2(req) {
+  if (req.protocol === "https") return true;
+  const fwd = req.headers["x-forwarded-proto"];
+  const list = Array.isArray(fwd) ? fwd : (fwd ?? "").split(",");
+  return list.some((p) => p.trim().toLowerCase() === "https");
+}
+function requestOrigin(req) {
+  const proto = isSecureRequest2(req) ? "https" : "http";
+  const host = req.headers["x-forwarded-host"] ?? req.get("host") ?? "";
+  return stripSlash(`${proto}://${host}`);
+}
 function redirectUri(req) {
   const origin = ENV.appOrigin || `${req.protocol}://${req.get("host")}`;
-  return `${origin.replace(/\/$/, "")}/api/auth/google/callback`;
+  return `${stripSlash(origin)}/api/auth/google/callback`;
 }
 var googleClient = (req) => new Google(ENV.googleClientId, ENV.googleClientSecret, redirectUri(req));
 function clearTempCookies(res) {
@@ -842,6 +854,10 @@ function clearTempCookies(res) {
 function registerGoogleAuthRoutes(app2) {
   app2.get("/api/auth/google/login", (req, res) => {
     if (notReady(res)) return;
+    if (ENV.appOrigin && requestOrigin(req) !== stripSlash(ENV.appOrigin)) {
+      res.redirect(302, `${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      return;
+    }
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
     const url = googleClient(req).createAuthorizationURL(state, codeVerifier, SCOPES);
@@ -859,6 +875,15 @@ function registerGoogleAuthRoutes(app2) {
     const storedState = cookies[STATE_COOKIE];
     const codeVerifier = cookies[VERIFIER_COOKIE];
     if (typeof code !== "string" || typeof stateParam !== "string" || !storedState || !codeVerifier || stateParam !== storedState) {
+      console.error("[GoogleAuth] state check failed:", {
+        hasCode: typeof code === "string",
+        hasStateParam: typeof stateParam === "string",
+        hasStoredState: Boolean(storedState),
+        hasVerifier: Boolean(codeVerifier),
+        stateMatches: stateParam === storedState,
+        origin: requestOrigin(req),
+        appOrigin: ENV.appOrigin
+      });
       clearTempCookies(res);
       res.status(400).json({ error: "Invalid OAuth state" });
       return;
