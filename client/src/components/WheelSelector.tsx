@@ -332,7 +332,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             className="glass-nav border-border/50 rounded-t-3xl max-h-[80vh] gap-0 px-3"
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
           >
-            <SheetHeader className="flex-row items-center justify-between px-1 pb-1">
+            <SheetHeader className="flex-row items-center justify-between pl-1 pr-11 pb-1">
               <SheetTitle className="text-xs tracking-widest text-muted-foreground" style={{ fontFamily: "var(--font-display)" }}>
                 MY WHEELS
               </SheetTitle>
@@ -462,12 +462,10 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 onChange={(e) => setEditWheel({ ...editWheel, name: e.target.value })}
                 className="bg-secondary/50 border-border/50"
               />
-              {editWheel.isShared && (
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">Public (anyone with link)</Label>
-                  <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
-                </div>
-              )}
+              <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
+                <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
+              </div>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
                 <Select value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
