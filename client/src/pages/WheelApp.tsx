@@ -398,6 +398,7 @@ export default function WheelApp() {
                           members={wheelData.members}
                           currentUserId={user.id}
                           presentUserIds={presentUserIds}
+                          collapsible
                         />
                       </div>
                     )}
@@ -414,6 +415,7 @@ export default function WheelApp() {
                           onVeto={(id) => selectedWheelId && vetoMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
                           onDietary={(tagId) => selectedWheelId && dietaryMutation.mutate({ wheelId: selectedWheelId, tagId })}
                           onClear={() => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId })}
+                          collapsible
                         />
                       </div>
                     )}
