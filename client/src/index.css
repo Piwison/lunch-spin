@@ -90,6 +90,31 @@
   border: 1px solid oklch(0.25 0.03 260 / 0.5);
 }
 
+/* ─── Liquid Glass navigation layer (2026) ──────────────────────────────────────
+   The floating chrome — rails, tab bars, picker pills — that sits ABOVE content.
+   A translucent, light-refracting lens (top highlight + float shadow) rather than
+   a flat panel. Content scrolls underneath. */
+.glass-nav {
+  background: oklch(0.13 0.025 260 / 0.55);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid oklch(0.32 0.03 260 / 0.45);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.08),   /* inner top highlight */
+    0 8px 32px rgba(0, 0, 0, 0.45);      /* float shadow */
+}
+
+/* Accessibility: when the user asks for less transparency, drop the see-through
+   glass for a near-opaque surface (the 2026 Liquid Glass legibility fallback). */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-nav {
+    background: oklch(0.12 0.025 260 / 0.97);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 /* ─── Animations ────────────────────────────────────────────────────────────── */
 @keyframes float {
   0%, 100% { transform: translateY(0px); }

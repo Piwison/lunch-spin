@@ -44,8 +44,6 @@ export default function WheelApp() {
   const [targetId, setTargetId] = useState<number | null>(null);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
-  const tabIndicatorRef = useRef<HTMLSpanElement>(null);
-  const tabsRef = useRef<HTMLDivElement>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
   const [aiReason, setAiReason] = useState<string | null>(null);
   const [moodOpen, setMoodOpen] = useState(false);
@@ -340,8 +338,8 @@ export default function WheelApp() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── SIDEBAR ── */}
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+        {/* ── WHEEL SWITCHER (desktop rail · mobile pill+sheet) ── */}
         <WheelSelector
           selectedWheelId={selectedWheelId}
           onSelect={(id: number) => { setSelectedWheelId(id); navigate(`/app/${id}`); }}
@@ -350,45 +348,32 @@ export default function WheelApp() {
         {/* ── MAIN CONTENT ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* ── TABS ── */}
-          <div
-            className="border-b border-border/40 px-4 flex gap-0 pt-1 flex-shrink-0"
-            ref={tabsRef}
-            style={{ background: "oklch(0.09 0.02 260 / 0.6)", backdropFilter: "blur(12px)" }}
-          >
-            {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
-              const isActive = activeTab === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => setActiveTab(id)}
-                  className="relative flex items-center gap-2 px-4 py-3 text-xs font-semibold transition-all duration-200"
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    letterSpacing: "0.08em",
-                    color: isActive ? "oklch(0.95 0.01 260)" : "oklch(0.45 0.02 260)",
-                  }}
-                >
-                  <Icon
-                    size={13}
+          {/* ── VIEW TABS (desktop) — floating glass segmented control ── */}
+          <div className="hidden md:flex px-4 py-2.5 flex-shrink-0">
+            <div className="inline-flex items-center gap-1 p-1 rounded-full glass-nav">
+              {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
+                const isActive = activeTab === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setActiveTab(id)}
+                    className="relative flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-200 active:scale-95"
                     style={{
-                      color: isActive ? "oklch(0.72 0.22 30)" : "oklch(0.45 0.02 260)",
-                      transition: "color 0.2s",
+                      fontFamily: "var(--font-display)",
+                      letterSpacing: "0.08em",
+                      color: isActive ? "white" : "oklch(0.55 0.02 260)",
+                      background: isActive
+                        ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
+                        : "transparent",
+                      boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
                     }}
-                  />
-                  {label.toUpperCase()}
-                  {isActive && (
-                    <span
-                      className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full"
-                      style={{
-                        background: "linear-gradient(90deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                        boxShadow: "0 0 8px oklch(0.72 0.22 30 / 0.6)",
-                      }}
-                    />
-                  )}
-                </button>
-              );
-            })}
+                  >
+                    <Icon size={13} />
+                    {label.toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* ── SHARED TEXT BANNER ── */}
@@ -416,7 +401,7 @@ export default function WheelApp() {
           )}
 
           {/* ── TAB CONTENT ── */}
-          <div className="flex-1 overflow-y-auto" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0px)" }}>
+          <div className="flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5.5rem)] md:pb-[max(env(safe-area-inset-bottom),0px)]">
             {!selectedWheelId ? (
               /* Empty state — no wheel selected */
               <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
@@ -428,7 +413,7 @@ export default function WheelApp() {
                   <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
                     NO WHEEL SELECTED
                   </p>
-                  <p className="text-sm text-muted-foreground">Select a wheel from the sidebar or create a new one</p>
+                  <p className="text-sm text-muted-foreground">Pick a wheel from the menu or create a new one</p>
                 </div>
               </div>
             ) : (
@@ -887,6 +872,39 @@ export default function WheelApp() {
           </div>
         </div>
       </div>
+
+      {/* ── MOBILE BOTTOM TAB BAR — floating Liquid Glass capsule ── */}
+      <nav
+        className="md:hidden fixed left-0 right-0 z-40 flex justify-center px-4 pointer-events-none"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+        aria-label="Views"
+      >
+        <div className="pointer-events-auto flex items-center gap-1 p-1.5 rounded-full glass-nav">
+          {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
+            const isActive = activeTab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                aria-current={isActive ? "page" : undefined}
+                className="flex flex-col items-center justify-center gap-0.5 min-w-16 h-12 rounded-full text-[10px] font-semibold transition-all duration-200 active:scale-90"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  letterSpacing: "0.06em",
+                  color: isActive ? "white" : "oklch(0.55 0.02 260)",
+                  background: isActive
+                    ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
+                    : "transparent",
+                  boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
+                }}
+              >
+                <Icon size={18} />
+                {label.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* ── RESULT OVERLAY ── */}
       {showResult && spinResult && (
