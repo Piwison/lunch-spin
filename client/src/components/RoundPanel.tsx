@@ -1,4 +1,5 @@
-import { ThumbsUp, Ban, RotateCcw, Salad } from "lucide-react";
+import { ThumbsUp, Ban, RotateCcw, Salad, ChevronDown } from "lucide-react";
+import { useState } from "react";
 import { excludedDietaryTagIds, voteCounts, type SessionState } from "@shared/session";
 
 interface RoundRestaurant {
@@ -23,9 +24,12 @@ interface RoundPanelProps {
   onVeto: (restaurantId: number) => void;
   onDietary: (tagId: number) => void;
   onClear: () => void;
+  /** When true, the round body collapses behind its header (collapsed by default). */
+  collapsible?: boolean;
 }
 
-export default function RoundPanel({ restaurants, tags, session, currentUserId, onVote, onVeto, onDietary, onClear }: RoundPanelProps) {
+export default function RoundPanel({ restaurants, tags, session, currentUserId, onVote, onVeto, onDietary, onClear, collapsible = false }: RoundPanelProps) {
+  const [open, setOpen] = useState(false);
   if (restaurants.length === 0) return null;
 
   const counts = voteCounts(session);
@@ -45,13 +49,32 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
     return a.name.localeCompare(b.name);
   });
 
+  const showBody = !collapsible || open;
+
   return (
     <div className="w-full max-w-2xl flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-          THIS ROUND
-        </span>
-        {hasMarks && (
+        <button
+          type="button"
+          onClick={() => collapsible && setOpen((o) => !o)}
+          className={`flex items-center gap-1.5 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
+        >
+          <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
+            THIS ROUND
+          </span>
+          <span className="text-[10px] font-normal text-muted-foreground/70">· {restaurants.length}</span>
+          {hasMarks && (
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "oklch(0.70 0.18 150)" }} title="Votes or vetoes in this round" />
+          )}
+          {collapsible && (
+            <ChevronDown
+              size={14}
+              className="text-muted-foreground transition-transform duration-200"
+              style={{ transform: open ? "rotate(180deg)" : "none" }}
+            />
+          )}
+        </button>
+        {hasMarks && showBody && (
           <button
             onClick={onClear}
             className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -62,7 +85,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
       </div>
 
       {/* Dietary constraints — avoid tags for the round */}
-      {tags.length > 0 && (
+      {showBody && tags.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Salad size={12} /> Avoid today:
@@ -90,6 +113,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
         </div>
       )}
 
+      {showBody && (
       <div className="flex flex-col gap-1.5">
         {ordered.map((r) => {
           const votes = counts.get(r.id) ?? 0;
@@ -143,6 +167,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           );
         })}
       </div>
+      )}
     </div>
   );
 }

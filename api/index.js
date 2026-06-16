@@ -73,6 +73,8 @@ var restaurants = mysqlTable("restaurants", {
   wheelId: int("wheelId").notNull(),
   name: varchar("name", { length: 128 }).notNull(),
   notes: text("notes"),
+  mapUrl: varchar("mapUrl", { length: 512 }),
+  // optional Google Maps link for DIRECTIONS
   addedBy: int("addedBy").notNull(),
   primaryTagId: int("primaryTagId"),
   // determines wheel segment color
@@ -294,11 +296,11 @@ async function getRestaurantsByWheel(wheelId) {
     tags: rtags.filter((t2) => t2.restaurantId === r.id).map((t2) => ({ id: t2.tagId, name: t2.tagName, color: t2.tagColor, category: t2.tagCategory }))
   }));
 }
-async function addRestaurant(wheelId, addedBy, name, notes, tagIds) {
+async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, primaryTagId });
+  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, mapUrl, primaryTagId });
   const restaurantId = result.insertId;
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId, tagId })));
@@ -312,11 +314,11 @@ async function addRestaurants(wheelId, addedBy, names) {
   await db.insert(restaurants).values(names.map((name) => ({ wheelId, addedBy, name, notes: null })));
   return names.length;
 }
-async function updateRestaurant(id, name, notes, tagIds) {
+async function updateRestaurant(id, name, notes, tagIds, mapUrl = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  await db.update(restaurants).set({ name, notes, primaryTagId }).where(eq(restaurants.id, id));
+  await db.update(restaurants).set({ name, notes, mapUrl, primaryTagId }).where(eq(restaurants.id, id));
   await db.delete(restaurantTags).where(eq(restaurantTags.restaurantId, id));
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId: id, tagId })));
@@ -828,9 +830,21 @@ function notReady(res) {
   }
   return false;
 }
+var stripSlash = (s) => s.replace(/\/$/, "");
+function isSecureRequest2(req) {
+  if (req.protocol === "https") return true;
+  const fwd = req.headers["x-forwarded-proto"];
+  const list = Array.isArray(fwd) ? fwd : (fwd ?? "").split(",");
+  return list.some((p) => p.trim().toLowerCase() === "https");
+}
+function requestOrigin(req) {
+  const proto = isSecureRequest2(req) ? "https" : "http";
+  const host = req.headers["x-forwarded-host"] ?? req.get("host") ?? "";
+  return stripSlash(`${proto}://${host}`);
+}
 function redirectUri(req) {
   const origin = ENV.appOrigin || `${req.protocol}://${req.get("host")}`;
-  return `${origin.replace(/\/$/, "")}/api/auth/google/callback`;
+  return `${stripSlash(origin)}/api/auth/google/callback`;
 }
 var googleClient = (req) => new Google(ENV.googleClientId, ENV.googleClientSecret, redirectUri(req));
 function clearTempCookies(res) {
@@ -840,6 +854,10 @@ function clearTempCookies(res) {
 function registerGoogleAuthRoutes(app2) {
   app2.get("/api/auth/google/login", (req, res) => {
     if (notReady(res)) return;
+    if (ENV.appOrigin && requestOrigin(req) !== stripSlash(ENV.appOrigin)) {
+      res.redirect(302, `${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      return;
+    }
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
     const url = googleClient(req).createAuthorizationURL(state, codeVerifier, SCOPES);
@@ -857,6 +875,15 @@ function registerGoogleAuthRoutes(app2) {
     const storedState = cookies[STATE_COOKIE];
     const codeVerifier = cookies[VERIFIER_COOKIE];
     if (typeof code !== "string" || typeof stateParam !== "string" || !storedState || !codeVerifier || stateParam !== storedState) {
+      console.error("[GoogleAuth] state check failed:", {
+        hasCode: typeof code === "string",
+        hasStateParam: typeof stateParam === "string",
+        hasStoredState: Boolean(storedState),
+        hasVerifier: Boolean(codeVerifier),
+        stateMatches: stateParam === storedState,
+        origin: requestOrigin(req),
+        appOrigin: ENV.appOrigin
+      });
       clearTempCookies(res);
       res.status(400).json({ error: "Invalid OAuth state" });
       return;
@@ -1505,12 +1532,12 @@ var appRouter = router({
         excludedUntil: exclusions.get(r.id) ?? null
       }));
     }),
-    add: protectedProcedure.input(z3.object({ wheelId: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()) })).mutation(async ({ ctx, input }) => {
+    add: protectedProcedure.input(z3.object({ wheelId: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()), mapUrl: z3.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds);
+      const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
       return { id };
     }),
     addBulk: protectedProcedure.input(z3.object({ wheelId: z3.number(), text: z3.string().max(1e4) })).mutation(async ({ ctx, input }) => {
@@ -1523,13 +1550,13 @@ var appRouter = router({
       const added = await addRestaurants(input.wheelId, ctx.user.id, names);
       return { added, skipped };
     }),
-    update: protectedProcedure.input(z3.object({ id: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()) })).mutation(async ({ ctx, input }) => {
+    update: protectedProcedure.input(z3.object({ id: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()), mapUrl: z3.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
       const restaurant = await getRestaurantById(input.id);
       if (!restaurant) throw new TRPCError3({ code: "NOT_FOUND" });
       const wheel = await getWheelById(restaurant.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Only the wheel creator can edit restaurants" });
-      await updateRestaurant(input.id, input.name, input.notes, input.tagIds);
+      await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
       return { success: true };
     }),
     delete: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {

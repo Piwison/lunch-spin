@@ -211,13 +211,13 @@ export const appRouter = router({
       }),
 
     add: protectedProcedure
-      .input(z.object({ wheelId: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()) }))
+      .input(z.object({ wheelId: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()), mapUrl: z.string().max(512).nullable().optional() }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds);
+        const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
         return { id };
       }),
 
@@ -235,14 +235,14 @@ export const appRouter = router({
       }),
 
     update: protectedProcedure
-      .input(z.object({ id: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()) }))
+      .input(z.object({ id: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()), mapUrl: z.string().max(512).nullable().optional() }))
       .mutation(async ({ ctx, input }) => {
         const restaurant = await getRestaurantById(input.id);
         if (!restaurant) throw new TRPCError({ code: "NOT_FOUND" });
         const wheel = await getWheelById(restaurant.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can edit restaurants" });
-        await updateRestaurant(input.id, input.name, input.notes, input.tagIds);
+        await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
         return { success: true };
       }),
 

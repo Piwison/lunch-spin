@@ -1,0 +1,1 @@
+ALTER TABLE `restaurants` ADD `mapUrl` varchar(512);

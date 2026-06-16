@@ -36,10 +36,28 @@ function notReady(res: Response): boolean {
   return false;
 }
 
+const stripSlash = (s: string) => s.replace(/\/$/, "");
+
+function isSecureRequest(req: Request): boolean {
+  if (req.protocol === "https") return true;
+  const fwd = req.headers["x-forwarded-proto"];
+  const list = Array.isArray(fwd) ? fwd : (fwd ?? "").split(",");
+  return list.some((p) => p.trim().toLowerCase() === "https");
+}
+
+// The origin the browser actually loaded, from proxy headers (Vercel sets
+// x-forwarded-host / x-forwarded-proto). Used only to detect a host mismatch
+// against the canonical APP_ORIGIN — never to build the redirect_uri.
+function requestOrigin(req: Request): string {
+  const proto = isSecureRequest(req) ? "https" : "http";
+  const host = (req.headers["x-forwarded-host"] as string | undefined) ?? req.get("host") ?? "";
+  return stripSlash(`${proto}://${host}`);
+}
+
 function redirectUri(req: Request): string {
   // notReady() guarantees appOrigin is set in production before this runs.
   const origin = ENV.appOrigin || `${req.protocol}://${req.get("host")}`;
-  return `${origin.replace(/\/$/, "")}/api/auth/google/callback`;
+  return `${stripSlash(origin)}/api/auth/google/callback`;
 }
 
 const googleClient = (req: Request) =>
@@ -54,6 +72,17 @@ export function registerGoogleAuthRoutes(app: Express) {
   // Step 1 — start the flow: stash state + PKCE verifier, redirect to Google.
   app.get("/api/auth/google/login", (req: Request, res: Response) => {
     if (notReady(res)) return;
+
+    // Cookies are host-scoped. If sign-in starts on a host other than the
+    // canonical APP_ORIGIN (e.g. the *.vercel.app default URL vs a custom
+    // domain, or www vs apex), the state cookie would be set here but never
+    // returned to ${APP_ORIGIN}/callback → "Invalid OAuth state". Bounce to the
+    // canonical origin first so the cookie and the callback share a host.
+    if (ENV.appOrigin && requestOrigin(req) !== stripSlash(ENV.appOrigin)) {
+      res.redirect(302, `${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      return;
+    }
+
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
     const url = googleClient(req).createAuthorizationURL(state, codeVerifier, SCOPES);
@@ -82,6 +111,17 @@ export function registerGoogleAuthRoutes(app: Express) {
       !codeVerifier ||
       stateParam !== storedState
     ) {
+      // Log which precondition failed so a misconfig (missing cookie =
+      // host/APP_ORIGIN mismatch) is distinguishable from a real CSRF mismatch.
+      console.error("[GoogleAuth] state check failed:", {
+        hasCode: typeof code === "string",
+        hasStateParam: typeof stateParam === "string",
+        hasStoredState: Boolean(storedState),
+        hasVerifier: Boolean(codeVerifier),
+        stateMatches: stateParam === storedState,
+        origin: requestOrigin(req),
+        appOrigin: ENV.appOrigin,
+      });
       clearTempCookies(res);
       res.status(400).json({ error: "Invalid OAuth state" });
       return;

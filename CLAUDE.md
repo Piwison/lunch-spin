@@ -80,35 +80,24 @@ reclaimed after idle). Anything not committed is lost.
 2. **Migrations generated ≠ applied.** `drizzle/0002`–`0005` were generated but not
    applied to the live DB. Drizzle's `_journal.json` is local bookkeeping. Always run
    `drizzle-kit migrate` against the real `DATABASE_URL` and verify the column exists.
-3. **Manus deploy lag.** Code in `main` is NOT live until Manus redeploys from GitHub.
-   "Merged" ≠ "shipped" — trigger a redeploy and smoke-test the live URL.
+3. **Vercel deploy lag.** ~~(Was: Manus deploy lag — Manus is no longer used.)~~ Push
+   to `main` triggers a Vercel auto-deploy; allow ~1 min to build. "Merged" ≠
+   "live" — smoke-test the live URL after the Vercel deployment completes.
 4. **mysql2 tuple bug.** `db.execute()` (mysql2) returns `[rows, fields]`. Mapping
    over the tuple produced nameless stat rows and crashed the History tab. Unwrap to
    `rows` (see `server/db.ts` `getRestaurantStats`).
-5. **node_modules is committed** (Manus convention). `pnpm install` rewrites
-   `node_modules/.bin` symlinks; only `git add` explicit source paths — never
-   `git add -A`.
-6. **Manus can force-rewrite `main` with an unrelated history.** Manus re-synced
-   the project and force-pushed `main` to a fresh orphan history (no common
-   ancestor), stranding every `claude/*` branch and orphaning open PRs — though the
-   new `main` had already absorbed most of our merged work. → Before branching/PRs,
-   `git fetch origin main` and check for "(forced update)". If branches are orphaned,
-   rebase additive commits onto the new `main` (`git cherry-pick`) rather than
-   forcing across histories. Treat GitHub `main` as downstream of Manus, not the
-   other way around.
-7. **Manus deploy fixes land as Manus-only commits — push them back.** When Manus
-   redeploys, it may fix runtime bugs in *its* workspace and never push them (e.g.
-   the `serveStatic()` production path: it resolved to `server/_core/public` instead
-   of `dist/public`, so `manifest.webmanifest`/`sw.js` 404'd in prod). The fix sat
-   in a Manus-only commit while GitHub `main` stayed behind, re-opening the GitHub↔
-   Manus drift we'd just closed. → After any Manus deploy that includes code fixes,
-   `git fetch origin main` and confirm the deploy's commits actually reached GitHub;
-   if not, have Manus **push them as a normal fast-forward** (never an orphan/force
-   — see #6). Reconcile divergence with a real merge that keeps both sides; verify
-   `git merge-base --is-ancestor <old-head> origin/main` after. The round-trip is:
-   GitHub `main` → Manus pulls & deploys → Manus pushes any deploy fixes back → CI
-   re-greens. Both copies must end identical.
-8. **Vercel serverless API took three tries to route.** Moving prod to Vercel +
+5. **`node_modules` is NOT committed** (migrated off Manus to Vercel). `node_modules`
+   is gitignored. Never `git add -A` — it can pull in unexpected build artifacts.
+6. *(Historical — Manus no longer used.)* **Manus could force-rewrite `main`.**
+   Manus re-synced and force-pushed `main` to an orphan history, stranding
+   `claude/*` branches and open PRs. Resolved by migrating to Vercel for deploys.
+7. *(Historical — Manus no longer used.)* **Manus deploy fixes could strand on
+   Manus only.** Runtime fixes applied in Manus's workspace were never pushed back
+   to GitHub, causing drift. Resolved by migrating to Vercel for deploys.
+8. **Deployment platform is Vercel, not Manus.** The project migrated from Manus to
+   Vercel + TiDB Cloud. Never say "Manus redeploys" — it's Vercel auto-deploy on
+   push to `main`. `node_modules` is gitignored (was committed under Manus).
+9. **Vercel serverless API took three tries to route.** Moving prod to Vercel +
    TiDB (off Manus), the Express API runs as one serverless function. Three
    distinct failures, in order: (a) `api/[[...path]].ts` (Next-style *optional*
    double-bracket) wasn't recognized → every `/api/*` 404'd; single-bracket
@@ -127,6 +116,9 @@ reclaimed after idle). Anything not committed is lost.
    the terminal 404 echo `req.url` so "reached Express" vs "Vercel routing miss"
    is visible from the response body. The legacy `[OAuth] OAUTH_SERVER_URL not
    configured` log is harmless cold-start noise from `oauth.ts`, unrelated.
+10. **Referenced Manus after migrating to Vercel.** After PR #14 merged, told user
+    "Once Manus redeploys…" — Manus is gone; deploy is Vercel auto-deploy. Check
+    CLAUDE.md mistake log before mentioning deploy platform.
 
 ## Skills index (in `.claude/skills/`)
 

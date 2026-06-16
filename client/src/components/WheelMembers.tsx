@@ -1,4 +1,5 @@
-import { Crown, Users } from "lucide-react";
+import { Crown, Users, ChevronDown } from "lucide-react";
+import { useState } from "react";
 
 interface Member {
   userId: number;
@@ -13,6 +14,8 @@ interface WheelMembersProps {
   currentUserId: number;
   /** User ids currently watching this wheel (live presence). */
   presentUserIds?: number[];
+  /** When true, the roster collapses behind its header (collapsed by default). */
+  collapsible?: boolean;
 }
 
 function initials(name: string | null, email: string | null): string {
@@ -31,7 +34,8 @@ function colorFor(id: number): string {
  * Roster for a shared wheel: shows who's in and who's the creator. The owner is
  * always listed first with a crown, even if they aren't in the members table.
  */
-export default function WheelMembers({ ownerId, owner, members, currentUserId, presentUserIds = [] }: WheelMembersProps) {
+export default function WheelMembers({ ownerId, owner, members, currentUserId, presentUserIds = [], collapsible = false }: WheelMembersProps) {
+  const [open, setOpen] = useState(false);
   const present = new Set(presentUserIds);
   // Owner first, then members, de-duped by userId.
   const seen = new Set<number>();
@@ -48,15 +52,30 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
   }
 
   return (
-    <div className="w-full max-w-2xl flex items-center gap-2 flex-wrap">
-      <span className="text-xs font-semibold text-muted-foreground tracking-widest flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
-        <Users size={12} /> TEAM
-        {present.size > 0 && (
-          <span className="text-[10px] font-normal" style={{ color: "oklch(0.72 0.18 150)" }}>
-            · {present.size} here now
-          </span>
+    <div className="w-full max-w-2xl flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => collapsible && setOpen((o) => !o)}
+        className={`flex items-center justify-between gap-2 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
+      >
+        <span className="text-xs font-semibold text-muted-foreground tracking-widest flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
+          <Users size={12} /> TEAM
+          <span className="text-[10px] font-normal text-muted-foreground/70">· {roster.length}</span>
+          {present.size > 0 && (
+            <span className="text-[10px] font-normal" style={{ color: "oklch(0.72 0.18 150)" }}>
+              · {present.size} here now
+            </span>
+          )}
+        </span>
+        {collapsible && (
+          <ChevronDown
+            size={14}
+            className="text-muted-foreground transition-transform duration-200"
+            style={{ transform: open ? "rotate(180deg)" : "none" }}
+          />
         )}
-      </span>
+      </button>
+      {(!collapsible || open) && (
       <div className="flex items-center gap-1.5 flex-wrap">
         {roster.map((m) => {
           const color = colorFor(m.userId);
@@ -89,6 +108,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
           );
         })}
       </div>
+      )}
     </div>
   );
 }
