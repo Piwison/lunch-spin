@@ -192,11 +192,11 @@ export async function getRestaurantsByWheel(wheelId: number) {
   }));
 }
 
-export async function addRestaurant(wheelId: number, addedBy: number, name: string, notes: string | null, tagIds: number[]) {
+export async function addRestaurant(wheelId: number, addedBy: number, name: string, notes: string | null, tagIds: number[], mapUrl: string | null = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, primaryTagId });
+  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, mapUrl, primaryTagId });
   const restaurantId = (result as any).insertId as number;
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId, tagId })));
@@ -214,11 +214,11 @@ export async function addRestaurants(wheelId: number, addedBy: number, names: st
   return names.length;
 }
 
-export async function updateRestaurant(id: number, name: string, notes: string | null, tagIds: number[]) {
+export async function updateRestaurant(id: number, name: string, notes: string | null, tagIds: number[], mapUrl: string | null = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  await db.update(restaurants).set({ name, notes, primaryTagId }).where(eq(restaurants.id, id));
+  await db.update(restaurants).set({ name, notes, mapUrl, primaryTagId }).where(eq(restaurants.id, id));
   await db.delete(restaurantTags).where(eq(restaurantTags.restaurantId, id));
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId: id, tagId })));

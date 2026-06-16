@@ -251,8 +251,11 @@ export default function WheelApp() {
     requestAnimationFrame(() => handleSpin());
   };
 
-  const openDirections = (name: string) => {
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`, "_blank", "noopener,noreferrer");
+  const openDirections = (segment: WheelSegment) => {
+    // Prefer the restaurant's saved Google Maps link; fall back to a name search.
+    const saved = restaurants?.find((r) => r.id === segment.id)?.mapUrl?.trim();
+    const url = saved || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(segment.label)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const toggleTag = (tagId: number) => {
@@ -401,7 +404,7 @@ export default function WheelApp() {
           )}
 
           {/* ── TAB CONTENT ── */}
-          <div className="flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5.5rem)] md:pb-[max(env(safe-area-inset-bottom),0px)]">
+          <div className="flex-1 overflow-y-auto">
             {!selectedWheelId ? (
               /* Empty state — no wheel selected */
               <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
@@ -421,7 +424,7 @@ export default function WheelApp() {
 
                 {/* ══ TAB 1: WHEEL ══ */}
                 {activeTab === "wheel" && (
-                  <div className="flex flex-col items-center gap-5 px-4 py-5 pb-28 max-w-2xl mx-auto">
+                  <div className="flex flex-col items-center gap-5 px-4 py-5 pb-8 max-w-2xl mx-auto">
 
                     {/* Team roster */}
                     {isShared && wheelData && (
@@ -870,41 +873,41 @@ export default function WheelApp() {
               </div>
             )}
           </div>
+
+          {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule ── */}
+          <nav
+            className="md:hidden flex-shrink-0 flex justify-center px-4 pt-2"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)" }}
+            aria-label="Views"
+          >
+            <div className="flex items-center gap-1 p-1.5 rounded-full glass-nav">
+              {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
+                const isActive = activeTab === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setActiveTab(id)}
+                    aria-current={isActive ? "page" : undefined}
+                    className="flex flex-col items-center justify-center gap-0.5 min-w-16 h-12 rounded-full text-[10px] font-semibold transition-all duration-200 active:scale-90"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      letterSpacing: "0.06em",
+                      color: isActive ? "white" : "oklch(0.55 0.02 260)",
+                      background: isActive
+                        ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
+                        : "transparent",
+                      boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
+                    }}
+                  >
+                    <Icon size={18} />
+                    {label.toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
         </div>
       </div>
-
-      {/* ── MOBILE BOTTOM TAB BAR — floating Liquid Glass capsule ── */}
-      <nav
-        className="md:hidden fixed left-0 right-0 z-40 flex justify-center px-4 pointer-events-none"
-        style={{ bottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
-        aria-label="Views"
-      >
-        <div className="pointer-events-auto flex items-center gap-1 p-1.5 rounded-full glass-nav">
-          {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
-            const isActive = activeTab === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                aria-current={isActive ? "page" : undefined}
-                className="flex flex-col items-center justify-center gap-0.5 min-w-16 h-12 rounded-full text-[10px] font-semibold transition-all duration-200 active:scale-90"
-                style={{
-                  fontFamily: "var(--font-display)",
-                  letterSpacing: "0.06em",
-                  color: isActive ? "white" : "oklch(0.55 0.02 260)",
-                  background: isActive
-                    ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
-                    : "transparent",
-                  boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
-                }}
-              >
-                <Icon size={18} />
-                {label.toUpperCase()}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
 
       {/* ── RESULT OVERLAY ── */}
       {showResult && spinResult && (
@@ -962,7 +965,7 @@ export default function WheelApp() {
               )}
               <div className="flex flex-col gap-2.5">
                 <button
-                  onClick={() => openDirections(spinResult.label)}
+                  onClick={() => openDirections(spinResult)}
                   className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
                   style={{
                     background: spinResult.color + "20",

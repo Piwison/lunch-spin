@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
-import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, Sparkles, Loader2, MapPin } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,9 +19,10 @@ interface RestaurantForm {
   name: string;
   notes: string;
   tagIds: number[];
+  mapUrl: string;
 }
 
-const EMPTY_FORM: RestaurantForm = { name: "", notes: "", tagIds: [] };
+const EMPTY_FORM: RestaurantForm = { name: "", notes: "", tagIds: [], mapUrl: "" };
 
 export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }: RestaurantTabProps) {
   const [showAdd, setShowAdd] = useState(false);
@@ -133,16 +134,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   };
 
   const openEdit = (r: NonNullable<typeof restaurants>[number]) => {
-    setForm({ name: r.name, notes: r.notes ?? "", tagIds: r.tags.map((t) => t.id) });
+    setForm({ name: r.name, notes: r.notes ?? "", tagIds: r.tags.map((t) => t.id), mapUrl: r.mapUrl ?? "" });
     setEditId(r.id);
   };
 
   const submitForm = () => {
     if (!form.name.trim()) return;
+    const mapUrl = form.mapUrl.trim() || null;
     if (editId !== null) {
-      updateRestaurant.mutate({ id: editId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds });
+      updateRestaurant.mutate({ id: editId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds, mapUrl });
     } else {
-      addRestaurant.mutate({ wheelId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds });
+      addRestaurant.mutate({ wheelId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds, mapUrl });
     }
   };
 
@@ -188,17 +190,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   return (
     <div className="p-4 md:p-6 flex flex-col gap-4 max-w-2xl mx-auto w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="text-lg font-black tracking-tight" style={{ fontFamily: "var(--font-display)" }}>RESTAURANTS</h2>
           {restaurants && restaurants.length > 0 && (
             <p className="text-xs text-muted-foreground mt-0.5">{restaurants.length} place{restaurants.length !== 1 ? "s" : ""} on this wheel</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <button
             onClick={() => { closeSmart(); setShowSmart(true); }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            title="Smart Add"
+            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
             style={{
               background: "oklch(0.16 0.03 280 / 0.5)",
               border: "1px solid oklch(0.65 0.25 280 / 0.4)",
@@ -207,11 +210,12 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               letterSpacing: "0.06em",
             }}
           >
-            <Sparkles size={13} /> SMART ADD
+            <Sparkles size={14} /> <span className="hidden sm:inline">SMART ADD</span>
           </button>
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
-            className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            title="Import"
+            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
             style={{
               background: "oklch(0.14 0.025 260)",
               border: "1px solid oklch(0.22 0.025 260)",
@@ -220,11 +224,12 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               letterSpacing: "0.06em",
             }}
           >
-            <ClipboardList size={13} /> IMPORT
+            <ClipboardList size={14} /> <span className="hidden sm:inline">IMPORT</span>
           </button>
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
+            title="Add restaurant"
+            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
             style={{
               background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
               color: "white",
@@ -233,7 +238,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               boxShadow: "0 0 16px oklch(0.72 0.22 30 / 0.35)",
             }}
           >
-            <Plus size={13} /> ADD
+            <Plus size={14} /> <span className="hidden sm:inline">ADD</span>
           </button>
         </div>
       </div>
@@ -393,6 +398,22 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               className="bg-secondary/50 border-border/50 resize-none"
               rows={2}
             />
+            <div className="flex flex-col gap-1.5">
+              <div className="relative">
+                <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="url"
+                  inputMode="url"
+                  placeholder="Google Maps link (optional)"
+                  value={form.mapUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, mapUrl: e.target.value }))}
+                  className="bg-secondary/50 border-border/50 pl-9"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground px-1">
+                Paste the place's Google Maps link — "DIRECTIONS" after a spin opens it directly.
+              </p>
+            </div>
             <TagSelector />
             <ErrorChip error={formError} onDismiss={() => setFormError(null)} />
             <Button

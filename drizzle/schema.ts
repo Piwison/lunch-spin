@@ -79,6 +79,7 @@ export const restaurants = mysqlTable("restaurants", {
   wheelId: int("wheelId").notNull(),
   name: varchar("name", { length: 128 }).notNull(),
   notes: text("notes"),
+  mapUrl: varchar("mapUrl", { length: 512 }), // optional Google Maps link for DIRECTIONS
   addedBy: int("addedBy").notNull(),
   primaryTagId: int("primaryTagId"), // determines wheel segment color
   createdAt: timestamp("createdAt").defaultNow().notNull(),
