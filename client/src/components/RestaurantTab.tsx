@@ -152,7 +152,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
             title="Import"
-            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
             style={{
               background: "oklch(0.14 0.025 260)",
               border: "1px solid oklch(0.22 0.025 260)",
@@ -166,7 +166,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title="Add restaurant"
-            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
             style={{
               background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
               color: "white",
@@ -290,20 +290,20 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
               {/* Actions — always visible on mobile, hover-reveal on desktop */}
               {isOwner && (
-                <div className="flex items-center gap-0.5 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
+                <div className="flex items-center gap-1 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
                   <button
                     onClick={() => openEdit(r)}
-                    className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
+                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
                     title="Edit"
                   >
-                    <Pencil size={13} />
+                    <Pencil size={16} />
                   </button>
                   <button
                     onClick={() => { if (confirm(`Remove "${r.name}"?`)) deleteRestaurant.mutate({ id: r.id }); }}
-                    className="p-2 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
+                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
                     title="Delete"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={16} />
                   </button>
                 </div>
               )}

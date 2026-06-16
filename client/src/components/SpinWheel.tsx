@@ -151,7 +151,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       ctx.fillStyle = "oklch(0.16 0.025 260)";
       ctx.fill();
       ctx.fillStyle = "oklch(0.55 0.02 260)";
-      ctx.font = `bold 14px 'Syne', sans-serif`;
+      ctx.font = `bold 14px 'Space Grotesk', sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Add restaurants", cx, cy - 10);

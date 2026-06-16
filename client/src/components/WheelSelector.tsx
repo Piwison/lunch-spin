@@ -312,9 +312,9 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
       <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0">
         <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
           <SheetTrigger asChild>
-            <button className="w-full flex items-center gap-2.5 px-3 h-12 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
+            <button className="w-full flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
               <span
-                className="w-6 h-6 rounded-full flex-shrink-0"
+                className="w-7 h-7 rounded-full flex-shrink-0"
                 style={{
                   background: selectedWheel
                     ? "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)"

@@ -779,11 +779,11 @@ export default function WheelApp() {
 
           {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule ── */}
           <nav
-            className="md:hidden flex-shrink-0 flex justify-center px-4 pt-2"
+            className="md:hidden flex-shrink-0 flex justify-center px-3 pt-2"
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)" }}
             aria-label="Views"
           >
-            <div className="flex items-center gap-1 p-1.5 rounded-full glass-nav">
+            <div className="w-full max-w-md flex items-center gap-1 p-1.5 rounded-[1.75rem] glass-nav">
               {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
                 const isActive = activeTab === id;
                 return (
@@ -791,10 +791,10 @@ export default function WheelApp() {
                     key={id}
                     onClick={() => setActiveTab(id)}
                     aria-current={isActive ? "page" : undefined}
-                    className="flex flex-col items-center justify-center gap-0.5 min-w-16 h-12 rounded-full text-[10px] font-semibold transition-all duration-200 active:scale-90"
+                    className="flex-1 flex flex-col items-center justify-center gap-1 h-14 rounded-[1.4rem] text-[11px] font-semibold transition-all duration-200 active:scale-95"
                     style={{
                       fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
+                      letterSpacing: "0.04em",
                       color: isActive ? "white" : "oklch(0.55 0.02 260)",
                       background: isActive
                         ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
@@ -802,7 +802,7 @@ export default function WheelApp() {
                       boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
                     }}
                   >
-                    <Icon size={18} />
+                    <Icon size={20} />
                     {label.toUpperCase()}
                   </button>
                 );
