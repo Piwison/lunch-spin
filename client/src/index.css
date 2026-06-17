@@ -1,37 +1,112 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-
-
-/* ─── Cinematic Dark Theme ─────────────────────────────────────────────────── */
+/* ─── Warm Appetite — light + dark ────────────────────────────────────────────
+   Tokens resolve through intermediate vars so the SAME utility (bg-card,
+   text-muted-foreground, …) adapts to the mode. `:root` is the warm-cream light
+   default; `.dark` (toggled by ThemeContext on <html>) swaps in warm charcoal.
+   Brand is a single tomato/ember accent; `--brand-2` (amber) is reserved for the
+   hero gradient on the wheel/result only. */
 @theme inline {
-  --color-background: oklch(0.09 0.02 260);
-  --color-foreground: oklch(0.95 0.01 260);
-  --color-card: oklch(0.12 0.025 260);
-  --color-card-foreground: oklch(0.95 0.01 260);
-  --color-popover: oklch(0.12 0.025 260);
-  --color-popover-foreground: oklch(0.95 0.01 260);
-  --color-primary: oklch(0.72 0.22 30);
-  --color-primary-foreground: oklch(0.09 0.02 260);
-  --color-secondary: oklch(0.16 0.03 260);
-  --color-secondary-foreground: oklch(0.85 0.01 260);
-  --color-muted: oklch(0.16 0.025 260);
-  --color-muted-foreground: oklch(0.55 0.02 260);
-  --color-accent: oklch(0.65 0.25 280);
-  --color-accent-foreground: oklch(0.98 0.005 260);
-  --color-destructive: oklch(0.60 0.22 25);
-  --color-destructive-foreground: oklch(0.98 0.005 260);
-  --color-border: oklch(0.20 0.025 260);
-  --color-input: oklch(0.16 0.025 260);
-  --color-ring: oklch(0.72 0.22 30);
-  --color-chart-1: oklch(0.72 0.22 30);
-  --color-chart-2: oklch(0.65 0.25 280);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--brand);
+  --color-chart-2: var(--brand-2);
   --color-chart-3: oklch(0.70 0.20 160);
   --color-chart-4: oklch(0.75 0.18 60);
   --color-chart-5: oklch(0.68 0.22 340);
   --radius: 0.75rem;
   --font-sans: "DM Sans", sans-serif;
-  --font-display: "Space Grotesk", sans-serif;
+  --font-display: "Fredoka", "DM Sans", sans-serif;
+}
+
+/* ── Light (default): warm cream ── */
+:root {
+  --background: oklch(0.97 0.015 80);
+  --foreground: oklch(0.26 0.03 50);
+  --card: oklch(0.995 0.008 80);
+  --card-foreground: oklch(0.26 0.03 50);
+  --popover: oklch(0.995 0.008 80);
+  --popover-foreground: oklch(0.26 0.03 50);
+  --primary: oklch(0.64 0.19 38);
+  --primary-foreground: oklch(0.99 0.01 80);
+  --secondary: oklch(0.94 0.015 78);
+  --secondary-foreground: oklch(0.30 0.03 50);
+  --muted: oklch(0.95 0.012 80);
+  --muted-foreground: oklch(0.50 0.03 60);
+  --accent: oklch(0.93 0.03 70);
+  --accent-foreground: oklch(0.30 0.03 50);
+  --destructive: oklch(0.57 0.20 28);
+  --destructive-foreground: oklch(0.99 0.01 80);
+  --border: oklch(0.90 0.02 75);
+  --input: oklch(0.90 0.02 75);
+  --ring: oklch(0.64 0.19 38);
+
+  /* Brand accents (mode-tuned so glows/gradients read right in each mode). */
+  --brand: oklch(0.64 0.19 38);     /* tomato/ember — the single accent */
+  --brand-2: oklch(0.74 0.15 65);   /* amber/mango — hero gradient only */
+  --brand-glow: 0.20;               /* glow opacity multiplier (calmer in light) */
+
+  /* Glass surfaces (frosted cream). */
+  --glass-bg: oklch(0.99 0.01 80 / 0.72);
+  --glass-border: oklch(0.80 0.03 70 / 0.55);
+  --glass-nav-bg: oklch(0.985 0.012 80 / 0.62);
+  --glass-nav-border: oklch(0.78 0.03 70 / 0.50);
+  --glass-nav-shadow: 0 8px 32px oklch(0.50 0.05 40 / 0.12);
+  --glass-highlight: oklch(1 0 0 / 0.55);
+  --glass-opaque: oklch(0.985 0.012 80 / 0.98);
+}
+
+/* ── Dark: warm charcoal ── */
+.dark {
+  --background: oklch(0.16 0.02 50);
+  --foreground: oklch(0.95 0.01 80);
+  --card: oklch(0.20 0.022 50);
+  --card-foreground: oklch(0.95 0.01 80);
+  --popover: oklch(0.20 0.022 50);
+  --popover-foreground: oklch(0.95 0.01 80);
+  --primary: oklch(0.70 0.19 40);
+  --primary-foreground: oklch(0.16 0.02 50);
+  --secondary: oklch(0.24 0.025 50);
+  --secondary-foreground: oklch(0.90 0.01 80);
+  --muted: oklch(0.22 0.022 50);
+  --muted-foreground: oklch(0.62 0.02 70);
+  --accent: oklch(0.27 0.03 50);
+  --accent-foreground: oklch(0.92 0.01 80);
+  --destructive: oklch(0.60 0.20 28);
+  --destructive-foreground: oklch(0.98 0.01 80);
+  --border: oklch(0.30 0.022 55);
+  --input: oklch(0.26 0.025 55);
+  --ring: oklch(0.70 0.19 40);
+
+  --brand: oklch(0.70 0.19 40);
+  --brand-2: oklch(0.78 0.15 65);
+  --brand-glow: 0.45;
+
+  --glass-bg: oklch(0.22 0.022 50 / 0.70);
+  --glass-border: oklch(0.40 0.03 55 / 0.50);
+  --glass-nav-bg: oklch(0.21 0.022 50 / 0.55);
+  --glass-nav-border: oklch(0.42 0.03 55 / 0.45);
+  --glass-nav-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --glass-highlight: oklch(1 0 0 / 0.08);
+  --glass-opaque: oklch(0.21 0.022 50 / 0.97);
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────────────────── */
@@ -41,12 +116,15 @@
   }
 
   html {
+    color-scheme: light;
+  }
+  html.dark {
     color-scheme: dark;
   }
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    background-color: oklch(0.09 0.02 260);
+    background-color: var(--background);
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -63,20 +141,28 @@
   max-width: 1280px;
 }
 
-/* ─── Cinematic Glow Utilities ──────────────────────────────────────────────── */
+/* ─── Glow Utilities ─────────────────────────────────────────────────────────
+   Reserved for the joyful hero moments (wheel / SPIN / result). Glow intensity
+   follows --brand-glow so light mode stays calm and dark mode keeps its punch. */
 .glow-orange {
-  box-shadow: 0 0 20px oklch(0.72 0.22 30 / 0.4), 0 0 60px oklch(0.72 0.22 30 / 0.15);
+  box-shadow:
+    0 0 20px oklch(from var(--brand) l c h / var(--brand-glow)),
+    0 0 60px oklch(from var(--brand) l c h / calc(var(--brand-glow) * 0.4));
 }
 .glow-purple {
-  box-shadow: 0 0 20px oklch(0.65 0.25 280 / 0.4), 0 0 60px oklch(0.65 0.25 280 / 0.15);
+  box-shadow:
+    0 0 20px oklch(from var(--brand-2) l c h / var(--brand-glow)),
+    0 0 60px oklch(from var(--brand-2) l c h / calc(var(--brand-glow) * 0.4));
 }
 .glow-text {
-  text-shadow: 0 0 30px oklch(0.72 0.22 30 / 0.8), 0 0 60px oklch(0.72 0.22 30 / 0.4);
+  text-shadow:
+    0 0 30px oklch(from var(--brand) l c h / calc(var(--brand-glow) + 0.3)),
+    0 0 60px oklch(from var(--brand) l c h / var(--brand-glow));
 }
 
-/* ─── Cinematic Gradient Text ───────────────────────────────────────────────── */
+/* ─── Appetizing Gradient Text ──────────────────────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, oklch(0.85 0.18 40), oklch(0.72 0.22 30), oklch(0.65 0.25 280));
+  background: linear-gradient(135deg, var(--brand-2), var(--brand));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -84,32 +170,31 @@
 
 /* ─── Glass Card ────────────────────────────────────────────────────────────── */
 .glass {
-  background: oklch(0.12 0.025 260 / 0.7);
+  background: var(--glass-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid oklch(0.25 0.03 260 / 0.5);
+  border: 1px solid var(--glass-border);
 }
 
-/* ─── Liquid Glass navigation layer (2026) ──────────────────────────────────────
-   The floating chrome — rails, tab bars, picker pills — that sits ABOVE content.
-   A translucent, light-refracting lens (top highlight + float shadow) rather than
-   a flat panel. Content scrolls underneath. */
+/* ─── Liquid Glass navigation layer ──────────────────────────────────────────
+   The floating chrome — rails, tab bars, picker pills — above content. A
+   translucent, light-refracting lens (top highlight + float shadow). */
 .glass-nav {
-  background: oklch(0.13 0.025 260 / 0.55);
+  background: var(--glass-nav-bg);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid oklch(0.32 0.03 260 / 0.45);
+  border: 1px solid var(--glass-nav-border);
   box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.08),   /* inner top highlight */
-    0 8px 32px rgba(0, 0, 0, 0.45);      /* float shadow */
+    inset 0 1px 0 var(--glass-highlight),
+    var(--glass-nav-shadow);
 }
 
 /* Accessibility: when the user asks for less transparency, drop the see-through
-   glass for a near-opaque surface (the 2026 Liquid Glass legibility fallback). */
+   glass for a near-opaque surface (Liquid Glass legibility fallback). */
 @media (prefers-reduced-transparency: reduce) {
   .glass,
   .glass-nav {
-    background: oklch(0.12 0.025 260 / 0.97);
+    background: var(--glass-opaque);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -140,8 +225,8 @@
 
 /* ─── Motion primitives ─────────────────────────────────────────────────────────
    These back the animation classes used across the app (reveal, fade-in,
-   orb-spin, ring-rotate, cta-pulse, tab-enter). Without them those classes are
-   no-ops. Staggering is done inline via animation-delay. */
+   orb-spin, ring-rotate, cta-pulse, tab-enter). Staggering is done inline via
+   animation-delay. cta-pulse glows in the brand tomato only (no more purple). */
 @keyframes reveal-up {
   from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -153,8 +238,8 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes cta-pulse {
-  0%, 100% { box-shadow: 0 0 22px oklch(0.72 0.22 30 / 0.4), 0 4px 20px rgba(0,0,0,0.4); }
-  50%      { box-shadow: 0 0 40px oklch(0.72 0.22 30 / 0.6), 0 0 64px oklch(0.65 0.25 280 / 0.3), 0 4px 20px rgba(0,0,0,0.4); }
+  0%, 100% { box-shadow: 0 0 22px oklch(from var(--brand) l c h / var(--brand-glow)), 0 4px 20px oklch(0.30 0.04 40 / 0.25); }
+  50%      { box-shadow: 0 0 40px oklch(from var(--brand) l c h / calc(var(--brand-glow) + 0.15)), 0 0 64px oklch(from var(--brand-2) l c h / calc(var(--brand-glow) * 0.5)), 0 4px 20px oklch(0.30 0.04 40 / 0.25); }
 }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -177,5 +262,5 @@
 /* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: oklch(0.25 0.03 260); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.35 0.04 260); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }

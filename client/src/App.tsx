@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import WheelApp from "./pages/WheelApp";
 import JoinWheel from "./pages/JoinWheel";
@@ -23,21 +23,29 @@ function Router() {
   );
 }
 
+/** Toasts follow the active theme and use the same warm tokens as the app. */
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return (
+    <Toaster
+      theme={theme}
+      toastOptions={{
+        style: {
+          background: "var(--popover)",
+          border: "1px solid var(--border)",
+          color: "var(--popover-foreground)",
+        },
+      }}
+    />
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
+      <ThemeProvider>
         <TooltipProvider>
-          <Toaster
-            theme="dark"
-            toastOptions={{
-              style: {
-                background: "oklch(0.12 0.025 260)",
-                border: "1px solid oklch(0.25 0.03 260)",
-                color: "oklch(0.95 0.01 260)",
-              },
-            }}
-          />
+          <ThemedToaster />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

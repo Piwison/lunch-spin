@@ -1,4 +1,5 @@
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
+import ThemeToggle from "@/components/ThemeToggle";
 import { getLoginUrl } from "@/const";
 import { segmentColor } from "@/lib/palette";
 import { trpc } from "@/lib/trpc";
@@ -286,13 +287,13 @@ export default function GuestWheel() {
   );
 }
 
-/** Page chrome: dark background, centered content. */
+/** Page chrome: warm background, centered content, theme toggle. */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className="min-h-screen flex items-center justify-center"
-      style={{ background: "oklch(0.09 0.02 260)", color: "oklch(0.95 0.01 260)" }}
-    >
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+      <div className="fixed top-3 right-3 z-30">
+        <ThemeToggle />
+      </div>
       {children}
     </div>
   );

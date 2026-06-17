@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { useLocation } from "wouter";
 import { Users, Clock, Tags, Sparkles, ArrowRight, ChevronDown, Utensils, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const FEATURES = [
   { icon: Users, label: "Team Wheels", desc: "Shared wheels for your whole squad", accent: "oklch(0.72 0.22 30)" },
@@ -206,6 +207,11 @@ export default function Home() {
         className="fixed top-0 left-0 w-1.5 h-1.5 rounded-full pointer-events-none z-[9999] hidden md:block"
         style={{ background: "oklch(0.72 0.22 30)", boxShadow: "0 0 6px oklch(0.72 0.22 30)" }}
       />
+
+      {/* Theme toggle */}
+      <div className="fixed top-3 right-3 z-30" style={{ cursor: "auto" }}>
+        <ThemeToggle />
+      </div>
 
       {/* Shader background */}
       <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ zIndex: 0 }} />

@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
+import ThemeToggle from "@/components/ThemeToggle";
 import RestaurantTab from "@/components/RestaurantTab";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
@@ -279,6 +280,7 @@ export default function WheelApp() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           {user.name && (
             <span
               className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground px-3 py-1.5 rounded-full"
