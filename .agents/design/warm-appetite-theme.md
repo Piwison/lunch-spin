@@ -66,18 +66,23 @@ persists to `localStorage`; first visit follows `prefers-color-scheme`.
 - **Logo:** retire the conic rainbow orb → a warm mark (plate/bowl + fork or chopsticks)
   in the tomato accent. TBD with you.
 
-## Migration plan (when approved)
+## Migration plan — status
 
-1. Restructure `index.css` `@theme` into light (default) + `.dark` override token sets;
-   `color-scheme` per mode; warm body bg.
-2. Add theme toggle (header) + `localStorage` + system default; set `.dark` on `<html>`.
-3. Neutralize glow utilities + `cta-pulse` (subtle in dark, off in light).
-4. Sweep the 10 files with hardcoded `oklch` (≈39 base hits + accents) → map inline
-   colors to tokens (`bg-card`, `bg-muted`, `border-border`, `text-muted-foreground`,
-   `text-primary`) so both modes work. SpinWheel canvas center/empty colors too.
-5. Add Fredoka in `index.html`; point `--font-display` at it.
-6. Contrast audit (WCAG AA) in both modes; `prefers-reduced-transparency` + reduced-motion.
-7. Logo mark.
+1. ✅ `index.css` restructured: `@theme` resolves via intermediate vars; `:root`
+   warm-cream light (default) + `.dark` warm charcoal; `color-scheme` per mode.
+2. ✅ Theme toggle (Home, WheelApp header, GuestWheel) + `localStorage` + system
+   default following `prefers-color-scheme`; `.dark` set on `<html>`.
+3. ✅ Glow utilities + `cta-pulse` follow `--brand-glow` (calm in light, punchy in
+   dark); retired the everyday orange→purple gradient (warm tomato→amber now).
+4. ✅ Swept ~260 hardcoded `oklch` across 12 files → tokens (alpha via relative
+   color syntax). SpinWheel canvas resolves tokens via `getComputedStyle`; both
+   WebGL shaders take a `u_dark` uniform and a warm, cream-in-light palette.
+5. ✅ Fredoka loaded in `index.html`; `--font-display` points at it.
+6. ◑ Contrast: added mode-aware `--ok`/`--info` for legible chip text; honored
+   `prefers-reduced-transparency` + reduced-motion. Full AA audit still wants a
+   real visual pass in a browser (the web sandbox has no display).
+7. ☐ Logo mark — interim: warmed the rainbow conic orb to ember→amber. Final
+   plate/bowl mark still TBD with you.
 
-**Risk:** touches every screen; both modes must be checked. Reversible (presentation only).
-**Effort:** the largest of the outstanding work — recommend doing guest mode first.
+**Risk:** touches every screen; both modes need a real visual check.
+Reversible (presentation only).
