@@ -62,7 +62,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
           <Users size={12} /> TEAM
           <span className="text-[10px] font-normal text-muted-foreground/70">· {roster.length}</span>
           {present.size > 0 && (
-            <span className="text-[10px] font-normal" style={{ color: "oklch(0.72 0.18 150)" }}>
+            <span className="text-[10px] font-normal" style={{ color: "var(--ok)" }}>
               · {present.size} here now
             </span>
           )}

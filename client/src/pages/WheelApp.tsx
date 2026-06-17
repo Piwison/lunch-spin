@@ -358,7 +358,7 @@ export default function WheelApp() {
                 onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
                 disabled={!selectedWheelId || addShared.isPending}
                 className="px-3 py-1 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 flex-shrink-0"
-                style={{ background: "var(--brand-2)", color: "white", fontFamily: "var(--font-display)" }}
+                style={{ background: "var(--brand)", color: "white", fontFamily: "var(--font-display)" }}
               >
                 {addShared.isPending ? "Adding…" : "Add"}
               </button>
@@ -890,7 +890,7 @@ export default function WheelApp() {
                     style={{
                       background: "oklch(0.70 0.18 150 / 0.15)",
                       border: "1px solid oklch(0.70 0.18 150 / 0.45)",
-                      color: "oklch(0.80 0.16 155)",
+                      color: "var(--ok)",
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.06em",
                     }}

@@ -64,6 +64,11 @@
   --brand-2: oklch(0.74 0.15 65);   /* amber/mango — hero gradient only */
   --brand-glow: 0.20;               /* glow opacity multiplier (calmer in light) */
 
+  /* Semantic text accents — kept legible against their faint tinted chips by
+     going darker in light mode, brighter in dark. */
+  --ok: oklch(0.52 0.14 150);       /* success text */
+  --info: oklch(0.54 0.13 62);      /* info / notice text */
+
   /* Glass surfaces (frosted cream). */
   --glass-bg: oklch(0.99 0.01 80 / 0.72);
   --glass-border: oklch(0.80 0.03 70 / 0.55);
@@ -99,6 +104,9 @@
   --brand: oklch(0.70 0.19 40);
   --brand-2: oklch(0.78 0.15 65);
   --brand-glow: 0.45;
+
+  --ok: oklch(0.80 0.15 148);
+  --info: oklch(0.82 0.14 70);
 
   --glass-bg: oklch(0.22 0.022 50 / 0.70);
   --glass-border: oklch(0.40 0.03 55 / 0.50);

@@ -270,7 +270,7 @@ export default function GuestWheel() {
                     style={{
                       background: "oklch(0.70 0.18 150 / 0.15)",
                       border: "1px solid oklch(0.70 0.18 150 / 0.45)",
-                      color: "oklch(0.80 0.16 155)",
+                      color: "var(--ok)",
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.06em",
                     }}

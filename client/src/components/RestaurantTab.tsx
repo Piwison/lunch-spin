@@ -185,9 +185,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         <div
           className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs"
           style={{
-            background: "oklch(from var(--brand-2) l c h / 0.08)",
-            border: "1px solid oklch(from var(--brand-2) l c h / 0.20)",
-            color: "var(--brand-2)",
+            background: "oklch(from var(--info) l c h / 0.08)",
+            border: "1px solid oklch(from var(--info) l c h / 0.20)",
+            color: "var(--info)",
           }}
         >
           <Tag size={12} className="flex-shrink-0" />
