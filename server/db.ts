@@ -18,6 +18,7 @@ import type { MarkKind, RoundMarkRow } from "@shared/realtimeState";
 import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
 import { normalizeStatRow } from "@shared/stats";
+import { rankPopularWheels } from "@shared/publicWheel";
 import type { WheelExport } from "@shared/transfer";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -97,6 +98,35 @@ export async function getWheelByInviteToken(token: string) {
   if (!db) return undefined;
   const result = await db.select().from(wheels).where(eq(wheels.inviteToken, token)).limit(1);
   return result[0];
+}
+
+// Public (guest) discovery: public wheels ranked by spin count, then size.
+// Counts come from two cheap grouped COUNTs scoped to the public wheel ids;
+// the ranking/limit is the pure `rankPopularWheels`. Public wheels are few, so
+// joining the counts in memory keeps the query simple and avoids subquery edge
+// cases. Returns [] when the DB is unavailable.
+export async function getPopularPublicWheels(limit: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const pub = await db
+    .select({ id: wheels.id, name: wheels.name })
+    .from(wheels)
+    .where(eq(wheels.isPublic, true));
+  if (pub.length === 0) return [];
+  const ids = pub.map((w) => w.id);
+  const spinRows = await db
+    .select({ wheelId: spinHistory.wheelId, c: sql<number>`count(*)` })
+    .from(spinHistory)
+    .where(inArray(spinHistory.wheelId, ids))
+    .groupBy(spinHistory.wheelId);
+  const restRows = await db
+    .select({ wheelId: restaurants.wheelId, c: sql<number>`count(*)` })
+    .from(restaurants)
+    .where(inArray(restaurants.wheelId, ids))
+    .groupBy(restaurants.wheelId);
+  const spinCounts = new Map(spinRows.map((r) => [r.wheelId, Number(r.c)]));
+  const restCounts = new Map(restRows.map((r) => [r.wheelId, Number(r.c)]));
+  return rankPopularWheels(pub, spinCounts, restCounts, limit);
 }
 
 export async function getUserWheels(userId: number) {

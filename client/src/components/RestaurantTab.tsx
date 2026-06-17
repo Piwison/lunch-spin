@@ -115,9 +115,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
                     onClick={() => toggleFormTag(tag.id)}
                     className="px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150"
                     style={{
-                      background: isActive ? tag.color + "33" : "oklch(0.16 0.025 260)",
-                      border: `1px solid ${isActive ? tag.color : "oklch(0.25 0.03 260)"}`,
-                      color: isActive ? tag.color : "oklch(0.65 0.02 260)",
+                      background: isActive ? tag.color + "33" : "var(--muted)",
+                      border: `1px solid ${isActive ? tag.color : "var(--border)"}`,
+                      color: isActive ? tag.color : "var(--muted-foreground)",
                     }}
                   >
                     {tag.name}
@@ -152,11 +152,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
             title="Import"
-            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-3 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
             style={{
-              background: "oklch(0.14 0.025 260)",
-              border: "1px solid oklch(0.22 0.025 260)",
-              color: "oklch(0.70 0.02 260)",
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              color: "var(--muted-foreground)",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
             }}
@@ -166,13 +166,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title="Add restaurant"
-            className="flex items-center justify-center gap-2 h-9 min-w-9 px-2.5 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
             style={{
-              background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
               color: "white",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
-              boxShadow: "0 0 16px oklch(0.72 0.22 30 / 0.35)",
+              boxShadow: "0 0 16px oklch(from var(--brand) l c h / 0.35)",
             }}
           >
             <Plus size={14} /> <span className="hidden sm:inline">ADD</span>
@@ -185,9 +185,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         <div
           className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs"
           style={{
-            background: "oklch(0.65 0.25 280 / 0.08)",
-            border: "1px solid oklch(0.65 0.25 280 / 0.20)",
-            color: "oklch(0.75 0.12 285)",
+            background: "oklch(from var(--info) l c h / 0.08)",
+            border: "1px solid oklch(from var(--info) l c h / 0.20)",
+            color: "var(--info)",
           }}
         >
           <Tag size={12} className="flex-shrink-0" />
@@ -199,14 +199,14 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
       {isLoading ? (
         <div className="flex flex-col gap-2.5">
           {[1,2,3,4].map(i => (
-            <div key={i} className="h-[72px] rounded-2xl animate-pulse" style={{ background: "oklch(0.13 0.025 260)", animationDelay: `${i * 80}ms` }} />
+            <div key={i} className="h-[72px] rounded-2xl animate-pulse" style={{ background: "var(--card)", animationDelay: `${i * 80}ms` }} />
           ))}
         </div>
       ) : restaurants?.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
-            style={{ background: "oklch(0.14 0.025 260)", border: "1px solid oklch(0.20 0.025 260)" }}
+            style={{ background: "var(--card)", border: "1px solid var(--border)" }}
           >
             🍜
           </div>
@@ -218,7 +218,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110 mt-1"
             style={{
-              background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
               color: "white",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
@@ -236,8 +236,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               key={r.id}
               className="group flex items-start gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 hover:scale-[1.005] hover:-translate-y-0.5"
               style={{
-                background: r.isExcluded ? "oklch(0.11 0.02 260)" : "oklch(0.13 0.025 260)",
-                border: r.isExcluded ? "1px solid oklch(0.18 0.025 260)" : "1px solid oklch(0.20 0.025 260)",
+                background: r.isExcluded ? "var(--card)" : "var(--card)",
+                border: r.isExcluded ? "1px solid var(--border)" : "1px solid var(--border)",
                 opacity: r.isExcluded ? 0.55 : 1,
                 boxShadow: r.isExcluded ? "none" : "0 2px 12px rgba(0,0,0,0.2)",
               }}
@@ -259,9 +259,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
                     <span
                       className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                       style={{
-                        background: "oklch(0.60 0.22 25 / 0.15)",
-                        color: "oklch(0.72 0.15 40)",
-                        border: "1px solid oklch(0.60 0.22 25 / 0.25)",
+                        background: "oklch(from var(--destructive) l c h / 0.15)",
+                        color: "var(--brand)",
+                        border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
                       }}
                     >
                       excluded
@@ -290,20 +290,20 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
               {/* Actions — always visible on mobile, hover-reveal on desktop */}
               {isOwner && (
-                <div className="flex items-center gap-0.5 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
+                <div className="flex items-center gap-1 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
                   <button
                     onClick={() => openEdit(r)}
-                    className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
+                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
                     title="Edit"
                   >
-                    <Pencil size={13} />
+                    <Pencil size={16} />
                   </button>
                   <button
                     onClick={() => { if (confirm(`Remove "${r.name}"?`)) deleteRestaurant.mutate({ id: r.id }); }}
-                    className="p-2 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
+                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
                     title="Delete"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={16} />
                   </button>
                 </div>
               )}
@@ -357,7 +357,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               onClick={() => { setFormError(null); submitForm(); }}
               disabled={!form.name.trim() || addRestaurant.isPending || updateRestaurant.isPending}
               className="transition-all duration-200 active:scale-[0.97]"
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {addRestaurant.isPending || updateRestaurant.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />{editId !== null ? "Saving..." : "Adding..."}</span>
@@ -388,7 +388,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
             <Button
               onClick={() => importText.trim() && importRestaurants.mutate({ wheelId, text: importText })}
               disabled={!importText.trim() || importRestaurants.isPending}
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {importRestaurants.isPending ? "Importing..." : "Import"}
             </Button>
@@ -417,7 +417,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
                 disabled={!newTagName.trim() || createTag.isPending}
                 size="icon"
                 className="transition-all duration-200 active:scale-90 flex-shrink-0"
-                style={{ background: "oklch(0.72 0.22 30)", color: "white" }}
+                style={{ background: "var(--brand)", color: "white" }}
               >
                 {createTag.isPending ? <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={16} />}
               </Button>

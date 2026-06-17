@@ -42,14 +42,16 @@ function WheelActionsMenu({
   isOwner,
   large,
   onShare,
+  onCopyPublic,
   onExport,
   onSettings,
   onDelete,
 }: {
-  wheel: { isShared: boolean };
+  wheel: { isShared: boolean; isPublic: boolean };
   isOwner: boolean;
   large?: boolean;
   onShare: () => void;
+  onCopyPublic: () => void;
   onExport: () => void;
   onSettings: () => void;
   onDelete: () => void;
@@ -68,6 +70,12 @@ function WheelActionsMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="glass border-border/50 min-w-44">
+        {/* Public wheels can be shared with anyone — no sign-in, no token. */}
+        {wheel.isPublic && (
+          <DropdownMenuItem onClick={onCopyPublic} className="gap-2.5">
+            <Globe size={14} /> Copy public link
+          </DropdownMenuItem>
+        )}
         {wheel.isShared && isOwner && (
           <DropdownMenuItem onClick={onShare} className="gap-2.5">
             <Share2 size={14} /> Share invite link
@@ -212,6 +220,11 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
     toast.success("Invite link copied!");
   };
 
+  const copyPublicLink = (wheelId: number) => {
+    navigator.clipboard.writeText(`${window.location.origin}/w/${wheelId}`);
+    toast.success("Public link copied!");
+  };
+
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
 
   /** One row, shared between the desktop rail and the mobile sheet. The select
@@ -230,8 +243,8 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
         key={wheel.id}
         className="group relative flex items-center gap-1 rounded-xl transition-all duration-150"
         style={{
-          background: isSelected ? "oklch(0.72 0.22 30 / 0.15)" : "transparent",
-          border: isSelected ? "1px solid oklch(0.72 0.22 30 / 0.3)" : "1px solid transparent",
+          background: isSelected ? "oklch(from var(--brand) l c h / 0.15)" : "transparent",
+          border: isSelected ? "1px solid oklch(from var(--brand) l c h / 0.3)" : "1px solid transparent",
         }}
       >
         <button
@@ -243,17 +256,17 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             className="w-6 h-6 rounded-full flex-shrink-0"
             style={{
               background: isSelected
-                ? "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)"
-                : "oklch(0.20 0.025 260)",
+                ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
+                : "var(--border)",
             }}
           />
           <span
             className="flex-1 truncate text-sm"
-            style={{ color: isSelected ? "oklch(0.90 0.01 260)" : "oklch(0.65 0.02 260)" }}
+            style={{ color: isSelected ? "var(--foreground)" : "var(--muted-foreground)" }}
           >
             {wheel.name}
           </span>
-          {isSelected && inSheet && <Check size={16} style={{ color: "oklch(0.72 0.22 30)" }} className="flex-shrink-0" />}
+          {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand)" }} className="flex-shrink-0" />}
           <span
             className="text-muted-foreground/50 flex-shrink-0"
             title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
@@ -271,6 +284,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             isOwner={isOwner}
             large={inSheet}
             onShare={() => regenInvite.mutate({ id: wheel.id })}
+            onCopyPublic={() => copyPublicLink(wheel.id)}
             onExport={() => handleExport(wheel.id, wheel.name)}
             onSettings={() => setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays, fairnessMode: wheel.fairnessMode, rotateCuisines: wheel.rotateCuisines })}
             onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
@@ -312,13 +326,13 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
       <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0">
         <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
           <SheetTrigger asChild>
-            <button className="w-full flex items-center gap-2.5 px-3 h-12 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
+            <button className="w-full flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
               <span
-                className="w-6 h-6 rounded-full flex-shrink-0"
+                className="w-7 h-7 rounded-full flex-shrink-0"
                 style={{
                   background: selectedWheel
-                    ? "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)"
-                    : "oklch(0.20 0.025 260)",
+                    ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
+                    : "var(--border)",
                 }}
               />
               <span className="flex-1 truncate text-sm font-semibold" style={{ fontFamily: "var(--font-display)" }}>
@@ -332,7 +346,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             className="glass-nav border-border/50 rounded-t-3xl max-h-[80vh] gap-0 px-3"
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
           >
-            <SheetHeader className="flex-row items-center justify-between px-1 pb-1">
+            <SheetHeader className="flex-row items-center justify-between pl-1 pr-11 pb-1">
               <SheetTitle className="text-xs tracking-widest text-muted-foreground" style={{ fontFamily: "var(--font-display)" }}>
                 MY WHEELS
               </SheetTitle>
@@ -420,7 +434,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
               onClick={() => { setCreateError(null); newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines }); }}
               disabled={!newName.trim() || createWheel.isPending}
               className="relative overflow-hidden transition-all duration-200 active:scale-[0.97]"
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {createWheel.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating...</span>
@@ -462,12 +476,10 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 onChange={(e) => setEditWheel({ ...editWheel, name: e.target.value })}
                 className="bg-secondary/50 border-border/50"
               />
-              {editWheel.isShared && (
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">Public (anyone with link)</Label>
-                  <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
-                </div>
-              )}
+              <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
+                <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
+              </div>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
                 <Select value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
@@ -501,7 +513,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 }); }}
                 disabled={!editWheel.name.trim() || updateWheel.isPending}
                 className="transition-all duration-200 active:scale-[0.97]"
-                style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
                 {updateWheel.isPending ? (
                   <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
@@ -541,7 +553,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             <Button
               onClick={submitImport}
               disabled={!importText.trim() || importWheel.isPending}
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {importWheel.isPending ? "Importing..." : "Import Wheel"}
             </Button>

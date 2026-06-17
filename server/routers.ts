@@ -9,6 +9,7 @@ import { applyMoodBoost, explainPick, moodBoost, moodKeywords, type SmartCandida
 import { resolveAddList } from "@shared/parseAddList";
 import { parseRestaurantList } from "@shared/import";
 import { serializeWheel, wheelExportSchema } from "@shared/transfer";
+import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
@@ -31,6 +32,7 @@ import {
   deleteRestaurant,
   deleteWheel,
   getExclusions,
+  getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
   getRestaurantStats,
@@ -71,6 +73,25 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
+
+    // ── Guest (no sign-in) reads ──────────────────────────────────────────────
+    // Public-safe wheel for the /w/:id guest view. Only public wheels resolve;
+    // anything else is NOT_FOUND (a once-public wheel that went private reads the
+    // same — the client shows a graceful "not available" state). Output is shaped
+    // through `toPublicWheel` so no owner/member PII can leak.
+    getPublic: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel || !wheel.isPublic) throw new TRPCError({ code: "NOT_FOUND" });
+        return toPublicWheel(wheel);
+      }),
+
+    // Popular public wheels for the landing "try without signing in" section,
+    // ranked by spin count. No PII; just id/name/counts.
+    listPublic: publicProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(24).default(8) }))
+      .query(async ({ input }) => getPopularPublicWheels(input.limit)),
 
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -208,6 +229,17 @@ export const appRouter = router({
           isExcluded: exclusions.has(r.id),
           excludedUntil: exclusions.get(r.id) ?? null,
         }));
+      }),
+
+    // Guest read for the /w/:id view: the full restaurant list of a public wheel
+    // (guests spin everything — no exclusion state). Public-safe fields only.
+    listPublic: publicProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel || !wheel.isPublic) throw new TRPCError({ code: "NOT_FOUND" });
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        return rests.map(toPublicRestaurant);
       }),
 
     add: protectedProcedure

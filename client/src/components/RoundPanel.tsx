@@ -100,9 +100,9 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 title={mine ? "You're avoiding this — tap to allow" : "Avoid this today"}
                 className="px-2.5 py-0.5 rounded-full text-xs font-medium transition-all active:scale-95"
                 style={{
-                  background: avoided ? "oklch(0.60 0.22 25 / 0.2)" : "oklch(0.16 0.025 260)",
-                  border: `1px solid ${avoided ? "oklch(0.60 0.22 25 / 0.5)" : "oklch(0.25 0.03 260)"}`,
-                  color: avoided ? "oklch(0.75 0.15 40)" : "oklch(0.6 0.02 260)",
+                  background: avoided ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
+                  border: `1px solid ${avoided ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
+                  color: avoided ? "var(--brand)" : "var(--muted-foreground)",
                   textDecoration: avoided ? "line-through" : "none",
                 }}
               >
@@ -125,8 +125,8 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
               key={r.id}
               className="flex items-center gap-2 px-3 py-2 rounded-lg"
               style={{
-                background: "oklch(0.13 0.025 260)",
-                border: "1px solid oklch(0.20 0.025 260)",
+                background: "var(--card)",
+                border: "1px solid var(--border)",
                 opacity: isVetoed ? 0.5 : 1,
               }}
             >
@@ -141,9 +141,9 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 title={iVoted ? "Remove your vote" : "Vote for this"}
                 className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all active:scale-95 disabled:opacity-40"
                 style={{
-                  background: iVoted ? "oklch(0.70 0.18 150 / 0.2)" : "oklch(0.16 0.025 260)",
-                  border: `1px solid ${iVoted ? "oklch(0.70 0.18 150 / 0.5)" : "oklch(0.25 0.03 260)"}`,
-                  color: iVoted ? "oklch(0.80 0.16 155)" : "oklch(0.65 0.02 260)",
+                  background: iVoted ? "oklch(0.70 0.18 150 / 0.2)" : "var(--muted)",
+                  border: `1px solid ${iVoted ? "oklch(0.70 0.18 150 / 0.5)" : "var(--border)"}`,
+                  color: iVoted ? "oklch(0.80 0.16 155)" : "var(--muted-foreground)",
                 }}
               >
                 <ThumbsUp size={12} />
@@ -156,9 +156,9 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 title={iVetoed ? "Take back your veto" : "Veto — not today"}
                 className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all active:scale-95"
                 style={{
-                  background: iVetoed ? "oklch(0.60 0.22 25 / 0.2)" : "oklch(0.16 0.025 260)",
-                  border: `1px solid ${iVetoed ? "oklch(0.60 0.22 25 / 0.5)" : "oklch(0.25 0.03 260)"}`,
-                  color: iVetoed ? "oklch(0.75 0.15 40)" : "oklch(0.65 0.02 260)",
+                  background: iVetoed ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
+                  border: `1px solid ${iVetoed ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
+                  color: iVetoed ? "var(--brand)" : "var(--muted-foreground)",
                 }}
               >
                 <Ban size={12} />

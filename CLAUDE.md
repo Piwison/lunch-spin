@@ -119,6 +119,14 @@ reclaimed after idle). Anything not committed is lost.
 10. **Referenced Manus after migrating to Vercel.** After PR #14 merged, told user
     "Once Manus redeploys…" — Manus is gone; deploy is Vercel auto-deploy. Check
     CLAUDE.md mistake log before mentioning deploy platform.
+11. **Canvas can't read CSS theme tokens.** The Warm-Appetite light/dark theme
+    drives colors via CSS vars (`var(--card)` etc.). `<canvas>` 2D context
+    (`ctx.fillStyle = "var(--muted)"`) silently ignores CSS vars → the shape
+    draws black/transparent. Resolve tokens at draw time with
+    `getComputedStyle(canvas).getPropertyValue("--muted")` and re-draw on theme
+    change (add `theme` to the draw deps). WebGL shaders need a `u_dark` uniform,
+    not vars. Related: applying alpha to a token (`var(--brand) + "55"`) is
+    invalid CSS — use relative color syntax `oklch(from var(--brand) l c h / .33)`.
 
 ## Skills index (in `.claude/skills/`)
 
