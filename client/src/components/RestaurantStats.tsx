@@ -1,180 +1,198 @@
 import { useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-
-interface RestaurantStat {
-  id: number;
-  name: string;
-  pickCount: number;
-  lastPickedAt: Date | null;
-}
+import { Crown, Sparkles, Users } from "lucide-react";
+import {
+  rankStats,
+  totalPicks as sumPicks,
+  overdueRestaurants,
+  daysSinceLastPick,
+  picksByPerson,
+  type RestaurantStat,
+} from "@shared/stats";
 
 interface RestaurantStatsProps {
   stats: RestaurantStat[];
+  /** Spin history — enables the "who's been picking" fairness view on shared wheels. */
+  history?: { spunBy: number; spunByName: string | null }[];
+  /** Shared wheel? Controls whether the fairness view is shown. */
+  showPeople?: boolean;
   isLoading?: boolean;
 }
 
-const COLORS = [
-  "var(--brand)",    // Orange
-  "var(--brand-2)",   // Purple
-  "oklch(0.70 0.20 160)",   // Cyan
-  "var(--brand-2)",    // Yellow
-  "oklch(0.68 0.22 340)",   // Red
+const ACCENTS = [
+  "var(--brand)",
+  "var(--brand-2)",
+  "oklch(0.70 0.20 160)",
+  "oklch(0.75 0.18 60)",
+  "oklch(0.68 0.22 340)",
 ];
 
-export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
-  // Sort by pick count and take top 5
-  const topRestaurants = useMemo(() => {
-    return [...stats]
-      .sort((a, b) => b.pickCount - a.pickCount)
-      .slice(0, 5);
-  }, [stats]);
+/** "3d ago" / "today" / "never" from a whole-day count. */
+function lastPickedLabel(lastPickedAt: Date | null): string {
+  const days = daysSinceLastPick(lastPickedAt);
+  if (days === null) return "never picked";
+  if (days === 0) return "picked today";
+  if (days === 1) return "picked yesterday";
+  return `picked ${days}d ago`;
+}
 
-  // Prepare data for bar chart (all restaurants)
-  const barData = useMemo(() => {
-    return [...stats]
-      .sort((a, b) => b.pickCount - a.pickCount)
-      .map((r) => ({
-        name: r.name.length > 20 ? r.name.substring(0, 17) + "..." : r.name,
-        picks: r.pickCount,
-        fullName: r.name,
-      }));
-  }, [stats]);
+export function RestaurantStats({ stats, history, showPeople, isLoading }: RestaurantStatsProps) {
+  const ranked = useMemo(() => rankStats(stats), [stats]);
+  const total = useMemo(() => sumPicks(stats), [stats]);
+  const placesTried = useMemo(() => stats.filter((s) => s.pickCount > 0).length, [stats]);
+  const top = useMemo(() => ranked.slice(0, 5), [ranked]);
+  const maxPicks = top[0]?.pickCount ?? 0;
 
-  // Prepare data for pie chart (top 5)
-  const pieData = useMemo(() => {
-    return topRestaurants.map((r) => ({
-      name: r.name,
-      value: r.pickCount,
-    }));
-  }, [topRestaurants]);
+  // Decision-grade: places the group is neglecting (never picked, or not in 14d).
+  const overdue = useMemo(
+    () => overdueRestaurants(stats, { thresholdDays: 14 }).slice(0, 6),
+    [stats]
+  );
 
-  const totalPicks = useMemo(() => {
-    return stats.reduce((sum, r) => sum + r.pickCount, 0);
-  }, [stats]);
-
-  const averagePicks = useMemo(() => {
-    return stats.length > 0 ? (totalPicks / stats.length).toFixed(1) : 0;
-  }, [stats, totalPicks]);
+  const people = useMemo(
+    () => (showPeople && history ? picksByPerson(history) : []),
+    [showPeople, history]
+  );
+  const maxPersonPicks = people[0]?.count ?? 0;
 
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-48 w-full" />
       </div>
     );
   }
 
-  if (stats.length === 0) {
+  // No spins yet — restaurants may exist, but there's nothing to summarise.
+  if (total === 0) {
     return (
-      <Card className="p-6 text-center">
-        <p className="text-muted-foreground">No spin data yet. Start spinning to see statistics!</p>
+      <Card className="p-6 text-center text-muted-foreground">
+        <div className="text-3xl mb-2 opacity-30">📊</div>
+        <p className="text-sm">No spins recorded yet. Spin the wheel to start building insights.</p>
       </Card>
     );
   }
+
+  const favorite = ranked[0];
 
   return (
-    <div className="space-y-6">
-      {/* Stats Summary */}
-      <div className="grid grid-cols-3 gap-4">
+    <div className="space-y-4">
+      {/* Summary row */}
+      <div className="grid grid-cols-3 gap-3">
         <Card className="p-4">
-          <div className="text-sm font-medium text-muted-foreground">Total Spins</div>
-          <div className="text-2xl font-bold text-primary mt-1">{totalPicks}</div>
+          <div className="text-xs font-medium text-muted-foreground">Total spins</div>
+          <div className="text-2xl font-bold mt-1" style={{ color: "var(--brand)", fontFamily: "var(--font-display)" }}>{total}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-sm font-medium text-muted-foreground">Restaurants</div>
-          <div className="text-2xl font-bold text-accent mt-1">{stats.length}</div>
+          <div className="text-xs font-medium text-muted-foreground">Places tried</div>
+          <div className="text-2xl font-bold mt-1" style={{ fontFamily: "var(--font-display)" }}>
+            {placesTried}<span className="text-base text-muted-foreground font-normal">/{stats.length}</span>
+          </div>
         </Card>
         <Card className="p-4">
-          <div className="text-sm font-medium text-muted-foreground">Avg Picks</div>
-          <div className="text-2xl font-bold text-accent-foreground mt-1">{averagePicks}</div>
+          <div className="text-xs font-medium text-muted-foreground">Favourite</div>
+          <div className="text-sm font-bold mt-1.5 truncate" title={favorite?.name} style={{ fontFamily: "var(--font-display)" }}>
+            {favorite?.name ?? "—"}
+          </div>
         </Card>
       </div>
 
-      {/* Pick Frequency Bar Chart */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Pick Frequency</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={barData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="name" stroke="var(--muted-foreground)" />
-            <YAxis stroke="var(--muted-foreground)" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "var(--card)",
-                border: "1px solid var(--border)",
-                borderRadius: "0.5rem",
-              }}
-              labelStyle={{ color: "var(--foreground)" }}
-            />
-            <Bar dataKey="picks" fill="var(--brand)" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-
-      {/* Top 5 Pie Chart */}
-      {topRestaurants.length > 0 && (
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Top {Math.min(5, topRestaurants.length)} Restaurants</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={pieData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, value }) => `${name}: ${value}`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "var(--card)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "0.5rem",
+      {/* Due for a comeback — the actionable "what should we eat" nudge */}
+      {overdue.length > 0 && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={15} style={{ color: "var(--brand-2)" }} />
+            <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>DUE FOR A COMEBACK</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">Spots you haven't had in a while (or ever) — maybe spin one of these.</p>
+          <div className="flex flex-wrap gap-2">
+            {overdue.map(({ stat, daysSince }) => (
+              <span
+                key={stat.id}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
+                style={{
+                  background: "oklch(from var(--brand-2) l c h / 0.10)",
+                  border: "1px solid oklch(from var(--brand-2) l c h / 0.25)",
+                  color: "var(--foreground)",
                 }}
-                labelStyle={{ color: "var(--foreground)" }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+              >
+                {stat.name}
+                <span className="text-[10px] text-muted-foreground">
+                  {daysSince === null ? "never" : `${daysSince}d`}
+                </span>
+              </span>
+            ))}
+          </div>
         </Card>
       )}
 
-      {/* Top Restaurants List */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Most Popular</h3>
+      {/* Most picked — horizontal bars (clear even with only a handful of spins) */}
+      <Card className="p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Crown size={15} style={{ color: "var(--brand)" }} />
+          <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>MOST PICKED</h3>
+        </div>
         <div className="space-y-3">
-          {topRestaurants.map((r, idx) => (
-            <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-card/50">
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                />
-                <div>
-                  <p className="font-medium">{r.name}</p>
-                  {r.lastPickedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Last picked {new Date(r.lastPickedAt).toLocaleDateString()}
-                    </p>
-                  )}
+          {top.map((r, idx) => {
+            const pct = maxPicks > 0 ? (r.pickCount / maxPicks) * 100 : 0;
+            const accent = ACCENTS[idx % ACCENTS.length];
+            return (
+              <div key={r.id}>
+                <div className="flex items-center justify-between mb-1 gap-2">
+                  <span className="text-sm font-medium truncate flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: accent }} />
+                    {r.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                    {r.pickCount} · {lastPickedLabel(r.lastPickedAt)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.max(pct, 6)}%`, background: accent }}
+                  />
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-lg font-bold text-primary">{r.pickCount}</p>
-                <p className="text-xs text-muted-foreground">picks</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
+
+      {/* Who's been picking — fairness on shared wheels */}
+      {people.length > 1 && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Users size={15} style={{ color: "oklch(0.70 0.20 160)" }} />
+            <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>WHO'S BEEN PICKING</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">Who's been driving the spins — keep it balanced.</p>
+          <div className="space-y-3">
+            {people.map((p, idx) => {
+              const pct = maxPersonPicks > 0 ? (p.count / maxPersonPicks) * 100 : 0;
+              const accent = ACCENTS[idx % ACCENTS.length];
+              return (
+                <div key={p.userId}>
+                  <div className="flex items-center justify-between mb-1 gap-2">
+                    <span className="text-sm font-medium truncate">{p.name ?? "Unknown"}</span>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {p.count} spin{p.count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(pct, 6)}%`, background: accent }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

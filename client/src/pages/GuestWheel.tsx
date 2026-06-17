@@ -290,7 +290,7 @@ export default function GuestWheel() {
 /** Page chrome: warm background, centered content, theme toggle. */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+    <div className="min-h-dvh flex items-center justify-center bg-background text-foreground">
       <div className="fixed top-3 right-3 z-30">
         <ThemeToggle />
       </div>

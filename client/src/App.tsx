@@ -1,25 +1,46 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import WheelApp from "./pages/WheelApp";
-import JoinWheel from "./pages/JoinWheel";
-import GuestWheel from "./pages/GuestWheel";
+
+// Code-split the heavier, behind-the-action routes so the landing page ships a
+// lean first-load bundle. Home stays eager — it's the entry paint.
+const WheelApp = lazy(() => import("./pages/WheelApp"));
+const JoinWheel = lazy(() => import("./pages/JoinWheel"));
+const GuestWheel = lazy(() => import("./pages/GuestWheel"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+/** Centered orb fallback while a route chunk loads — matches the app loaders. */
+function RouteFallback() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--background)" }}>
+      <div
+        className="w-12 h-12 rounded-full animate-orb-spin"
+        style={{
+          background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+          boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
+        }}
+      />
+    </div>
+  );
+}
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/app" component={WheelApp} />
-      <Route path="/app/:wheelId" component={WheelApp} />
-      <Route path="/w/:wheelId" component={GuestWheel} />
-      <Route path="/join/:token" component={JoinWheel} />
-      <Route path="/404" component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<RouteFallback />}>
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/app" component={WheelApp} />
+        <Route path="/app/:wheelId" component={WheelApp} />
+        <Route path="/w/:wheelId" component={GuestWheel} />
+        <Route path="/join/:token" component={JoinWheel} />
+        <Route path="/404" component={NotFound} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 

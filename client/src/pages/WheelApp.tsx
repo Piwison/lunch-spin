@@ -234,7 +234,7 @@ export default function WheelApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--background)" }}>
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--background)" }}>
         <div className="flex flex-col items-center gap-4">
           <div
             className="w-12 h-12 rounded-full animate-orb-spin"
@@ -773,6 +773,7 @@ export default function WheelApp() {
                   <HistoryTab
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
+                    isShared={isShared}
                   />
                 )}
               </div>
