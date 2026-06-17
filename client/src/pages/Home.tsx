@@ -2,7 +2,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useLocation } from "wouter";
-import { Users, Clock, Tags, Sparkles, ArrowRight, ChevronDown } from "lucide-react";
+import { Users, Clock, Tags, Sparkles, ArrowRight, ChevronDown, Utensils, Play } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 
 const FEATURES = [
   { icon: Users, label: "Team Wheels", desc: "Shared wheels for your whole squad", accent: "oklch(0.72 0.22 30)" },
@@ -29,6 +30,9 @@ export default function Home() {
   const rafRef = useRef<number>(0);
   const cursorPos = useRef({ x: 0, y: 0 });
   const targetPos = useRef({ x: 0, y: 0 });
+
+  // Popular public wheels — guests can try one without signing in.
+  const { data: popularWheels } = trpc.wheels.listPublic.useQuery({ limit: 6 });
 
   useEffect(() => {
     if (!loading && user) navigate("/app");
@@ -449,6 +453,66 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ── POPULAR WHEELS (try without signing in) ── */}
+      {popularWheels && popularWheels.length > 0 && (
+        <section className="relative z-10 py-16 px-6">
+          <div className="max-w-4xl mx-auto">
+            <p
+              className="text-center text-xs tracking-[0.2em] mb-3 reveal"
+              style={{ color: "oklch(0.50 0.03 260)", fontFamily: "var(--font-display)" }}
+            >
+              TRY WITHOUT SIGNING IN
+            </p>
+            <h2
+              className="text-center text-2xl md:text-3xl font-black mb-10 gradient-text reveal"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              POPULAR WHEELS
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {popularWheels.map((w, i) => (
+                <button
+                  key={w.id}
+                  onClick={() => navigate(`/w/${w.id}`)}
+                  className="group relative overflow-hidden rounded-2xl p-5 text-left cursor-none reveal transition-all duration-300 hover:-translate-y-1"
+                  style={{
+                    background: "oklch(0.12 0.025 260 / 0.6)",
+                    border: "1px solid oklch(0.20 0.025 260)",
+                    backdropFilter: "blur(16px)",
+                    animationDelay: `${i * 80}ms`,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
+                      style={{ background: "oklch(0.72 0.22 30 / 0.15)", border: "1px solid oklch(0.72 0.22 30 / 0.30)" }}
+                    >
+                      <Utensils size={16} style={{ color: "oklch(0.80 0.15 40)" }} />
+                    </div>
+                    <span
+                      className="flex items-center gap-1.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ color: "oklch(0.72 0.22 30)", fontFamily: "var(--font-display)" }}
+                    >
+                      SPIN <Play size={11} />
+                    </span>
+                  </div>
+                  <h3
+                    className="font-bold text-base mb-1 truncate"
+                    style={{ fontFamily: "var(--font-display)", color: "oklch(0.92 0.01 260)" }}
+                  >
+                    {w.name}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {w.restaurantCount} restaurant{w.restaurantCount !== 1 ? "s" : ""}
+                    {w.spinCount > 0 && ` · ${w.spinCount} spin${w.spinCount !== 1 ? "s" : ""}`}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── FINAL CTA ── */}
       <section className="relative z-10 py-24 px-6 text-center">

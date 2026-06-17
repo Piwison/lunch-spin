@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import WheelApp from "./pages/WheelApp";
 import JoinWheel from "./pages/JoinWheel";
+import GuestWheel from "./pages/GuestWheel";
 
 function Router() {
   return (
@@ -14,6 +15,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/app" component={WheelApp} />
       <Route path="/app/:wheelId" component={WheelApp} />
+      <Route path="/w/:wheelId" component={GuestWheel} />
       <Route path="/join/:token" component={JoinWheel} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

@@ -156,6 +156,30 @@ function normalizeStatRow(row) {
   };
 }
 
+// shared/publicWheel.ts
+function toPublicWheel(w) {
+  return { id: w.id, name: w.name, isPublic: w.isPublic, exclusionDays: w.exclusionDays };
+}
+function toPublicRestaurant(r) {
+  return {
+    id: r.id,
+    name: r.name,
+    notes: r.notes,
+    mapUrl: r.mapUrl,
+    tags: r.tags.map((t2) => ({ id: t2.id, name: t2.name, color: t2.color, category: t2.category }))
+  };
+}
+function rankPopularWheels(publicWheels, spinCounts, restaurantCounts, limit) {
+  return publicWheels.map((w) => ({
+    id: w.id,
+    name: w.name,
+    spinCount: spinCounts.get(w.id) ?? 0,
+    restaurantCount: restaurantCounts.get(w.id) ?? 0
+  })).sort(
+    (a, b) => b.spinCount - a.spinCount || b.restaurantCount - a.restaurantCount || a.id - b.id
+  ).slice(0, Math.max(0, limit));
+}
+
 // server/db.ts
 var _db = null;
 async function getDb() {
@@ -230,6 +254,18 @@ async function getWheelByInviteToken(token) {
   if (!db) return void 0;
   const result = await db.select().from(wheels).where(eq(wheels.inviteToken, token)).limit(1);
   return result[0];
+}
+async function getPopularPublicWheels(limit) {
+  const db = await getDb();
+  if (!db) return [];
+  const pub = await db.select({ id: wheels.id, name: wheels.name }).from(wheels).where(eq(wheels.isPublic, true));
+  if (pub.length === 0) return [];
+  const ids = pub.map((w) => w.id);
+  const spinRows = await db.select({ wheelId: spinHistory.wheelId, c: sql`count(*)` }).from(spinHistory).where(inArray(spinHistory.wheelId, ids)).groupBy(spinHistory.wheelId);
+  const restRows = await db.select({ wheelId: restaurants.wheelId, c: sql`count(*)` }).from(restaurants).where(inArray(restaurants.wheelId, ids)).groupBy(restaurants.wheelId);
+  const spinCounts = new Map(spinRows.map((r) => [r.wheelId, Number(r.c)]));
+  const restCounts = new Map(restRows.map((r) => [r.wheelId, Number(r.c)]));
+  return rankPopularWheels(pub, spinCounts, restCounts, limit);
 }
 async function getUserWheels(userId) {
   const db = await getDb();
@@ -1429,6 +1465,19 @@ var appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
+    // ── Guest (no sign-in) reads ──────────────────────────────────────────────
+    // Public-safe wheel for the /w/:id guest view. Only public wheels resolve;
+    // anything else is NOT_FOUND (a once-public wheel that went private reads the
+    // same — the client shows a graceful "not available" state). Output is shaped
+    // through `toPublicWheel` so no owner/member PII can leak.
+    getPublic: publicProcedure.input(z3.object({ id: z3.number() })).query(async ({ input }) => {
+      const wheel = await getWheelById(input.id);
+      if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });
+      return toPublicWheel(wheel);
+    }),
+    // Popular public wheels for the landing "try without signing in" section,
+    // ranked by spin count. No PII; just id/name/counts.
+    listPublic: publicProcedure.input(z3.object({ limit: z3.number().int().min(1).max(24).default(8) })).query(async ({ input }) => getPopularPublicWheels(input.limit)),
     get: protectedProcedure.input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
@@ -1531,6 +1580,14 @@ var appRouter = router({
         isExcluded: exclusions.has(r.id),
         excludedUntil: exclusions.get(r.id) ?? null
       }));
+    }),
+    // Guest read for the /w/:id view: the full restaurant list of a public wheel
+    // (guests spin everything — no exclusion state). Public-safe fields only.
+    listPublic: publicProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });
+      const rests = await getRestaurantsByWheel(input.wheelId);
+      return rests.map(toPublicRestaurant);
     }),
     add: protectedProcedure.input(z3.object({ wheelId: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()), mapUrl: z3.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);

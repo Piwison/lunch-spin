@@ -42,14 +42,16 @@ function WheelActionsMenu({
   isOwner,
   large,
   onShare,
+  onCopyPublic,
   onExport,
   onSettings,
   onDelete,
 }: {
-  wheel: { isShared: boolean };
+  wheel: { isShared: boolean; isPublic: boolean };
   isOwner: boolean;
   large?: boolean;
   onShare: () => void;
+  onCopyPublic: () => void;
   onExport: () => void;
   onSettings: () => void;
   onDelete: () => void;
@@ -68,6 +70,12 @@ function WheelActionsMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="glass border-border/50 min-w-44">
+        {/* Public wheels can be shared with anyone — no sign-in, no token. */}
+        {wheel.isPublic && (
+          <DropdownMenuItem onClick={onCopyPublic} className="gap-2.5">
+            <Globe size={14} /> Copy public link
+          </DropdownMenuItem>
+        )}
         {wheel.isShared && isOwner && (
           <DropdownMenuItem onClick={onShare} className="gap-2.5">
             <Share2 size={14} /> Share invite link
@@ -212,6 +220,11 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
     toast.success("Invite link copied!");
   };
 
+  const copyPublicLink = (wheelId: number) => {
+    navigator.clipboard.writeText(`${window.location.origin}/w/${wheelId}`);
+    toast.success("Public link copied!");
+  };
+
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
 
   /** One row, shared between the desktop rail and the mobile sheet. The select
@@ -271,6 +284,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             isOwner={isOwner}
             large={inSheet}
             onShare={() => regenInvite.mutate({ id: wheel.id })}
+            onCopyPublic={() => copyPublicLink(wheel.id)}
             onExport={() => handleExport(wheel.id, wheel.name)}
             onSettings={() => setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays, fairnessMode: wheel.fairnessMode, rotateCuisines: wheel.rotateCuisines })}
             onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
