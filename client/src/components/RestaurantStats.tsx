@@ -16,10 +16,10 @@ interface RestaurantStatsProps {
 }
 
 const COLORS = [
-  "oklch(0.72 0.22 30)",    // Orange
-  "oklch(0.65 0.25 280)",   // Purple
+  "var(--brand)",    // Orange
+  "var(--brand-2)",   // Purple
   "oklch(0.70 0.20 160)",   // Cyan
-  "oklch(0.75 0.18 60)",    // Yellow
+  "var(--brand-2)",    // Yellow
   "oklch(0.68 0.22 340)",   // Red
 ];
 
@@ -98,18 +98,18 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
         <h3 className="text-lg font-semibold mb-4">Pick Frequency</h3>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={barData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.20 0.025 260)" />
-            <XAxis dataKey="name" stroke="oklch(0.55 0.02 260)" />
-            <YAxis stroke="oklch(0.55 0.02 260)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis dataKey="name" stroke="var(--muted-foreground)" />
+            <YAxis stroke="var(--muted-foreground)" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "oklch(0.12 0.025 260)",
-                border: "1px solid oklch(0.25 0.03 260)",
+                backgroundColor: "var(--card)",
+                border: "1px solid var(--border)",
                 borderRadius: "0.5rem",
               }}
-              labelStyle={{ color: "oklch(0.95 0.01 260)" }}
+              labelStyle={{ color: "var(--foreground)" }}
             />
-            <Bar dataKey="picks" fill="oklch(0.72 0.22 30)" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="picks" fill="var(--brand)" radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </Card>
@@ -136,11 +136,11 @@ export function RestaurantStats({ stats, isLoading }: RestaurantStatsProps) {
               </Pie>
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "oklch(0.12 0.025 260)",
-                  border: "1px solid oklch(0.25 0.03 260)",
+                  backgroundColor: "var(--card)",
+                  border: "1px solid var(--border)",
                   borderRadius: "0.5rem",
                 }}
-                labelStyle={{ color: "oklch(0.95 0.01 260)" }}
+                labelStyle={{ color: "var(--foreground)" }}
               />
             </PieChart>
           </ResponsiveContainer>

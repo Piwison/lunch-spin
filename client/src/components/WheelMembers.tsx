@@ -96,7 +96,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
                 {isHere && (
                   <span
                     className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full"
-                    style={{ background: "oklch(0.72 0.18 150)", boxShadow: "0 0 0 1.5px oklch(0.12 0.025 260)" }}
+                    style={{ background: "oklch(0.72 0.18 150)", boxShadow: "0 0 0 1.5px var(--card)" }}
                   />
                 )}
               </span>

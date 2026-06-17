@@ -96,9 +96,9 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
           <div
             className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
             style={{
-              background: "oklch(0.60 0.22 25 / 0.1)",
-              border: "1px solid oklch(0.60 0.22 25 / 0.3)",
-              color: "oklch(0.80 0.12 40)",
+              background: "oklch(from var(--destructive) l c h / 0.1)",
+              border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
+              color: "var(--brand)",
             }}
           >
             <Clock size={13} className="mt-0.5 flex-shrink-0" />
@@ -143,12 +143,12 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                   style={{
                     background:
                       idx === 0
-                        ? "oklch(0.14 0.03 260)"
-                        : "oklch(0.12 0.025 260)",
+                        ? "var(--card)"
+                        : "var(--card)",
                     border:
                       idx === 0
-                        ? "1px solid oklch(0.25 0.04 260)"
-                        : "1px solid oklch(0.18 0.025 260)",
+                        ? "1px solid var(--border)"
+                        : "1px solid var(--border)",
                   }}
                 >
                   {/* Rank / index */}
@@ -166,9 +166,9 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                         <span
                           className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
-                            background: "oklch(0.60 0.22 25 / 0.15)",
-                            color: "oklch(0.75 0.15 40)",
-                            border: "1px solid oklch(0.60 0.22 25 / 0.3)",
+                            background: "oklch(from var(--destructive) l c h / 0.15)",
+                            color: "var(--brand)",
+                            border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
                           }}
                         >
                           excluded · {exclusionTimeLeft(spunAtDate)}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export interface WheelSegment {
   id: number;
@@ -19,6 +20,7 @@ const SPIN_DURATION = 5000; // ms
 const MIN_ROTATIONS = 6;
 
 export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
+  const { theme } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
@@ -55,6 +57,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       uniform float u_time;
       uniform vec2 u_res;
       uniform float u_spin;
+      uniform float u_dark; // 1.0 = dark, 0.0 = light
 
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float noise(vec2 p){
@@ -73,15 +76,19 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
         float n=(n1+n2*.5)/1.5;
 
         float dist=length(uv-0.5);
-        vec3 dark=vec3(0.04,0.04,0.10);
-        vec3 orange=vec3(0.9,0.4,0.05);
-        vec3 purple=vec3(0.4,0.15,0.7);
+        // Warm hero halo behind the wheel: ember ring on a base that matches the
+        // theme (warm charcoal in dark, warm cream in light) so it blends.
+        vec3 baseDark=vec3(0.06,0.04,0.03);
+        vec3 baseLight=vec3(0.965,0.945,0.90);
+        vec3 base=mix(baseLight,baseDark,u_dark);
+        vec3 ember=vec3(0.92,0.40,0.12);
+        vec3 amber=vec3(0.95,0.66,0.22);
 
-        vec3 col=dark;
+        vec3 col=base;
         float ring=smoothstep(0.55,0.45,dist)*smoothstep(0.3,0.5,dist);
-        col=mix(col,orange*(0.4+spinPulse*0.6),ring*n*0.8);
-        col=mix(col,purple*0.3,smoothstep(0.5,0.0,dist)*n*0.4);
-        col+=orange*(0.05+spinPulse*0.15)*smoothstep(0.5,0.0,dist);
+        col=mix(col,ember*(0.4+spinPulse*0.6),ring*n*mix(0.5,0.8,u_dark));
+        col=mix(col,amber*0.4,smoothstep(0.5,0.0,dist)*n*mix(0.22,0.4,u_dark));
+        col+=ember*(0.04+spinPulse*0.15)*smoothstep(0.5,0.0,dist)*mix(0.6,1.0,u_dark);
 
         gl_FragColor=vec4(col,1.);
       }
@@ -107,6 +114,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     const uTime = gl.getUniformLocation(prog, "u_time");
     const uRes = gl.getUniformLocation(prog, "u_res");
     const uSpin = gl.getUniformLocation(prog, "u_spin");
+    const uDark = gl.getUniformLocation(prog, "u_dark");
     const start = performance.now();
 
     const render = () => {
@@ -115,6 +123,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       gl.uniform1f(uTime, t);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uSpin, spinVal);
+      gl.uniform1f(uDark, theme === "dark" ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       bgRafRef.current = requestAnimationFrame(render);
     };
@@ -124,7 +133,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       cancelAnimationFrame(bgRafRef.current);
       ro.disconnect();
     };
-  }, [isSpinning]);
+  }, [isSpinning, theme]);
 
   // ── Draw pie wheel ──────────────────────────────────────────────────────────
   const drawWheel = useCallback((angle: number) => {
@@ -139,19 +148,25 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     const cy = size / 2;
     const r = size / 2 - 8;
 
+    // Canvas can't read CSS vars, so resolve the active theme tokens to concrete
+    // colors off the element's computed style (re-reads on each draw → flips with
+    // the theme).
+    const cs = getComputedStyle(canvas);
+    const token = (name: string) => cs.getPropertyValue(name).trim() || "#888";
+
     ctx.clearRect(0, 0, size, size);
 
     if (segments.length === 0) {
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = "oklch(0.25 0.03 260)";
+      ctx.strokeStyle = token("--border");
       ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = "oklch(0.16 0.025 260)";
+      ctx.fillStyle = token("--muted");
       ctx.fill();
-      ctx.fillStyle = "oklch(0.55 0.02 260)";
-      ctx.font = `bold 14px 'Space Grotesk', sans-serif`;
+      ctx.stroke();
+      ctx.fillStyle = token("--muted-foreground");
+      ctx.font = `600 14px 'Fredoka', sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Add restaurants", cx, cy - 10);
@@ -233,8 +248,8 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     ctx.beginPath();
     ctx.arc(cx, cy, 22, 0, Math.PI * 2);
     const centerGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
-    centerGrd.addColorStop(0, "#1a1a2e");
-    centerGrd.addColorStop(1, "#0d0d1a");
+    centerGrd.addColorStop(0, token("--card"));
+    centerGrd.addColorStop(1, token("--border"));
     ctx.fillStyle = centerGrd;
     ctx.shadowColor = "rgba(0,0,0,0.8)";
     ctx.shadowBlur = 10;
@@ -252,7 +267,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     ctx.lineWidth = 3;
     ctx.stroke();
     ctx.restore();
-  }, [segments]);
+  }, [segments, theme]);
 
   // Sync canvas size with devicePixelRatio for crisp rendering on HiDPI screens
   useEffect(() => {
@@ -327,10 +342,10 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       {/* Pointer arrow */}
       <div
         className="absolute z-20 top-0 left-1/2 -translate-x-1/2 -translate-y-1"
-        style={{ filter: "drop-shadow(0 0 8px oklch(0.72 0.22 30))" }}
+        style={{ filter: "drop-shadow(0 0 8px var(--brand))" }}
       >
         <svg width="24" height="32" viewBox="0 0 24 32" fill="none">
-          <path d="M12 2L22 22H2L12 2Z" fill="oklch(0.72 0.22 30)" stroke="white" strokeWidth="1.5" />
+          <path d="M12 2L22 22H2L12 2Z" fill="var(--brand)" stroke="white" strokeWidth="1.5" />
         </svg>
       </div>
 

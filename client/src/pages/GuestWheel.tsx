@@ -85,8 +85,8 @@ export default function GuestWheel() {
           <div
             className="w-12 h-12 rounded-full animate-orb-spin"
             style={{
-              background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)",
-              boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.4)",
+              background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+              boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
             }}
           />
           <p className="text-sm text-muted-foreground">Loading wheel…</p>
@@ -124,9 +124,9 @@ export default function GuestWheel() {
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] mb-3 tracking-widest"
             style={{
               fontFamily: "var(--font-display)",
-              background: "oklch(0.72 0.22 30 / 0.12)",
-              border: "1px solid oklch(0.72 0.22 30 / 0.30)",
-              color: "oklch(0.80 0.15 40)",
+              background: "oklch(from var(--brand) l c h / 0.12)",
+              border: "1px solid oklch(from var(--brand) l c h / 0.30)",
+              color: "var(--brand)",
             }}
           >
             <Utensils size={11} /> PUBLIC WHEEL
@@ -161,11 +161,11 @@ export default function GuestWheel() {
               style={{
                 fontFamily: "var(--font-display)",
                 background: isSpinning
-                  ? "oklch(0.16 0.025 260)"
-                  : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+                  ? "var(--muted)"
+                  : "linear-gradient(135deg, var(--brand), var(--brand-2))",
                 boxShadow: isSpinning
                   ? "none"
-                  : "0 0 40px oklch(0.72 0.22 30 / 0.5), 0 0 80px oklch(0.65 0.25 280 / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
+                  : "0 0 40px oklch(from var(--brand) l c h / 0.5), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
                 color: "white",
                 minWidth: "180px",
               }}
@@ -184,7 +184,7 @@ export default function GuestWheel() {
             </button>
 
             <p className="text-xs text-muted-foreground">
-              <span className="font-semibold" style={{ color: "oklch(0.72 0.22 30)" }}>
+              <span className="font-semibold" style={{ color: "var(--brand)" }}>
                 {segments.length}
               </span>{" "}
               restaurant{segments.length !== 1 ? "s" : ""} on the wheel
@@ -208,7 +208,7 @@ export default function GuestWheel() {
           <div
             className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
             style={{
-              background: "oklch(0.11 0.025 260)",
+              background: "var(--card)",
               border: `2px solid ${spinResult.color}`,
               boxShadow: `0 0 80px ${spinResult.color}55, 0 0 160px ${spinResult.color}22, 0 32px 64px rgba(0,0,0,0.6)`,
             }}
@@ -222,7 +222,7 @@ export default function GuestWheel() {
               <div className="text-5xl mb-4 animate-float">🎉</div>
               <p
                 className="text-xs mb-2 tracking-[0.2em]"
-                style={{ fontFamily: "var(--font-display)", color: "oklch(0.55 0.02 260)" }}
+                style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
               >
                 TODAY'S LUNCH
               </p>
@@ -255,9 +255,9 @@ export default function GuestWheel() {
                     onClick={handleReSpin}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:bg-white/8"
                     style={{
-                      background: "oklch(0.16 0.025 260)",
-                      border: "1px solid oklch(0.25 0.03 260)",
-                      color: "oklch(0.80 0.02 260)",
+                      background: "var(--muted)",
+                      border: "1px solid var(--border)",
+                      color: "var(--foreground)",
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.06em",
                     }}
@@ -307,13 +307,13 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
         href={getLoginUrl()}
         className="flex items-center justify-center gap-2 w-full px-5 py-3 rounded-2xl text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
         style={{
-          background: "oklch(0.13 0.02 260)",
-          border: "1px solid oklch(0.22 0.03 260)",
-          color: "oklch(0.85 0.02 260)",
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          color: "var(--foreground)",
           fontFamily: "var(--font-display)",
         }}
       >
-        <Sparkles size={14} style={{ color: "oklch(0.75 0.18 60)" }} />
+        <Sparkles size={14} style={{ color: "var(--brand-2)" }} />
         Make your own wheel
         <ArrowRight size={14} />
       </a>
@@ -325,8 +325,8 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
       className="mt-2 inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm tracking-wide transition-all active:scale-95 hover:-translate-y-0.5"
       style={{
         fontFamily: "var(--font-display)",
-        background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-        boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
+        background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+        boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
         color: "white",
       }}
     >

@@ -243,8 +243,8 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
         key={wheel.id}
         className="group relative flex items-center gap-1 rounded-xl transition-all duration-150"
         style={{
-          background: isSelected ? "oklch(0.72 0.22 30 / 0.15)" : "transparent",
-          border: isSelected ? "1px solid oklch(0.72 0.22 30 / 0.3)" : "1px solid transparent",
+          background: isSelected ? "oklch(from var(--brand) l c h / 0.15)" : "transparent",
+          border: isSelected ? "1px solid oklch(from var(--brand) l c h / 0.3)" : "1px solid transparent",
         }}
       >
         <button
@@ -256,17 +256,17 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             className="w-6 h-6 rounded-full flex-shrink-0"
             style={{
               background: isSelected
-                ? "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)"
-                : "oklch(0.20 0.025 260)",
+                ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
+                : "var(--border)",
             }}
           />
           <span
             className="flex-1 truncate text-sm"
-            style={{ color: isSelected ? "oklch(0.90 0.01 260)" : "oklch(0.65 0.02 260)" }}
+            style={{ color: isSelected ? "var(--foreground)" : "var(--muted-foreground)" }}
           >
             {wheel.name}
           </span>
-          {isSelected && inSheet && <Check size={16} style={{ color: "oklch(0.72 0.22 30)" }} className="flex-shrink-0" />}
+          {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand)" }} className="flex-shrink-0" />}
           <span
             className="text-muted-foreground/50 flex-shrink-0"
             title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
@@ -331,8 +331,8 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 className="w-7 h-7 rounded-full flex-shrink-0"
                 style={{
                   background: selectedWheel
-                    ? "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)"
-                    : "oklch(0.20 0.025 260)",
+                    ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
+                    : "var(--border)",
                 }}
               />
               <span className="flex-1 truncate text-sm font-semibold" style={{ fontFamily: "var(--font-display)" }}>
@@ -434,7 +434,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
               onClick={() => { setCreateError(null); newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines }); }}
               disabled={!newName.trim() || createWheel.isPending}
               className="relative overflow-hidden transition-all duration-200 active:scale-[0.97]"
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {createWheel.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating...</span>
@@ -513,7 +513,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 }); }}
                 disabled={!editWheel.name.trim() || updateWheel.isPending}
                 className="transition-all duration-200 active:scale-[0.97]"
-                style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
                 {updateWheel.isPending ? (
                   <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
@@ -553,7 +553,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             <Button
               onClick={submitImport}
               disabled={!importText.trim() || importWheel.isPending}
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {importWheel.isPending ? "Importing..." : "Import Wheel"}
             </Button>

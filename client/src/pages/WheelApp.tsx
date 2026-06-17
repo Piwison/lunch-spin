@@ -234,13 +234,13 @@ export default function WheelApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "oklch(0.09 0.02 260)" }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--background)" }}>
         <div className="flex flex-col items-center gap-4">
           <div
             className="w-12 h-12 rounded-full animate-orb-spin"
             style={{
-              background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)",
-              boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.4)",
+              background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+              boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
             }}
           />
           <p className="text-sm text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
@@ -256,18 +256,18 @@ export default function WheelApp() {
   const isOwner = wheelData?.ownerId === user.id;
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "oklch(0.09 0.02 260)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
       {/* ── HEADER ── */}
       <header
         className="border-b border-border/40 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
-        style={{ background: "oklch(0.09 0.02 260 / 0.85)", backdropFilter: "blur(20px)" }}
+        style={{ background: "oklch(from var(--background) l c h / 0.85)", backdropFilter: "blur(20px)" }}
       >
         <div className="flex items-center gap-3">
           <div
             className="w-7 h-7 rounded-full flex-shrink-0 animate-orb-spin"
             style={{
-              background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ec4899, #ef4444)",
-              boxShadow: "0 0 12px oklch(0.72 0.22 30 / 0.5)",
+              background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+              boxShadow: "0 0 12px oklch(from var(--brand) l c h / 0.5)",
               animationDuration: "20s",
             }}
           />
@@ -284,11 +284,11 @@ export default function WheelApp() {
           {user.name && (
             <span
               className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground px-3 py-1.5 rounded-full"
-              style={{ background: "oklch(0.14 0.025 260)", border: "1px solid oklch(0.20 0.025 260)" }}
+              style={{ background: "var(--card)", border: "1px solid var(--border)" }}
             >
               <span
                 className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
                 {user.name.charAt(0).toUpperCase()}
               </span>
@@ -329,11 +329,11 @@ export default function WheelApp() {
                     style={{
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.08em",
-                      color: isActive ? "white" : "oklch(0.55 0.02 260)",
+                      color: isActive ? "white" : "var(--muted-foreground)",
                       background: isActive
-                        ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
+                        ? "linear-gradient(135deg, var(--brand), var(--brand-2))"
                         : "transparent",
-                      boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
+                      boxShadow: isActive ? "0 0 16px oklch(from var(--brand) l c h / 0.45)" : "none",
                     }}
                   >
                     <Icon size={13} />
@@ -348,9 +348,9 @@ export default function WheelApp() {
           {sharedText && (
             <div
               className="px-4 py-2.5 flex items-center gap-3 border-b flex-shrink-0"
-              style={{ background: "oklch(0.65 0.25 280 / 0.10)", borderColor: "oklch(0.65 0.25 280 / 0.25)" }}
+              style={{ background: "oklch(from var(--brand-2) l c h / 0.10)", borderColor: "oklch(from var(--brand-2) l c h / 0.25)" }}
             >
-              <MapPin size={14} className="flex-shrink-0" style={{ color: "oklch(0.75 0.2 285)" }} />
+              <MapPin size={14} className="flex-shrink-0" style={{ color: "var(--brand-2)" }} />
               <span className="text-sm flex-1 min-w-0 truncate">
                 Add <strong>{sharedText}</strong>{selectedWheelId ? "" : " — pick a wheel first"}
               </span>
@@ -358,7 +358,7 @@ export default function WheelApp() {
                 onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
                 disabled={!selectedWheelId || addShared.isPending}
                 className="px-3 py-1 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 flex-shrink-0"
-                style={{ background: "oklch(0.65 0.25 280)", color: "white", fontFamily: "var(--font-display)" }}
+                style={{ background: "var(--brand-2)", color: "white", fontFamily: "var(--font-display)" }}
               >
                 {addShared.isPending ? "Adding…" : "Add"}
               </button>
@@ -375,7 +375,7 @@ export default function WheelApp() {
               <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
                 <div
                   className="w-20 h-20 rounded-full opacity-20"
-                  style={{ background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)" }}
+                  style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
                 />
                 <div>
                   <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
@@ -427,8 +427,8 @@ export default function WheelApp() {
                       <div
                         className="w-full rounded-xl overflow-hidden transition-all duration-300"
                         style={{
-                          background: "oklch(0.12 0.025 260 / 0.6)",
-                          border: `1px solid ${selectedTagIds.length > 0 ? "oklch(0.65 0.25 280 / 0.4)" : "oklch(0.20 0.025 260)"}`,
+                          background: "oklch(from var(--card) l c h / 0.6)",
+                          border: `1px solid ${selectedTagIds.length > 0 ? "oklch(from var(--brand-2) l c h / 0.4)" : "var(--border)"}`,
                           backdropFilter: "blur(12px)",
                         }}
                       >
@@ -440,13 +440,13 @@ export default function WheelApp() {
                           <div className="flex items-center gap-2.5">
                             <SlidersHorizontal
                               size={14}
-                              style={{ color: selectedTagIds.length > 0 ? "oklch(0.72 0.22 30)" : "oklch(0.50 0.02 260)" }}
+                              style={{ color: selectedTagIds.length > 0 ? "var(--brand)" : "var(--muted-foreground)" }}
                             />
                             <span
                               className="text-xs font-semibold tracking-widest"
                               style={{
                                 fontFamily: "var(--font-display)",
-                                color: selectedTagIds.length > 0 ? "oklch(0.85 0.01 260)" : "oklch(0.50 0.02 260)",
+                                color: selectedTagIds.length > 0 ? "var(--foreground)" : "var(--muted-foreground)",
                               }}
                             >
                               FILTER BY TAGS
@@ -455,7 +455,7 @@ export default function WheelApp() {
                               <span
                                 className="px-2 py-0.5 rounded-full text-[10px] font-bold"
                                 style={{
-                                  background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+                                  background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
                                   color: "white",
                                 }}
                               >
@@ -492,9 +492,9 @@ export default function WheelApp() {
                                         onClick={() => toggleTag(tag.id)}
                                         className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
                                         style={{
-                                          background: isActive ? tag.color + "25" : "oklch(0.15 0.02 260)",
-                                          border: `1px solid ${isActive ? tag.color + "80" : "oklch(0.22 0.025 260)"}`,
-                                          color: isActive ? tag.color : "oklch(0.60 0.02 260)",
+                                          background: isActive ? tag.color + "25" : "var(--muted)",
+                                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
+                                          color: isActive ? tag.color : "var(--muted-foreground)",
                                           boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
                                         }}
                                       >
@@ -517,9 +517,9 @@ export default function WheelApp() {
                                         onClick={() => toggleTag(tag.id)}
                                         className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
                                         style={{
-                                          background: isActive ? tag.color + "25" : "oklch(0.15 0.02 260)",
-                                          border: `1px solid ${isActive ? tag.color + "80" : "oklch(0.22 0.025 260)"}`,
-                                          color: isActive ? tag.color : "oklch(0.60 0.02 260)",
+                                          background: isActive ? tag.color + "25" : "var(--muted)",
+                                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
+                                          color: isActive ? tag.color : "var(--muted-foreground)",
                                           boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
                                         }}
                                       >
@@ -542,9 +542,9 @@ export default function WheelApp() {
                                         onClick={() => toggleTag(tag.id)}
                                         className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
                                         style={{
-                                          background: isActive ? tag.color + "25" : "oklch(0.15 0.02 260)",
-                                          border: `1px solid ${isActive ? tag.color + "80" : "oklch(0.22 0.025 260)"}`,
-                                          color: isActive ? tag.color : "oklch(0.60 0.02 260)",
+                                          background: isActive ? tag.color + "25" : "var(--muted)",
+                                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
+                                          color: isActive ? tag.color : "var(--muted-foreground)",
                                           boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
                                         }}
                                       >
@@ -571,9 +571,9 @@ export default function WheelApp() {
                           <div
                             className="mx-4 mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs"
                             style={{
-                              background: "oklch(0.60 0.22 25 / 0.12)",
-                              border: "1px solid oklch(0.60 0.22 25 / 0.35)",
-                              color: "oklch(0.80 0.15 40)",
+                              background: "oklch(from var(--destructive) l c h / 0.12)",
+                              border: "1px solid oklch(from var(--destructive) l c h / 0.35)",
+                              color: "var(--brand)",
                             }}
                           >
                             <AlertTriangle size={13} className="flex-shrink-0" />
@@ -597,9 +597,9 @@ export default function WheelApp() {
                           onClick={() => refetchRestaurants()}
                           className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95"
                           style={{
-                            background: "oklch(0.16 0.025 260)",
-                            border: "1px solid oklch(0.25 0.03 260)",
-                            color: "oklch(0.85 0.02 260)",
+                            background: "var(--muted)",
+                            border: "1px solid var(--border)",
+                            color: "var(--foreground)",
                             fontFamily: "var(--font-display)",
                           }}
                         >
@@ -625,8 +625,8 @@ export default function WheelApp() {
                               className="group flex items-center gap-2.5 px-8 py-4 rounded-full font-bold text-sm tracking-widest transition-all duration-200 active:scale-95 hover:-translate-y-0.5 cta-pulse"
                               style={{
                                 fontFamily: "var(--font-display)",
-                                background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                                boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
+                                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                                boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
                                 color: "white",
                               }}
                             >
@@ -650,11 +650,11 @@ export default function WheelApp() {
                               style={{
                                 fontFamily: "var(--font-display)",
                                 background: isSpinning || createSpin.isPending || wheelSegments.length === 0
-                                  ? "oklch(0.16 0.025 260)"
-                                  : "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+                                  ? "var(--muted)"
+                                  : "linear-gradient(135deg, var(--brand), var(--brand-2))",
                                 boxShadow: isSpinning || createSpin.isPending || wheelSegments.length === 0
                                   ? "none"
-                                  : "0 0 40px oklch(0.72 0.22 30 / 0.5), 0 0 80px oklch(0.65 0.25 280 / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
+                                  : "0 0 40px oklch(from var(--brand) l c h / 0.5), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
                                 color: "white",
                                 minWidth: "180px",
                               }}
@@ -680,9 +680,9 @@ export default function WheelApp() {
                               <div
                                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs max-w-sm text-center"
                                 style={{
-                                  background: "oklch(0.60 0.22 25 / 0.10)",
-                                  border: "1px solid oklch(0.60 0.22 25 / 0.30)",
-                                  color: "oklch(0.80 0.15 40)",
+                                  background: "oklch(from var(--destructive) l c h / 0.10)",
+                                  border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
+                                  color: "var(--brand)",
                                 }}
                               >
                                 <AlertTriangle size={13} className="flex-shrink-0" />
@@ -694,7 +694,7 @@ export default function WheelApp() {
                               </div>
                             ) : (
                               <p className="text-xs text-muted-foreground">
-                                <span className="font-semibold" style={{ color: "oklch(0.72 0.22 30)" }}>{filteredRestaurants.length}</span>
+                                <span className="font-semibold" style={{ color: "var(--brand)" }}>{filteredRestaurants.length}</span>
                                 {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
                               </p>
                             )}
@@ -706,8 +706,8 @@ export default function WheelApp() {
                           <div
                             className="w-full rounded-xl overflow-hidden"
                             style={{
-                              background: "oklch(0.11 0.02 260)",
-                              border: "1px solid oklch(0.18 0.025 260)",
+                              background: "var(--card)",
+                              border: "1px solid var(--border)",
                             }}
                           >
                             <button
@@ -716,12 +716,12 @@ export default function WheelApp() {
                             >
                               <div
                                 className="flex items-center gap-2 text-xs font-semibold tracking-widest"
-                                style={{ fontFamily: "var(--font-display)", color: "oklch(0.60 0.15 40)" }}
+                                style={{ fontFamily: "var(--font-display)", color: "var(--brand)" }}
                               >
                                 <Clock size={11} /> SKIPPING (PICKED RECENTLY)
                                 <span
                                   className="px-2 py-0.5 rounded-full text-[10px]"
-                                  style={{ background: "oklch(0.60 0.22 25 / 0.12)", color: "oklch(0.70 0.15 40)" }}
+                                  style={{ background: "oklch(from var(--destructive) l c h / 0.12)", color: "var(--brand)" }}
                                 >
                                   {restaurants.filter((r) => r.isExcluded).length}
                                 </span>
@@ -741,8 +741,8 @@ export default function WheelApp() {
                                       <span
                                         className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px]"
                                         style={{
-                                          background: "oklch(0.60 0.22 25 / 0.12)",
-                                          color: "oklch(0.70 0.15 40)",
+                                          background: "oklch(from var(--destructive) l c h / 0.12)",
+                                          color: "var(--brand)",
                                         }}
                                       >
                                         back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
@@ -797,11 +797,11 @@ export default function WheelApp() {
                     style={{
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.04em",
-                      color: isActive ? "white" : "oklch(0.55 0.02 260)",
+                      color: isActive ? "white" : "var(--muted-foreground)",
                       background: isActive
-                        ? "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))"
+                        ? "linear-gradient(135deg, var(--brand), var(--brand-2))"
                         : "transparent",
-                      boxShadow: isActive ? "0 0 16px oklch(0.72 0.22 30 / 0.45)" : "none",
+                      boxShadow: isActive ? "0 0 16px oklch(from var(--brand) l c h / 0.45)" : "none",
                     }}
                   >
                     <Icon size={20} />
@@ -824,7 +824,7 @@ export default function WheelApp() {
           <div
             className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
             style={{
-              background: "oklch(0.11 0.025 260)",
+              background: "var(--card)",
               border: `2px solid ${spinResult.color}`,
               boxShadow: `0 0 80px ${spinResult.color}55, 0 0 160px ${spinResult.color}22, 0 32px 64px rgba(0,0,0,0.6)`,
             }}
@@ -841,7 +841,7 @@ export default function WheelApp() {
               <div className="text-5xl mb-4 animate-float">🎉</div>
               <p
                 className="text-xs mb-2 tracking-[0.2em]"
-                style={{ fontFamily: "var(--font-display)", color: "oklch(0.55 0.02 260)" }}
+                style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
               >
                 TODAY'S LUNCH
               </p>
@@ -875,9 +875,9 @@ export default function WheelApp() {
                     disabled={wheelSegments.length === 0}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 hover:bg-white/8"
                     style={{
-                      background: "oklch(0.16 0.025 260)",
-                      border: "1px solid oklch(0.25 0.03 260)",
-                      color: "oklch(0.80 0.02 260)",
+                      background: "var(--muted)",
+                      border: "1px solid var(--border)",
+                      color: "var(--foreground)",
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.06em",
                     }}

@@ -5,12 +5,13 @@ import { useLocation } from "wouter";
 import { Users, Clock, Tags, Sparkles, ArrowRight, ChevronDown, Utensils, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const FEATURES = [
-  { icon: Users, label: "Team Wheels", desc: "Shared wheels for your whole squad", accent: "oklch(0.72 0.22 30)" },
-  { icon: Clock, label: "Smart Exclusion", desc: "Auto-skip recently picked spots", accent: "oklch(0.65 0.25 280)" },
+  { icon: Users, label: "Team Wheels", desc: "Shared wheels for your whole squad", accent: "var(--brand)" },
+  { icon: Clock, label: "Smart Exclusion", desc: "Auto-skip recently picked spots", accent: "var(--brand-2)" },
   { icon: Tags, label: "Tag Filtering", desc: "Filter by cuisine or food type", accent: "oklch(0.70 0.20 160)" },
-  { icon: Sparkles, label: "Cinematic Design", desc: "A spin worth watching every time", accent: "oklch(0.75 0.18 60)" },
+  { icon: Sparkles, label: "Cinematic Design", desc: "A spin worth watching every time", accent: "var(--brand-2)" },
 ];
 
 const STATS = [
@@ -21,6 +22,7 @@ const STATS = [
 
 export default function Home() {
   const { user, loading } = useAuth();
+  const { theme } = useTheme();
   const [, navigate] = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const orbRef = useRef<HTMLDivElement>(null);
@@ -34,6 +36,9 @@ export default function Home() {
 
   // Popular public wheels — guests can try one without signing in.
   const { data: popularWheels } = trpc.wheels.listPublic.useQuery({ limit: 6 });
+
+  // Apply an alpha to any CSS color (incl. var() tokens) via relative color syntax.
+  const alpha = (c: string, a: number) => `oklch(from ${c} l c h / ${a})`;
 
   useEffect(() => {
     if (!loading && user) navigate("/app");
@@ -98,6 +103,7 @@ export default function Home() {
       uniform float u_time;
       uniform vec2 u_res;
       uniform vec2 u_mouse;
+      uniform float u_dark; // 1.0 = dark (warm charcoal), 0.0 = light (warm cream)
 
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p) {
@@ -124,21 +130,27 @@ export default function Home() {
         float mouseDist = length(uv - mouse);
         float mouseGlow = smoothstep(0.5, 0.0, mouseDist) * 0.35;
 
-        vec3 deep = vec3(0.025, 0.03, 0.07);
-        vec3 orange = vec3(0.9, 0.38, 0.06);
-        vec3 purple = vec3(0.38, 0.15, 0.72);
-        vec3 teal = vec3(0.05, 0.55, 0.65);
+        // Warm Appetite palette — a single tomato/ember + amber, no cold purple.
+        // Base is warm charcoal in dark mode, warm cream in light. Tints are
+        // additive and warm in both modes (just gentler in light so cream stays
+        // bright and content stays legible).
+        vec3 deepDark  = vec3(0.055, 0.035, 0.028);
+        vec3 deepLight = vec3(0.965, 0.945, 0.90);
+        vec3 deep = mix(deepLight, deepDark, u_dark);
+        vec3 ember = vec3(0.92, 0.36, 0.16); // tomato
+        vec3 amber = vec3(0.95, 0.66, 0.22); // mango
+        float tint = mix(0.10, 0.30, u_dark);
 
         float dist = length(uv - 0.5);
-        vec3 col = mix(deep, deep * 1.4, n * 0.5);
-        col += orange * smoothstep(0.7, 0.0, length(uv - vec2(0.15, 0.85))) * n * 0.28;
-        col += purple * smoothstep(0.6, 0.0, length(uv - vec2(0.85, 0.15))) * n2 * 0.32;
-        col += teal * smoothstep(0.5, 0.0, length(uv - vec2(0.5, 0.5))) * n * 0.12;
-        col += orange * mouseGlow * n;
-        col += purple * mouseGlow * 0.6;
+        vec3 col = mix(deep, deep * mix(0.97, 1.4, u_dark), n * 0.5);
+        col += ember * smoothstep(0.7, 0.0, length(uv - vec2(0.15, 0.85))) * n * tint;
+        col += amber * smoothstep(0.6, 0.0, length(uv - vec2(0.85, 0.15))) * n2 * tint * 1.1;
+        col += ember * smoothstep(0.5, 0.0, length(uv - vec2(0.5, 0.5))) * n * tint * 0.45;
+        col += ember * mouseGlow * n;
+        col += amber * mouseGlow * 0.5;
 
-        // Vignette
-        col *= 1.0 - smoothstep(0.3, 0.9, dist) * 0.6;
+        // Vignette (warm down in dark, gentle in light)
+        col *= 1.0 - smoothstep(0.3, 0.9, dist) * (0.6 * u_dark + 0.12);
 
         gl_FragColor = vec4(col, 1.0);
       }
@@ -163,6 +175,7 @@ export default function Home() {
     const uTime = gl.getUniformLocation(prog, "u_time");
     const uRes = gl.getUniformLocation(prog, "u_res");
     const uMouse = gl.getUniformLocation(prog, "u_mouse");
+    const uDark = gl.getUniformLocation(prog, "u_dark");
 
     let raf: number;
     let mx = 0, my = 0;
@@ -175,6 +188,7 @@ export default function Home() {
       gl.uniform1f(uTime, t);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform2f(uMouse, mx, canvas.height - my);
+      gl.uniform1f(uDark, theme === "dark" ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       raf = requestAnimationFrame(render);
     };
@@ -184,7 +198,7 @@ export default function Home() {
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
     };
-  }, []);
+  }, [theme]);
 
   return (
     <div
@@ -197,7 +211,7 @@ export default function Home() {
         ref={cursorRef}
         className="fixed top-0 left-0 w-10 h-10 rounded-full pointer-events-none z-[9999] hidden md:block"
         style={{
-          border: "1px solid oklch(0.72 0.22 30 / 0.6)",
+          border: "1px solid oklch(from var(--brand) l c h / 0.6)",
           transition: "width 0.2s, height 0.2s, border-color 0.2s",
           mixBlendMode: "difference",
         }}
@@ -205,7 +219,7 @@ export default function Home() {
       <div
         ref={cursorDotRef}
         className="fixed top-0 left-0 w-1.5 h-1.5 rounded-full pointer-events-none z-[9999] hidden md:block"
-        style={{ background: "oklch(0.72 0.22 30)", boxShadow: "0 0 6px oklch(0.72 0.22 30)" }}
+        style={{ background: "var(--brand)", boxShadow: "0 0 6px var(--brand)" }}
       />
 
       {/* Theme toggle */}
@@ -239,7 +253,7 @@ export default function Home() {
                 className="absolute rounded-full animate-ring-rotate"
                 style={{
                   inset: "-16px",
-                  background: "conic-gradient(from 0deg, transparent 0%, oklch(0.72 0.22 30 / 0.5) 25%, transparent 50%, oklch(0.65 0.25 280 / 0.4) 75%, transparent 100%)",
+                  background: "conic-gradient(from 0deg, transparent 0%, oklch(from var(--brand) l c h / 0.5) 25%, transparent 50%, oklch(from var(--brand-2) l c h / 0.4) 75%, transparent 100%)",
                   filter: "blur(3px)",
                 }}
               />
@@ -247,7 +261,7 @@ export default function Home() {
                 className="absolute rounded-full"
                 style={{
                   inset: "-8px",
-                  background: "conic-gradient(from 180deg, transparent 0%, oklch(0.65 0.25 280 / 0.3) 30%, transparent 60%)",
+                  background: "conic-gradient(from 180deg, transparent 0%, oklch(from var(--brand-2) l c h / 0.3) 30%, transparent 60%)",
                   filter: "blur(2px)",
                   animation: "ring-rotate 8s linear infinite reverse",
                 }}
@@ -255,22 +269,22 @@ export default function Home() {
               {/* Pointer */}
               <div className="absolute left-1/2 -translate-x-1/2 -top-4 z-30" style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.6))" }}>
                 <svg width="20" height="24" viewBox="0 0 20 24" fill="none">
-                  <path d="M10 22L1.5 4.5H18.5L10 22Z" fill="white" stroke="oklch(0.15 0.02 260)" strokeWidth="1.5" strokeLinejoin="round" />
+                  <path d="M10 22L1.5 4.5H18.5L10 22Z" fill="white" stroke="var(--muted)" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
               </div>
               {/* Wheel face */}
               <div
                 className="w-36 h-36 rounded-full animate-orb-spin"
                 style={{
-                  background: "conic-gradient(from 0deg, #ef4444 0%, #f97316 14%, #eab308 28%, #22c55e 42%, #06b6d4 56%, #8b5cf6 70%, #ec4899 84%, #ef4444 100%)",
-                  boxShadow: "0 0 60px oklch(0.72 0.22 30 / 0.5), 0 0 120px oklch(0.65 0.25 280 / 0.25), inset 0 0 0 2px rgba(255,255,255,0.1)",
+                  background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+                  boxShadow: "0 0 60px oklch(from var(--brand) l c h / 0.5), 0 0 120px oklch(from var(--brand-2) l c h / 0.25), inset 0 0 0 2px rgba(255,255,255,0.1)",
                 }}
               />
               {/* Center hub */}
               <div
                 className="absolute inset-0 m-auto w-8 h-8 rounded-full"
                 style={{
-                  background: "radial-gradient(circle at 35% 30%, oklch(0.18 0.03 260), oklch(0.08 0.02 260))",
+                  background: "radial-gradient(circle at 35% 30%, var(--border), var(--background))",
                   boxShadow: "0 0 0 2px rgba(255,255,255,0.1), 0 2px 12px rgba(0,0,0,0.7)",
                 }}
               />
@@ -301,7 +315,7 @@ export default function Home() {
               fontWeight: 900,
               lineHeight: 0.9,
               letterSpacing: "-0.03em",
-              color: "oklch(0.92 0.01 260)",
+              color: "var(--foreground)",
               animationDelay: "200ms",
             }}
           >
@@ -326,8 +340,8 @@ export default function Home() {
               className="group relative inline-flex items-center justify-center gap-3 px-10 py-4 rounded-full text-sm font-bold tracking-widest transition-all duration-300 active:scale-95 hover:-translate-y-1"
               style={{
                 fontFamily: "var(--font-display)",
-                background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                boxShadow: "0 0 40px oklch(0.72 0.22 30 / 0.4), 0 0 80px oklch(0.65 0.25 280 / 0.2), 0 8px 32px rgba(0,0,0,0.4)",
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.4)",
                 color: "white",
                 cursor: "none",
               }}
@@ -335,14 +349,14 @@ export default function Home() {
                 if (cursorRef.current) {
                   cursorRef.current.style.width = "60px";
                   cursorRef.current.style.height = "60px";
-                  cursorRef.current.style.borderColor = "oklch(0.72 0.22 30)";
+                  cursorRef.current.style.borderColor = "var(--brand)";
                 }
               }}
               onMouseLeave={() => {
                 if (cursorRef.current) {
                   cursorRef.current.style.width = "40px";
                   cursorRef.current.style.height = "40px";
-                  cursorRef.current.style.borderColor = "oklch(0.72 0.22 30 / 0.6)";
+                  cursorRef.current.style.borderColor = "oklch(from var(--brand) l c h / 0.6)";
                 }
               }}
             >
@@ -378,8 +392,8 @@ export default function Home() {
         <div
           className="max-w-3xl mx-auto grid grid-cols-3 gap-4 rounded-2xl p-6"
           style={{
-            background: "oklch(0.12 0.025 260 / 0.6)",
-            border: "1px solid oklch(0.22 0.03 260)",
+            background: "oklch(from var(--card) l c h / 0.6)",
+            border: "1px solid var(--border)",
             backdropFilter: "blur(20px)",
           }}
         >
@@ -404,7 +418,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto">
           <p
             className="text-center text-xs tracking-[0.2em] mb-12 reveal"
-            style={{ color: "oklch(0.50 0.03 260)", fontFamily: "var(--font-display)" }}
+            style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-display)" }}
           >
             BUILT FOR THE 11:45 SCRAMBLE
           </p>
@@ -415,13 +429,13 @@ export default function Home() {
                 className="group relative overflow-hidden rounded-2xl p-6 cursor-none reveal"
                 style={{
                   background: hoveredFeature === i
-                    ? `oklch(0.14 0.03 260 / 0.9)`
-                    : "oklch(0.12 0.025 260 / 0.6)",
-                  border: `1px solid ${hoveredFeature === i ? accent + "55" : "oklch(0.20 0.025 260)"}`,
+                    ? `oklch(from var(--card) l c h / 0.9)`
+                    : "oklch(from var(--card) l c h / 0.6)",
+                  border: `1px solid ${hoveredFeature === i ? alpha(accent, 0.33) : "var(--border)"}`,
                   backdropFilter: "blur(16px)",
                   transition: "all 0.3s cubic-bezier(0.23, 1, 0.32, 1)",
                   transform: hoveredFeature === i ? "translateY(-4px)" : "none",
-                  boxShadow: hoveredFeature === i ? `0 20px 40px ${accent}22, 0 0 0 1px ${accent}33` : "none",
+                  boxShadow: hoveredFeature === i ? `0 20px 40px ${alpha(accent, 0.13)}, 0 0 0 1px ${alpha(accent, 0.2)}` : "none",
                   animationDelay: `${i * 100}ms`,
                 }}
                 onMouseEnter={() => setHoveredFeature(i)}
@@ -440,14 +454,14 @@ export default function Home() {
                 <div className="flex items-start gap-4">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
-                    style={{ background: accent + "22", border: `1px solid ${accent}44` }}
+                    style={{ background: alpha(accent, 0.13), border: `1px solid ${alpha(accent, 0.27)}` }}
                   >
                     <Icon size={18} style={{ color: accent }} />
                   </div>
                   <div>
                     <h3
                       className="font-bold mb-1 text-sm tracking-wide"
-                      style={{ fontFamily: "var(--font-display)", color: "oklch(0.92 0.01 260)" }}
+                      style={{ fontFamily: "var(--font-display)", color: "var(--foreground)" }}
                     >
                       {label.toUpperCase()}
                     </h3>
@@ -466,7 +480,7 @@ export default function Home() {
           <div className="max-w-4xl mx-auto">
             <p
               className="text-center text-xs tracking-[0.2em] mb-3 reveal"
-              style={{ color: "oklch(0.50 0.03 260)", fontFamily: "var(--font-display)" }}
+              style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-display)" }}
             >
               TRY WITHOUT SIGNING IN
             </p>
@@ -483,8 +497,8 @@ export default function Home() {
                   onClick={() => navigate(`/w/${w.id}`)}
                   className="group relative overflow-hidden rounded-2xl p-5 text-left cursor-none reveal transition-all duration-300 hover:-translate-y-1"
                   style={{
-                    background: "oklch(0.12 0.025 260 / 0.6)",
-                    border: "1px solid oklch(0.20 0.025 260)",
+                    background: "oklch(from var(--card) l c h / 0.6)",
+                    border: "1px solid var(--border)",
                     backdropFilter: "blur(16px)",
                     animationDelay: `${i * 80}ms`,
                   }}
@@ -492,20 +506,20 @@ export default function Home() {
                   <div className="flex items-start justify-between gap-3 mb-4">
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
-                      style={{ background: "oklch(0.72 0.22 30 / 0.15)", border: "1px solid oklch(0.72 0.22 30 / 0.30)" }}
+                      style={{ background: "oklch(from var(--brand) l c h / 0.15)", border: "1px solid oklch(from var(--brand) l c h / 0.30)" }}
                     >
-                      <Utensils size={16} style={{ color: "oklch(0.80 0.15 40)" }} />
+                      <Utensils size={16} style={{ color: "var(--brand)" }} />
                     </div>
                     <span
                       className="flex items-center gap-1.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ color: "oklch(0.72 0.22 30)", fontFamily: "var(--font-display)" }}
+                      style={{ color: "var(--brand)", fontFamily: "var(--font-display)" }}
                     >
                       SPIN <Play size={11} />
                     </span>
                   </div>
                   <h3
                     className="font-bold text-base mb-1 truncate"
-                    style={{ fontFamily: "var(--font-display)", color: "oklch(0.92 0.01 260)" }}
+                    style={{ fontFamily: "var(--font-display)", color: "var(--foreground)" }}
                   >
                     {w.name}
                   </h3>
@@ -525,10 +539,10 @@ export default function Home() {
         <div
           className="max-w-2xl mx-auto rounded-3xl p-12 reveal"
           style={{
-            background: "oklch(0.12 0.025 260 / 0.7)",
-            border: "1px solid oklch(0.22 0.03 260)",
+            background: "oklch(from var(--card) l c h / 0.7)",
+            border: "1px solid var(--border)",
             backdropFilter: "blur(24px)",
-            boxShadow: "0 0 80px oklch(0.72 0.22 30 / 0.08), 0 0 120px oklch(0.65 0.25 280 / 0.06)",
+            boxShadow: "0 0 80px oklch(from var(--brand) l c h / 0.08), 0 0 120px oklch(from var(--brand-2) l c h / 0.06)",
           }}
         >
           <div className="text-4xl mb-4">🎡</div>
@@ -547,8 +561,8 @@ export default function Home() {
               className="group inline-flex items-center gap-2 px-8 py-3 rounded-full text-sm font-bold tracking-widest transition-all duration-300 active:scale-95 hover:-translate-y-0.5"
               style={{
                 fontFamily: "var(--font-display)",
-                background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
-                boxShadow: "0 0 30px oklch(0.72 0.22 30 / 0.3), 0 4px 20px rgba(0,0,0,0.4)",
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.3), 0 4px 20px rgba(0,0,0,0.4)",
                 color: "white",
                 cursor: "none",
               }}
