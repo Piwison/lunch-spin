@@ -123,6 +123,15 @@
     @apply border-border outline-ring/50;
   }
 
+  /* Keyboard focus: a clear branded ring on any interactive control. shadcn
+     primitives keep their own focus-visible ring (their utility classes outrank
+     this base rule), so this mainly covers the app's raw nav buttons — tab bar,
+     wheel picker, filter toggles — which otherwise had no visible focus state. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
   html {
     color-scheme: light;
   }
@@ -261,7 +270,7 @@
 /* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate,
-  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in {
+  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in, .animate-spin-result {
     animation: none !important;
   }
   .reveal { opacity: 1 !important; transform: none !important; }

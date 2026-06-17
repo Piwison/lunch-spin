@@ -250,7 +250,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
         <button
           onClick={select}
           aria-current={isSelected}
-          className={`flex-1 min-w-0 flex items-center gap-2.5 px-2.5 rounded-xl text-left ${inSheet ? "py-3" : "py-2"}`}
+          className={`flex-1 min-w-0 flex items-center gap-2.5 px-2.5 rounded-xl text-left ${inSheet ? "min-h-[56px] py-2" : "py-2"}`}
         >
           <span
             className="w-6 h-6 rounded-full flex-shrink-0"
