@@ -5,7 +5,7 @@ import { segmentColor } from "@/lib/palette";
 import { trpc } from "@/lib/trpc";
 import { pickWinner } from "@shared/pick";
 import { ArrowRight, Check, MapPin, RotateCw, Sparkles, Utensils } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
 
 /**
@@ -70,6 +70,14 @@ export default function GuestWheel() {
     setSpinResult(null);
     requestAnimationFrame(() => handleSpin());
   };
+
+  // Result overlay is a hand-rolled dialog — keep it keyboard-dismissable.
+  useEffect(() => {
+    if (!showResult) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShowResult(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showResult]);
 
   const openDirections = (segment: WheelSegment) => {
     const saved = restaurants?.find((r) => r.id === segment.id)?.mapUrl?.trim();
@@ -206,6 +214,9 @@ export default function GuestWheel() {
           onClick={() => setShowResult(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Spin result: ${spinResult.label}`}
             className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
             style={{
               background: "var(--card)",
@@ -265,6 +276,7 @@ export default function GuestWheel() {
                     <RotateCw size={12} /> RE-SPIN
                   </button>
                   <button
+                    autoFocus
                     onClick={() => setShowResult(false)}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
                     style={{
@@ -290,7 +302,7 @@ export default function GuestWheel() {
 /** Page chrome: warm background, centered content, theme toggle. */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+    <div className="min-h-dvh flex items-center justify-center bg-background text-foreground">
       <div className="fixed top-3 right-3 z-30">
         <ThemeToggle />
       </div>

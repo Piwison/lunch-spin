@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
-import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, MapPin } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, MapPin, SlidersHorizontal, ChevronDown, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +34,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const [importText, setImportText] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
@@ -76,6 +78,21 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const cuisineTags = tags?.filter((t) => t.category === "cuisine") ?? [];
   const foodTypeTags = tags?.filter((t) => t.category === "food_type") ?? [];
   const customTags = tags?.filter((t) => t.category === "custom") ?? [];
+
+  const toggleFilterTag = (tagId: number) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  };
+
+  // AND-logic tag intersection — but, unlike the wheel, keep excluded
+  // restaurants visible (they're shown with an "excluded" badge here).
+  const visibleRestaurants = useMemo(() => {
+    if (selectedTagIds.length === 0) return restaurants ?? [];
+    return (restaurants ?? []).filter((r) =>
+      selectedTagIds.every((id) => r.tags.some((t) => t.id === id))
+    );
+  }, [restaurants, selectedTagIds]);
 
   const toggleFormTag = (tagId: number) => {
     setForm((f) => ({
@@ -195,6 +212,93 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         </div>
       )}
 
+      {/* Filter by tags — mirrors the Wheel tab so the list can be narrowed too */}
+      {(restaurants?.length ?? 0) > 0 && (tags?.length ?? 0) > 0 && (
+        <div
+          className="w-full rounded-xl overflow-hidden transition-all duration-300"
+          style={{
+            background: "oklch(from var(--card) l c h / 0.6)",
+            border: `1px solid ${selectedTagIds.length > 0 ? "oklch(from var(--brand-2) l c h / 0.4)" : "var(--border)"}`,
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <button
+            onClick={() => setShowFilters((s) => !s)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/3"
+          >
+            <div className="flex items-center gap-2.5">
+              <SlidersHorizontal size={14} style={{ color: selectedTagIds.length > 0 ? "var(--brand)" : "var(--muted-foreground)" }} />
+              <span
+                className="text-xs font-semibold tracking-widest"
+                style={{ fontFamily: "var(--font-display)", color: selectedTagIds.length > 0 ? "var(--foreground)" : "var(--muted-foreground)" }}
+              >
+                FILTER BY TAGS
+              </span>
+              {selectedTagIds.length > 0 && (
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+                >
+                  {selectedTagIds.length} active
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {selectedTagIds.length > 0 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {visibleRestaurants.length}/{restaurants?.length ?? 0}
+                </span>
+              )}
+              <ChevronDown
+                size={14}
+                className="text-muted-foreground transition-transform duration-200"
+                style={{ transform: showFilters ? "rotate(180deg)" : "none" }}
+              />
+            </div>
+          </button>
+
+          {showFilters && (
+            <div className="px-4 pb-4 border-t border-border/30">
+              {[{ label: "CUISINE", items: cuisineTags }, { label: "FOOD TYPE", items: foodTypeTags }, { label: "CUSTOM", items: customTags }].map(({ label, items }) =>
+                items.length > 0 ? (
+                  <div key={label} className="mt-3">
+                    <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>{label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {items.map((tag) => {
+                        const isActive = selectedTagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            onClick={() => toggleFilterTag(tag.id)}
+                            className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
+                            style={{
+                              background: isActive ? tag.color + "25" : "var(--muted)",
+                              border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
+                              color: isActive ? tag.color : "var(--muted-foreground)",
+                              boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
+                            }}
+                          >
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null
+              )}
+              {selectedTagIds.length > 0 && (
+                <button
+                  onClick={() => setSelectedTagIds([])}
+                  className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X size={11} /> Clear all filters
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Restaurant list */}
       {isLoading ? (
         <div className="flex flex-col gap-2.5">
@@ -227,9 +331,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
             <Plus size={14} /> ADD FIRST RESTAURANT
           </button>
         </div>
+      ) : visibleRestaurants.length === 0 ? (
+        <div
+          className="flex items-center gap-2.5 px-4 py-6 rounded-2xl text-sm justify-center text-center"
+          style={{ background: "var(--card)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }}
+        >
+          <AlertTriangle size={15} className="flex-shrink-0" style={{ color: "var(--brand)" }} />
+          No restaurants match all selected tags.
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {restaurants?.map((r, i) => {
+          {visibleRestaurants.map((r, i) => {
             const dotColor = segmentColor(r.tags[0]?.color, i);
             return (
             <div

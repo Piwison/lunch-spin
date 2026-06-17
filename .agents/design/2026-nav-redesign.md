@@ -1,8 +1,6 @@
 # Navigation Redesign Spec — Mobile + Desktop (2026 Liquid Glass)
 
-Status: **DRAFT for review** · Branch: `claude/mobile-side-menu-design-4nz5go` · Date: 2026-06-16
-
-This is a spec + implementation plan only. **No code yet** — review before we build.
+Status: **Phases 0–4 implemented** (Playwright QA deferred — no display in sandbox) · Branch: `claude/mobile-side-menu-design-4nz5go` · Date: 2026-06-16 (a11y pass 2026-06-17)
 
 ---
 
@@ -228,8 +226,12 @@ logic lives in exactly one place:
   mobile. ⇒ Tap-hijack + squeezed canvas resolved.
 - **Phase 2 — mobile bottom tab bar:** `ViewTabs` bottom variant + scroll-minimize.
 - **Phase 3 — desktop polish:** glass rail + kebab + segmented top tabs.
-- **Phase 4 — a11y + QA:** reduced-transparency/motion, safe-area, z-index audit;
-  Playwright pass (run locally — web sandbox has no display).
+- **Phase 4 — a11y + QA:** ✅ (2026-06-17) reduced-transparency + reduced-motion
+  fallbacks (incl. the result pop); branded `:focus-visible` rings on the raw nav
+  buttons; sheet rows ≥56px; result overlay given `role="dialog"`/`aria-modal`,
+  Escape-to-close, and initial focus (WheelApp + GuestWheel). z-index/safe-area
+  verified (mobile nav is in-flow; the `z-50` result modal layers above it).
+  ⏳ **Playwright pass deferred** — needs a local display; the web sandbox has none.
 
 ## 10. Success criteria
 

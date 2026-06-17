@@ -228,13 +228,22 @@ export default function WheelApp() {
     );
   };
 
+  // Result overlay is a hand-rolled dialog (not a Radix primitive), so wire up
+  // Escape-to-close ourselves to keep it keyboard-dismissable.
+  useEffect(() => {
+    if (!showResult) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShowResult(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showResult]);
+
   const cuisineTags = tags?.filter((t) => t.category === "cuisine") ?? [];
   const foodTypeTags = tags?.filter((t) => t.category === "food_type") ?? [];
   const customTags = tags?.filter((t) => t.category === "custom") ?? [];
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--background)" }}>
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--background)" }}>
         <div className="flex flex-col items-center gap-4">
           <div
             className="w-12 h-12 rounded-full animate-orb-spin"
@@ -773,6 +782,7 @@ export default function WheelApp() {
                   <HistoryTab
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
+                    isShared={isShared}
                   />
                 )}
               </div>
@@ -822,6 +832,9 @@ export default function WheelApp() {
           onClick={() => setShowResult(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Spin result: ${spinResult.label}`}
             className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
             style={{
               background: "var(--card)",
@@ -885,6 +898,7 @@ export default function WheelApp() {
                     <RotateCw size={12} /> RE-SPIN
                   </button>
                   <button
+                    autoFocus
                     onClick={() => setShowResult(false)}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
                     style={{

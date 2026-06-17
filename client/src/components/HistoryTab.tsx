@@ -6,6 +6,8 @@ import { RestaurantStats } from "./RestaurantStats";
 interface HistoryTabProps {
   wheelId: number;
   onReenabled: () => void;
+  /** Shared wheel? Enables the per-person fairness view in stats. */
+  isShared?: boolean;
 }
 
 function timeAgo(date: Date): string {
@@ -30,7 +32,7 @@ function exclusionTimeLeft(spunAt: Date): string {
   return `${hours}h left`;
 }
 
-export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
+export default function HistoryTab({ wheelId, onReenabled, isShared }: HistoryTabProps) {
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
@@ -71,9 +73,14 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
             className="text-lg font-bold tracking-tight mb-4"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            STATISTICS
+            INSIGHTS
           </h2>
-          <RestaurantStats stats={stats} isLoading={statsLoading} />
+          <RestaurantStats
+            stats={stats}
+            history={history}
+            showPeople={isShared}
+            isLoading={statsLoading}
+          />
         </div>
       )}
 
