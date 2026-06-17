@@ -49,7 +49,7 @@ persists to `localStorage`; first visit follows `prefers-color-scheme`.
 
 - **Display:** a rounded, friendly face — **Fredoka** (or Baloo 2 / Quicksand) for the
   logo, section labels, result, big numerals. Adds warmth/playfulness.
-- **Body:** keep **DM Sans**.
+- **Body:** **Poppins** (replaced DM Sans, 2026-06-17 per user). Display stays Fredoka.
 
 ## Glow / motion policy
 

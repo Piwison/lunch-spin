@@ -226,7 +226,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
 
       const maxWidth = r * 0.5;
       const fontSize = segments.length > 10 ? 10 : segments.length > 7 ? 11 : 13;
-      ctx.font = `600 ${fontSize}px 'DM Sans', sans-serif`;
+      ctx.font = `600 ${fontSize}px 'Poppins', sans-serif`;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";

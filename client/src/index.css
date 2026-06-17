@@ -33,8 +33,8 @@
   --color-chart-4: oklch(0.75 0.18 60);
   --color-chart-5: oklch(0.68 0.22 340);
   --radius: 0.75rem;
-  --font-sans: "DM Sans", sans-serif;
-  --font-display: "Fredoka", "DM Sans", sans-serif;
+  --font-sans: "Poppins", sans-serif;
+  --font-display: "Fredoka", "Poppins", sans-serif;
 }
 
 /* ── Light (default): warm cream ── */
