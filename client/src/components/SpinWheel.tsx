@@ -19,7 +19,13 @@ const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);
 const SPIN_DURATION = 5000; // ms
 const MIN_ROTATIONS = 6;
 
-export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
+export default function SpinWheel({
+  segments,
+  onSpinEnd,
+  isSpinning,
+  onSpinStart,
+  targetId,
+}: SpinWheelProps) {
   const { theme } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -96,17 +102,24 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
 
     const compile = (type: number, src: string) => {
       const s = gl.createShader(type)!;
-      gl.shaderSource(s, src); gl.compileShader(s); return s;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      return s;
     };
     const prog = gl.createProgram()!;
     gl.attachShader(prog, compile(gl.VERTEX_SHADER, vert));
     gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, frag));
-    gl.linkProgram(prog); gl.useProgram(prog);
+    gl.linkProgram(prog);
+    gl.useProgram(prog);
     progRef.current = prog;
 
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+      gl.STATIC_DRAW
+    );
     const loc = gl.getAttribLocation(prog, "a_pos");
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -136,138 +149,143 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
   }, [isSpinning, theme]);
 
   // ── Draw pie wheel ──────────────────────────────────────────────────────────
-  const drawWheel = useCallback((angle: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    // Use CSS size for coordinates since we scale the context by devicePixelRatio
-    const dpr = window.devicePixelRatio || 1;
-    const size = canvas.width / dpr;
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size / 2 - 8;
+  const drawWheel = useCallback(
+    (angle: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      // Use CSS size for coordinates since we scale the context by devicePixelRatio
+      const dpr = window.devicePixelRatio || 1;
+      const size = canvas.width / dpr;
+      const cx = size / 2;
+      const cy = size / 2;
+      const r = size / 2 - 8;
 
-    // Canvas can't read CSS vars, so resolve the active theme tokens to concrete
-    // colors off the element's computed style (re-reads on each draw → flips with
-    // the theme).
-    const cs = getComputedStyle(canvas);
-    const token = (name: string) => cs.getPropertyValue(name).trim() || "#888";
+      // Canvas can't read CSS vars, so resolve the active theme tokens to concrete
+      // colors off the element's computed style (re-reads on each draw → flips with
+      // the theme).
+      const cs = getComputedStyle(canvas);
+      const token = (name: string) =>
+        cs.getPropertyValue(name).trim() || "#888";
 
-    ctx.clearRect(0, 0, size, size);
+      ctx.clearRect(0, 0, size, size);
 
-    if (segments.length === 0) {
+      if (segments.length === 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = token("--border");
+        ctx.lineWidth = 2;
+        ctx.fillStyle = token("--muted");
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = token("--muted-foreground");
+        ctx.font = `600 14px 'Fredoka', sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Add restaurants", cx, cy - 10);
+        ctx.fillText("to spin the wheel", cx, cy + 10);
+        ctx.restore();
+        return;
+      }
+
+      const sliceAngle = (Math.PI * 2) / segments.length;
+
+      segments.forEach((seg, i) => {
+        const start = angle + i * sliceAngle;
+        const end = start + sliceAngle;
+        const mid = start + sliceAngle / 2;
+
+        // Segment fill
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, end);
+        ctx.closePath();
+
+        // Gradient fill per segment
+        const grd = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
+        const baseColor = seg.color;
+        grd.addColorStop(0, baseColor + "cc");
+        grd.addColorStop(1, baseColor + "88");
+        ctx.fillStyle = grd;
+        ctx.fill();
+
+        // Segment border
+        ctx.strokeStyle = "rgba(0,0,0,0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Glow on segment edge
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, end);
+        ctx.closePath();
+        ctx.shadowColor = seg.color;
+        ctx.shadowBlur = 8;
+        ctx.strokeStyle = seg.color + "66";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+
+        // Label
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(mid);
+        const labelR = r * 0.62;
+        ctx.translate(labelR, 0);
+        ctx.rotate(-mid);
+
+        const maxWidth = r * 0.5;
+        const fontSize =
+          segments.length > 10 ? 10 : segments.length > 7 ? 11 : 13;
+        ctx.font = `600 ${fontSize}px 'Poppins', sans-serif`;
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.shadowColor = "rgba(0,0,0,0.8)";
+        ctx.shadowBlur = 4;
+
+        // Truncate label if needed
+        let label = seg.label;
+        while (ctx.measureText(label).width > maxWidth && label.length > 3) {
+          label = label.slice(0, -1);
+        }
+        if (label !== seg.label) label = label.slice(0, -1) + "…";
+        ctx.fillText(label, 0, 0);
+        ctx.restore();
+      });
+
+      // Center circle
       ctx.save();
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = token("--border");
-      ctx.lineWidth = 2;
-      ctx.fillStyle = token("--muted");
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      const centerGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
+      centerGrd.addColorStop(0, token("--card"));
+      centerGrd.addColorStop(1, token("--border"));
+      ctx.fillStyle = centerGrd;
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 10;
       ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = token("--muted-foreground");
-      ctx.font = `600 14px 'Fredoka', sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("Add restaurants", cx, cy - 10);
-      ctx.fillText("to spin the wheel", cx, cy + 10);
-      ctx.restore();
-      return;
-    }
-
-    const sliceAngle = (Math.PI * 2) / segments.length;
-
-    segments.forEach((seg, i) => {
-      const start = angle + i * sliceAngle;
-      const end = start + sliceAngle;
-      const mid = start + sliceAngle / 2;
-
-      // Segment fill
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, start, end);
-      ctx.closePath();
-
-      // Gradient fill per segment
-      const grd = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
-      const baseColor = seg.color;
-      grd.addColorStop(0, baseColor + "cc");
-      grd.addColorStop(1, baseColor + "88");
-      ctx.fillStyle = grd;
-      ctx.fill();
-
-      // Segment border
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.strokeStyle = "rgba(255,255,255,0.15)";
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.restore();
 
-      // Glow on segment edge
+      // Outer ring glow
       ctx.save();
       ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, start, end);
-      ctx.closePath();
-      ctx.shadowColor = seg.color;
-      ctx.shadowBlur = 8;
-      ctx.strokeStyle = seg.color + "66";
-      ctx.lineWidth = 1;
+      ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 3;
       ctx.stroke();
       ctx.restore();
-
-      // Label
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(mid);
-      const labelR = r * 0.62;
-      ctx.translate(labelR, 0);
-      ctx.rotate(-mid);
-
-      const maxWidth = r * 0.5;
-      const fontSize = segments.length > 10 ? 10 : segments.length > 7 ? 11 : 13;
-      ctx.font = `600 ${fontSize}px 'Poppins', sans-serif`;
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(0,0,0,0.8)";
-      ctx.shadowBlur = 4;
-
-      // Truncate label if needed
-      let label = seg.label;
-      while (ctx.measureText(label).width > maxWidth && label.length > 3) {
-        label = label.slice(0, -1);
-      }
-      if (label !== seg.label) label = label.slice(0, -1) + "…";
-      ctx.fillText(label, 0, 0);
-      ctx.restore();
-    });
-
-    // Center circle
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 22, 0, Math.PI * 2);
-    const centerGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
-    centerGrd.addColorStop(0, token("--card"));
-    centerGrd.addColorStop(1, token("--border"));
-    ctx.fillStyle = centerGrd;
-    ctx.shadowColor = "rgba(0,0,0,0.8)";
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-
-    // Outer ring glow
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(255,255,255,0.06)";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.restore();
-  }, [segments, theme]);
+    },
+    [segments, theme]
+  );
 
   // Sync canvas size with devicePixelRatio for crisp rendering on HiDPI screens
   useEffect(() => {
@@ -296,13 +314,21 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
 
     // Land on the server-chosen segment so the displayed winner matches the
     // recorded/broadcast pick. Fall back to random only if no/unknown target.
-    const chosenIdx = targetId == null ? -1 : segments.findIndex((s) => s.id === targetId);
-    const targetIdx = chosenIdx >= 0 ? chosenIdx : Math.floor(Math.random() * segments.length);
+    const chosenIdx =
+      targetId == null ? -1 : segments.findIndex(s => s.id === targetId);
+    const targetIdx =
+      chosenIdx >= 0 ? chosenIdx : Math.floor(Math.random() * segments.length);
     const sliceAngle = (Math.PI * 2) / segments.length;
     // Pointer is at top (−π/2). We want targetIdx segment to land there.
-    const targetCenter = -Math.PI / 2 - (targetIdx * sliceAngle + sliceAngle / 2);
-    const extraRotations = MIN_ROTATIONS * Math.PI * 2 + Math.random() * Math.PI * 2;
-    const totalDelta = extraRotations + ((targetCenter - startAngleRef.current) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    const targetCenter =
+      -Math.PI / 2 - (targetIdx * sliceAngle + sliceAngle / 2);
+    const extraRotations =
+      MIN_ROTATIONS * Math.PI * 2 + Math.random() * Math.PI * 2;
+    const totalDelta =
+      extraRotations +
+      ((((targetCenter - startAngleRef.current) % (Math.PI * 2)) +
+        Math.PI * 2) %
+        (Math.PI * 2));
 
     startAngleRef.current = currentAngleRef.current;
     targetAngleRef.current = currentAngleRef.current + totalDelta;
@@ -312,7 +338,9 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       const elapsed = performance.now() - startTimeRef.current;
       const progress = Math.min(elapsed / SPIN_DURATION, 1);
       const eased = EASE_OUT(progress);
-      const angle = startAngleRef.current + (targetAngleRef.current - startAngleRef.current) * eased;
+      const angle =
+        startAngleRef.current +
+        (targetAngleRef.current - startAngleRef.current) * eased;
       currentAngleRef.current = angle;
       setDisplayAngle(angle);
 
@@ -331,10 +359,14 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
   const size = 400;
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: "100%", maxWidth: 500 }}>
+    <div
+      className="relative flex items-center justify-center"
+      style={{ width: "100%", maxWidth: 500 }}
+    >
       {/* WebGL background glow */}
       <canvas
         ref={bgCanvasRef}
+        aria-hidden="true"
         className="absolute rounded-full"
         style={{ width: "100%", height: "100%", maxWidth: 500, maxHeight: 500 }}
       />
@@ -345,13 +377,20 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
         style={{ top: "-14px", filter: "drop-shadow(0 2px 6px var(--brand))" }}
       >
         <svg width="26" height="30" viewBox="0 0 26 30" fill="none">
-          <path d="M3 3L23 3L13 26Z" fill="var(--brand)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+          <path
+            d="M3 3L23 3L13 26Z"
+            fill="var(--brand)"
+            stroke="white"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
         </svg>
       </div>
 
       {/* Pie wheel canvas */}
       <canvas
         ref={canvasRef}
+        aria-hidden="true"
         width={size}
         height={size}
         className="relative z-10 rounded-full"

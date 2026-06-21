@@ -33,6 +33,10 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser } },
     rules: {
       ...a11yWarn,
+      // Intentional team pattern: dialogs and the post-spin result modal
+      // autofocus their primary input/action so focus lands inside the overlay
+      // (it also has a global Escape handler). Off rather than per-site disables.
+      "jsx-a11y/no-autofocus": "off",
       "react-hooks/rules-of-hooks": "warn",
       "react-hooks/exhaustive-deps": "warn",
     },
