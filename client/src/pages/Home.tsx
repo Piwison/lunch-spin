@@ -228,7 +228,12 @@ export default function Home() {
       </div>
 
       {/* Shader background */}
-      <canvas ref={canvasRef} className="fixed inset-0 w-full h-full" style={{ zIndex: 0 }} />
+      <canvas
+        ref={canvasRef}
+        aria-hidden="true"
+        className="fixed inset-0 w-full h-full"
+        style={{ zIndex: 0 }}
+      />
 
       {/* Grain overlay */}
       <div

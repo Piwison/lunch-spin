@@ -534,9 +534,14 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             <p className="text-xs text-muted-foreground">
               Paste a wheel export, or load a <code>.json</code> file. It's added as a new wheel you own.
             </p>
-            <label className="self-start text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5">
+            <label
+              htmlFor="wheel-import-file"
+              className="self-start text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5"
+            >
               <Upload size={12} /> Choose file…
               <input
+                id="wheel-import-file"
+                aria-label="Import wheel from JSON file"
                 type="file"
                 accept="application/json,.json"
                 className="hidden"

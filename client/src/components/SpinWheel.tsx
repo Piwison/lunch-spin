@@ -335,6 +335,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       {/* WebGL background glow */}
       <canvas
         ref={bgCanvasRef}
+        aria-hidden="true"
         className="absolute rounded-full"
         style={{ width: "100%", height: "100%", maxWidth: 500, maxHeight: 500 }}
       />
@@ -352,6 +353,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       {/* Pie wheel canvas */}
       <canvas
         ref={canvasRef}
+        aria-hidden="true"
         width={size}
         height={size}
         className="relative z-10 rounded-full"
