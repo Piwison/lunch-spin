@@ -25,10 +25,14 @@ const bin = (name) => {
 const quiet = { stdio: "ignore" };
 const prettier = bin("prettier");
 if (prettier) {
+  // Only format files that are ALREADY prettier-clean. Running --write on a
+  // legacy file that predates prettier reformats the whole file and buries the
+  // real one-line change in churn (see CLAUDE.md mistake log). --check first.
   try {
+    execFileSync(prettier, ["--check", fp], quiet);
     execFileSync(prettier, ["--write", fp], quiet);
   } catch {
-    /* formatting is best-effort */
+    /* not already clean (or prettier failed) — leave formatting untouched */
   }
 }
 const eslint = bin("eslint");

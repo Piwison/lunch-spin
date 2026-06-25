@@ -127,6 +127,13 @@ reclaimed after idle). Anything not committed is lost.
     change (add `theme` to the draw deps). WebGL shaders need a `u_dark` uniform,
     not vars. Related: applying alpha to a token (`var(--brand) + "55"`) is
     invalid CSS — use relative color syntax `oklch(from var(--brand) l c h / .33)`.
+12. **PostToolUse `prettier --write` hook reformatted whole legacy files.** The new
+    format-on-save hook ran `prettier --write` on every edited file. On files that
+    predate prettier (most of the repo), this reformatted the *entire* file, so a
+    2-line a11y change landed as a ~170-line diff and buried the real change (PR
+    #18). → Hook now runs `prettier --check` first and only `--write` if the file
+    is already clean — never mass-reformats a legacy file. Deliberate normalization
+    belongs in its own `pnpm format` commit, not smuggled into a feature PR.
 
 ## Skills index (in `.claude/skills/`)
 

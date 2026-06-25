@@ -1,51 +1,17 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useLocation } from "wouter";
-import {
-  Users,
-  Clock,
-  Tags,
-  Sparkles,
-  ArrowRight,
-  ChevronDown,
-  Utensils,
-  Play,
-} from "lucide-react";
+import { Users, Clock, Tags, Sparkles, ArrowRight, ChevronDown, Utensils, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useTheme } from "@/contexts/ThemeContext";
 
 const FEATURES = [
-  {
-    icon: Users,
-    label: "Team Wheels",
-    desc: "Shared wheels for your whole squad",
-    accent: "var(--brand)",
-  },
-  {
-    icon: Clock,
-    label: "Smart Exclusion",
-    desc: "Auto-skip recently picked spots",
-    accent: "var(--brand-2)",
-  },
-  {
-    icon: Tags,
-    label: "Tag Filtering",
-    desc: "Filter by cuisine or food type",
-    accent: "oklch(0.70 0.20 160)",
-  },
-  {
-    icon: Sparkles,
-    label: "Cinematic Design",
-    desc: "A spin worth watching every time",
-    accent: "var(--brand-2)",
-  },
+  { icon: Users, label: "Team Wheels", desc: "Shared wheels for your whole squad", accent: "var(--brand)" },
+  { icon: Clock, label: "Smart Exclusion", desc: "Auto-skip recently picked spots", accent: "var(--brand-2)" },
+  { icon: Tags, label: "Tag Filtering", desc: "Filter by cuisine or food type", accent: "oklch(0.70 0.20 160)" },
+  { icon: Sparkles, label: "Cinematic Design", desc: "A spin worth watching every time", accent: "var(--brand-2)" },
 ];
 
 const STATS = [
@@ -192,23 +158,16 @@ export default function Home() {
 
     const compile = (type: number, src: string) => {
       const s = gl.createShader(type)!;
-      gl.shaderSource(s, src);
-      gl.compileShader(s);
-      return s;
+      gl.shaderSource(s, src); gl.compileShader(s); return s;
     };
     const prog = gl.createProgram()!;
     gl.attachShader(prog, compile(gl.VERTEX_SHADER, vert));
     gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, frag));
-    gl.linkProgram(prog);
-    gl.useProgram(prog);
+    gl.linkProgram(prog); gl.useProgram(prog);
 
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
-      gl.STATIC_DRAW
-    );
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(prog, "a_pos");
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -219,12 +178,8 @@ export default function Home() {
     const uDark = gl.getUniformLocation(prog, "u_dark");
 
     let raf: number;
-    let mx = 0,
-      my = 0;
-    const onMove = (e: MouseEvent) => {
-      mx = e.clientX;
-      my = e.clientY;
-    };
+    let mx = 0, my = 0;
+    const onMove = (e: MouseEvent) => { mx = e.clientX; my = e.clientY; };
     window.addEventListener("mousemove", onMove);
 
     const start = performance.now();
@@ -264,10 +219,7 @@ export default function Home() {
       <div
         ref={cursorDotRef}
         className="fixed top-0 left-0 w-1.5 h-1.5 rounded-full pointer-events-none z-[9999] hidden md:block"
-        style={{
-          background: "var(--brand)",
-          boxShadow: "0 0 6px var(--brand)",
-        }}
+        style={{ background: "var(--brand)", boxShadow: "0 0 6px var(--brand)" }}
       />
 
       {/* Theme toggle */}
@@ -296,25 +248,17 @@ export default function Home() {
 
       {/* ── HERO ── */}
       <section className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 pt-16 pb-24">
+
         {/* Floating orb */}
-        <div
-          className="mb-10 flex justify-center reveal"
-          style={{ animationDelay: "40ms" }}
-        >
-          <div
-            ref={orbRef}
-            style={{
-              transition: "transform 0.4s cubic-bezier(0.23, 1, 0.32, 1)",
-            }}
-          >
+        <div className="mb-10 flex justify-center reveal" style={{ animationDelay: "40ms" }}>
+          <div ref={orbRef} style={{ transition: "transform 0.4s cubic-bezier(0.23, 1, 0.32, 1)" }}>
             <div className="relative animate-float">
               {/* Outer glow rings */}
               <div
                 className="absolute rounded-full animate-ring-rotate"
                 style={{
                   inset: "-16px",
-                  background:
-                    "conic-gradient(from 0deg, transparent 0%, oklch(from var(--brand) l c h / 0.5) 25%, transparent 50%, oklch(from var(--brand-2) l c h / 0.4) 75%, transparent 100%)",
+                  background: "conic-gradient(from 0deg, transparent 0%, oklch(from var(--brand) l c h / 0.5) 25%, transparent 50%, oklch(from var(--brand-2) l c h / 0.4) 75%, transparent 100%)",
                   filter: "blur(3px)",
                 }}
               />
@@ -322,45 +266,31 @@ export default function Home() {
                 className="absolute rounded-full"
                 style={{
                   inset: "-8px",
-                  background:
-                    "conic-gradient(from 180deg, transparent 0%, oklch(from var(--brand-2) l c h / 0.3) 30%, transparent 60%)",
+                  background: "conic-gradient(from 180deg, transparent 0%, oklch(from var(--brand-2) l c h / 0.3) 30%, transparent 60%)",
                   filter: "blur(2px)",
                   animation: "ring-rotate 8s linear infinite reverse",
                 }}
               />
               {/* Pointer */}
-              <div
-                className="absolute left-1/2 -translate-x-1/2 -top-4 z-30"
-                style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.6))" }}
-              >
+              <div className="absolute left-1/2 -translate-x-1/2 -top-4 z-30" style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.6))" }}>
                 <svg width="20" height="24" viewBox="0 0 20 24" fill="none">
-                  <path
-                    d="M10 22L1.5 4.5H18.5L10 22Z"
-                    fill="white"
-                    stroke="var(--muted)"
-                    strokeWidth="1.5"
-                    strokeLinejoin="round"
-                  />
+                  <path d="M10 22L1.5 4.5H18.5L10 22Z" fill="white" stroke="var(--muted)" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
               </div>
               {/* Wheel face */}
               <div
                 className="w-36 h-36 rounded-full animate-orb-spin"
                 style={{
-                  background:
-                    "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
-                  boxShadow:
-                    "0 0 60px oklch(from var(--brand) l c h / 0.5), 0 0 120px oklch(from var(--brand-2) l c h / 0.25), inset 0 0 0 2px rgba(255,255,255,0.1)",
+                  background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+                  boxShadow: "0 0 60px oklch(from var(--brand) l c h / 0.5), 0 0 120px oklch(from var(--brand-2) l c h / 0.25), inset 0 0 0 2px rgba(255,255,255,0.1)",
                 }}
               />
               {/* Center hub */}
               <div
                 className="absolute inset-0 m-auto w-8 h-8 rounded-full"
                 style={{
-                  background:
-                    "radial-gradient(circle at 35% 30%, var(--border), var(--background))",
-                  boxShadow:
-                    "0 0 0 2px rgba(255,255,255,0.1), 0 2px 12px rgba(0,0,0,0.7)",
+                  background: "radial-gradient(circle at 35% 30%, var(--border), var(--background))",
+                  boxShadow: "0 0 0 2px rgba(255,255,255,0.1), 0 2px 12px rgba(0,0,0,0.7)",
                 }}
               />
             </div>
@@ -402,8 +332,7 @@ export default function Home() {
           className="text-center text-muted-foreground text-lg md:text-xl mb-12 max-w-md font-light leading-relaxed reveal"
           style={{ animationDelay: "320ms" }}
         >
-          Stop debating. Start spinning. The cinematic lunch wheel for teams who
-          can't decide.
+          Stop debating. Start spinning. The cinematic lunch wheel for teams who can't decide.
         </p>
 
         {/* CTA */}
@@ -416,10 +345,8 @@ export default function Home() {
               className="group relative inline-flex items-center justify-center gap-3 px-10 py-4 rounded-full text-sm font-bold tracking-widest transition-all duration-300 active:scale-95 hover:-translate-y-1"
               style={{
                 fontFamily: "var(--font-display)",
-                background:
-                  "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                boxShadow:
-                  "0 0 40px oklch(from var(--brand) l c h / 0.4), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.4)",
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.4)",
                 color: "white",
                 cursor: "none",
               }}
@@ -434,8 +361,7 @@ export default function Home() {
                 if (cursorRef.current) {
                   cursorRef.current.style.width = "40px";
                   cursorRef.current.style.height = "40px";
-                  cursorRef.current.style.borderColor =
-                    "oklch(from var(--brand) l c h / 0.6)";
+                  cursorRef.current.style.borderColor = "oklch(from var(--brand) l c h / 0.6)";
                 }
               }}
             >
@@ -447,37 +373,22 @@ export default function Home() {
                 <span
                   className="absolute inset-0"
                   style={{
-                    background:
-                      "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)",
+                    background: "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)",
                     backgroundSize: "200% 100%",
                     animation: "shimmer 3s linear infinite",
                   }}
                 />
               </span>
               <span>GET STARTED</span>
-              <ArrowRight
-                size={16}
-                className="transition-transform duration-300 group-hover:translate-x-1.5"
-              />
+              <ArrowRight size={16} className="transition-transform duration-300 group-hover:translate-x-1.5" />
             </a>
           )}
         </div>
 
         {/* Scroll hint */}
-        <div
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 reveal"
-          style={{ animationDelay: "700ms" }}
-        >
-          <span
-            className="text-xs tracking-widest text-muted-foreground"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            SCROLL
-          </span>
-          <ChevronDown
-            size={14}
-            className="text-muted-foreground animate-bounce"
-          />
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 reveal" style={{ animationDelay: "700ms" }}>
+          <span className="text-xs tracking-widest text-muted-foreground" style={{ fontFamily: "var(--font-display)" }}>SCROLL</span>
+          <ChevronDown size={14} className="text-muted-foreground animate-bounce" />
         </div>
       </section>
 
@@ -492,21 +403,14 @@ export default function Home() {
           }}
         >
           {STATS.map(({ value, label }, i) => (
-            <div
-              key={label}
-              className="text-center reveal"
-              style={{ animationDelay: `${i * 80}ms` }}
-            >
+            <div key={label} className="text-center reveal" style={{ animationDelay: `${i * 80}ms` }}>
               <div
                 className="text-4xl md:text-5xl font-black mb-1 gradient-text"
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 {value}
               </div>
-              <div
-                className="text-xs text-muted-foreground tracking-widest uppercase"
-                style={{ fontFamily: "var(--font-display)" }}
-              >
+              <div className="text-xs text-muted-foreground tracking-widest uppercase" style={{ fontFamily: "var(--font-display)" }}>
                 {label}
               </div>
             </div>
@@ -519,10 +423,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto">
           <p
             className="text-center text-xs tracking-[0.2em] mb-12 reveal"
-            style={{
-              color: "var(--muted-foreground)",
-              fontFamily: "var(--font-display)",
-            }}
+            style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-display)" }}
           >
             BUILT FOR THE 11:45 SCRAMBLE
           </p>
@@ -532,18 +433,14 @@ export default function Home() {
                 key={label}
                 className="group relative overflow-hidden rounded-2xl p-6 cursor-none reveal"
                 style={{
-                  background:
-                    hoveredFeature === i
-                      ? `oklch(from var(--card) l c h / 0.9)`
-                      : "oklch(from var(--card) l c h / 0.6)",
+                  background: hoveredFeature === i
+                    ? `oklch(from var(--card) l c h / 0.9)`
+                    : "oklch(from var(--card) l c h / 0.6)",
                   border: `1px solid ${hoveredFeature === i ? alpha(accent, 0.33) : "var(--border)"}`,
                   backdropFilter: "blur(16px)",
                   transition: "all 0.3s cubic-bezier(0.23, 1, 0.32, 1)",
                   transform: hoveredFeature === i ? "translateY(-4px)" : "none",
-                  boxShadow:
-                    hoveredFeature === i
-                      ? `0 20px 40px ${alpha(accent, 0.13)}, 0 0 0 1px ${alpha(accent, 0.2)}`
-                      : "none",
+                  boxShadow: hoveredFeature === i ? `0 20px 40px ${alpha(accent, 0.13)}, 0 0 0 1px ${alpha(accent, 0.2)}` : "none",
                   animationDelay: `${i * 100}ms`,
                 }}
                 onMouseEnter={() => setHoveredFeature(i)}
@@ -562,26 +459,18 @@ export default function Home() {
                 <div className="flex items-start gap-4">
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
-                    style={{
-                      background: alpha(accent, 0.13),
-                      border: `1px solid ${alpha(accent, 0.27)}`,
-                    }}
+                    style={{ background: alpha(accent, 0.13), border: `1px solid ${alpha(accent, 0.27)}` }}
                   >
                     <Icon size={18} style={{ color: accent }} />
                   </div>
                   <div>
                     <h3
                       className="font-bold mb-1 text-sm tracking-wide"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        color: "var(--foreground)",
-                      }}
+                      style={{ fontFamily: "var(--font-display)", color: "var(--foreground)" }}
                     >
                       {label.toUpperCase()}
                     </h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {desc}
-                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
                   </div>
                 </div>
               </div>
@@ -596,10 +485,7 @@ export default function Home() {
           <div className="max-w-4xl mx-auto">
             <p
               className="text-center text-xs tracking-[0.2em] mb-3 reveal"
-              style={{
-                color: "var(--muted-foreground)",
-                fontFamily: "var(--font-display)",
-              }}
+              style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-display)" }}
             >
               TRY WITHOUT SIGNING IN
             </p>
@@ -625,38 +511,26 @@ export default function Home() {
                   <div className="flex items-start justify-between gap-3 mb-4">
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
-                      style={{
-                        background: "oklch(from var(--brand) l c h / 0.15)",
-                        border:
-                          "1px solid oklch(from var(--brand) l c h / 0.30)",
-                      }}
+                      style={{ background: "oklch(from var(--brand) l c h / 0.15)", border: "1px solid oklch(from var(--brand) l c h / 0.30)" }}
                     >
                       <Utensils size={16} style={{ color: "var(--brand)" }} />
                     </div>
                     <span
                       className="flex items-center gap-1.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{
-                        color: "var(--brand)",
-                        fontFamily: "var(--font-display)",
-                      }}
+                      style={{ color: "var(--brand)", fontFamily: "var(--font-display)" }}
                     >
                       SPIN <Play size={11} />
                     </span>
                   </div>
                   <h3
                     className="font-bold text-base mb-1 truncate"
-                    style={{
-                      fontFamily: "var(--font-display)",
-                      color: "var(--foreground)",
-                    }}
+                    style={{ fontFamily: "var(--font-display)", color: "var(--foreground)" }}
                   >
                     {w.name}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {w.restaurantCount} restaurant
-                    {w.restaurantCount !== 1 ? "s" : ""}
-                    {w.spinCount > 0 &&
-                      ` · ${w.spinCount} spin${w.spinCount !== 1 ? "s" : ""}`}
+                    {w.restaurantCount} restaurant{w.restaurantCount !== 1 ? "s" : ""}
+                    {w.spinCount > 0 && ` · ${w.spinCount} spin${w.spinCount !== 1 ? "s" : ""}`}
                   </p>
                 </button>
               ))}
@@ -673,8 +547,7 @@ export default function Home() {
             background: "oklch(from var(--card) l c h / 0.7)",
             border: "1px solid var(--border)",
             backdropFilter: "blur(24px)",
-            boxShadow:
-              "0 0 80px oklch(from var(--brand) l c h / 0.08), 0 0 120px oklch(from var(--brand-2) l c h / 0.06)",
+            boxShadow: "0 0 80px oklch(from var(--brand) l c h / 0.08), 0 0 120px oklch(from var(--brand-2) l c h / 0.06)",
           }}
         >
           <div className="text-4xl mb-4">🎡</div>
@@ -685,8 +558,7 @@ export default function Home() {
             READY TO SPIN?
           </h2>
           <p className="text-muted-foreground mb-8 text-sm leading-relaxed">
-            Create your first wheel in seconds. Add your team's favourite spots
-            and let fate decide.
+            Create your first wheel in seconds. Add your team's favourite spots and let fate decide.
           </p>
           {!loading && (
             <a
@@ -694,19 +566,14 @@ export default function Home() {
               className="group inline-flex items-center gap-2 px-8 py-3 rounded-full text-sm font-bold tracking-widest transition-all duration-300 active:scale-95 hover:-translate-y-0.5"
               style={{
                 fontFamily: "var(--font-display)",
-                background:
-                  "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                boxShadow:
-                  "0 0 30px oklch(from var(--brand) l c h / 0.3), 0 4px 20px rgba(0,0,0,0.4)",
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.3), 0 4px 20px rgba(0,0,0,0.4)",
                 color: "white",
                 cursor: "none",
               }}
             >
               START FOR FREE
-              <ArrowRight
-                size={14}
-                className="transition-transform duration-300 group-hover:translate-x-1"
-              />
+              <ArrowRight size={14} className="transition-transform duration-300 group-hover:translate-x-1" />
             </a>
           )}
         </div>
