@@ -15,8 +15,10 @@ if (!fp) process.exit(0);
 
 const blocked = [
   {
-    re: /(^|\/)\.env(\.local|\.production|\.development)?$/,
-    why: ".env files hold secrets — edit them outside the agent.",
+    // Block .env and any .env.<variant> (.local, .staging, .test,
+    // .production.local, …) but keep .env.example/.sample/.template editable.
+    re: /(^|\/)\.env(\.(?!example$|sample$|template$)[^/]*)?$/,
+    why: ".env* files hold secrets — edit them outside the agent.",
   },
   {
     re: /(^|\/)server\/_core\//,
