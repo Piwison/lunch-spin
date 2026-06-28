@@ -171,10 +171,12 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     reader.readAsText(file);
   };
 
-  // Default the starter pack on for a user's very first wheel only.
+  // Default the starter pack on for a user's very first wheel only. Skip while the
+  // create dialog is open so a wheels.list refetch (e.g. window refocus) can't
+  // silently clobber the user's explicit toggle / the imperative opener's choice.
   useEffect(() => {
-    if (wheels) setAddStarterPack(wheels.length === 0);
-  }, [wheels]);
+    if (wheels && !showCreate) setAddStarterPack(wheels.length === 0);
+  }, [wheels, showCreate]);
 
   // Expose an imperative opener so the first-run card can launch the create dialog
   // with the starter-pack toggle pre-set (sample vs blank). setState setters are

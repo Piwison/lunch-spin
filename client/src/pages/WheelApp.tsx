@@ -88,6 +88,10 @@ export default function WheelApp() {
 
   // WheelSelector registers its create-dialog opener here so the first-run card
   // can launch it (sample vs blank). Ref keeps the callback identity stable.
+  // Relies on WheelSelector rendering (and registering) before the first-run card
+  // becomes interactive — it's an always-mounted sibling above the tab content, so
+  // the ref is populated by the time a button can be clicked. Keep that ordering if
+  // WheelSelector ever becomes conditionally rendered.
   const createOpenerRef = useRef<((withStarter: boolean) => void) | null>(null);
   const registerCreateOpener = useCallback(
     (open: (withStarter: boolean) => void) => {
@@ -397,7 +401,16 @@ export default function WheelApp() {
           {/* ── TAB CONTENT ── */}
           <div className="flex-1 overflow-y-auto">
             {!selectedWheelId ? (
-              firstRun ? (
+              wheelsLoading ? (
+                /* Hold a neutral state until we know if this is a first run —
+                   avoids flashing "no wheel selected" at a brand-new user. */
+                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+                  <div
+                    className="w-16 h-16 rounded-full animate-orb-spin opacity-60"
+                    style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
+                  />
+                </div>
+              ) : firstRun ? (
                 /* First-run — the user has no wheels yet. Guide them in (decision 2b). */
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center max-w-md mx-auto">
                   <div
