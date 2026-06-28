@@ -391,7 +391,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
 
       {/* Create wheel dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="bg-card border-border max-w-sm">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>CREATE WHEEL</DialogTitle>
           </DialogHeader>
@@ -465,7 +465,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
 
       {/* Invite link dialog */}
       <Dialog open={!!showInvite} onOpenChange={() => setShowInvite(null)}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="bg-card border-border max-w-sm">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>INVITE LINK</DialogTitle>
           </DialogHeader>
@@ -483,7 +483,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
 
       {/* Wheel settings dialog */}
       <Dialog open={!!editWheel} onOpenChange={(open) => { if (!open) setEditWheel(null); }}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="bg-card border-border max-w-sm">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>WHEEL SETTINGS</DialogTitle>
           </DialogHeader>
@@ -545,7 +545,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
 
       {/* Import wheel dialog */}
       <Dialog open={showImport} onOpenChange={(open) => { if (!open) { setShowImport(false); setImportText(""); } }}>
-        <DialogContent className="glass border-border/50 max-w-md">
+        <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>IMPORT WHEEL</DialogTitle>
           </DialogHeader>

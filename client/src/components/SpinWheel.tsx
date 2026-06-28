@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
 
 export interface WheelSegment {
@@ -19,7 +19,7 @@ const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);
 const SPIN_DURATION = 5000; // ms
 const MIN_ROTATIONS = 6;
 
-export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
+function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
   const { theme } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -32,6 +32,23 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
   const targetAngleRef = useRef<number>(0);
   const currentAngleRef = useRef<number>(0);
   const [displayAngle, setDisplayAngle] = useState(0);
+
+  // Keep the latest props in refs so the spin animation can read them WITHOUT
+  // listing them in its effect deps. Otherwise a parent re-render mid-spin — e.g.
+  // a shared wheel's ~3s presence/session/spin polling, which gives `onSpinEnd`
+  // and `segments` fresh identities — would re-fire the effect, reset the 5s
+  // timer, and the wheel would spin forever. The animation must start exactly
+  // once per `isSpinning` transition.
+  const onSpinEndRef = useRef(onSpinEnd);
+  onSpinEndRef.current = onSpinEnd;
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const targetIdRef = useRef(targetId);
+  targetIdRef.current = targetId;
+  const isSpinningRef = useRef(isSpinning);
+  isSpinningRef.current = isSpinning;
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   // ── WebGL shader background ─────────────────────────────────────────────────
   useEffect(() => {
@@ -119,11 +136,14 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
 
     const render = () => {
       const t = (performance.now() - start) / 1000;
-      const spinVal = isSpinning ? 1.0 : 0.0;
+      // Read spin/theme from refs so this effect can build the GL program ONCE
+      // instead of tearing it down and recompiling shaders on every spin toggle
+      // or theme flip — the per-frame uniforms still track the latest values.
+      const spinVal = isSpinningRef.current ? 1.0 : 0.0;
       gl.uniform1f(uTime, t);
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uSpin, spinVal);
-      gl.uniform1f(uDark, theme === "dark" ? 1 : 0);
+      gl.uniform1f(uDark, themeRef.current === "dark" ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       bgRafRef.current = requestAnimationFrame(render);
     };
@@ -133,7 +153,8 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       cancelAnimationFrame(bgRafRef.current);
       ro.disconnect();
     };
-  }, [isSpinning, theme]);
+     
+  }, []);
 
   // ── Draw pie wheel ──────────────────────────────────────────────────────────
   const drawWheel = useCallback((angle: number) => {
@@ -290,9 +311,14 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     drawWheel(displayAngle);
   }, [displayAngle, drawWheel]);
 
-  // Spin animation
+  // Spin animation. Depends ONLY on `isSpinning` (see the ref note above) so it
+  // starts once and runs to completion; segments/targetId/onSpinEnd are read from
+  // refs to avoid mid-spin restarts.
   useEffect(() => {
-    if (!isSpinning || segments.length === 0) return;
+    if (!isSpinning) return;
+    const segments = segmentsRef.current;
+    if (segments.length === 0) return;
+    const targetId = targetIdRef.current;
 
     // Land on the server-chosen segment so the displayed winner matches the
     // recorded/broadcast pick. Fall back to random only if no/unknown target.
@@ -321,12 +347,13 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       } else {
         currentAngleRef.current = targetAngleRef.current;
         setDisplayAngle(targetAngleRef.current);
-        onSpinEnd(segments[targetIdx]!);
+        onSpinEndRef.current(segments[targetIdx]!);
       }
     };
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [isSpinning, segments, onSpinEnd, targetId]);
+     
+  }, [isSpinning]);
 
   const size = 400;
 
@@ -362,3 +389,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     </div>
   );
 }
+
+// Memoized: on a shared wheel the parent re-renders every ~3s (polling); with
+// stable props the wheel skips those re-renders entirely.
+export default memo(SpinWheel);

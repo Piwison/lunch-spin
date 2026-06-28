@@ -427,7 +427,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
       {/* Add/Edit dialog */}
       <Dialog open={showAdd || editId !== null} onOpenChange={(open) => { if (!open) { setShowAdd(false); setEditId(null); setForm(EMPTY_FORM); } }}>
-        <DialogContent className="glass border-border/50 max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-card border-border max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>
               {editId !== null ? "EDIT RESTAURANT" : "ADD RESTAURANT"}
@@ -481,7 +481,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
       {/* Bulk import dialog */}
       <Dialog open={showImport} onOpenChange={(open) => { if (!open) { setShowImport(false); setImportText(""); } }}>
-        <DialogContent className="glass border-border/50 max-w-md">
+        <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>IMPORT RESTAURANTS</DialogTitle>
           </DialogHeader>
@@ -510,7 +510,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
       {/* Custom tag creation dialog */}
       <Dialog open={showTagCreate} onOpenChange={setShowTagCreate}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="bg-card border-border max-w-sm">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>CREATE CUSTOM TAG</DialogTitle>
           </DialogHeader>

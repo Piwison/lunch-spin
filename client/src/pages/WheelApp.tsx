@@ -200,15 +200,15 @@ export default function WheelApp() {
     [filteredRestaurants]
   );
 
-  const handleSpinEnd = (segment: WheelSegment) => {
+  const handleSpinEnd = useCallback((segment: WheelSegment) => {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
     setTargetId(null);
     refetchRestaurants();
-  };
+  }, [refetchRestaurants]);
 
-  const handleSpin = async () => {
+  const handleSpin = useCallback(async () => {
     if (wheelSegments.length === 0) {
       setSpinError("No restaurants available. Add some or adjust your filters.");
       return;
@@ -227,7 +227,7 @@ export default function WheelApp() {
     } catch (e) {
       setSpinError(e instanceof Error ? e.message : "Couldn't start the spin. Try again.");
     }
-  };
+  }, [wheelSegments, selectedWheelId, createSpin]);
 
   const handleReSpin = () => {
     setShowResult(false);

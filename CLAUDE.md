@@ -134,6 +134,19 @@ reclaimed after idle). Anything not committed is lost.
     #18). → Hook now runs `prettier --check` first and only `--write` if the file
     is already clean — never mass-reformats a legacy file. Deliberate normalization
     belongs in its own `pnpm format` commit, not smuggled into a feature PR.
+13. **Animation effect restarted by shared-wheel polling → endless spin.** `SpinWheel`'s
+    spin `useEffect` depended on `[isSpinning, segments, onSpinEnd, targetId]`. On a
+    **shared** wheel the ~3s presence/session/spin polling re-renders the parent,
+    handing `onSpinEnd`/`segments` fresh identities mid-spin → the effect re-fired,
+    reset the 5s timer, and the wheel spun forever (only on shared wheels — solo
+    wheels don't poll). → Drive such RAF animations off the **trigger only**
+    (`[isSpinning]`) and read live values (segments/targetId/onSpinEnd) from refs
+    updated each render. Same fix removed the per-spin WebGL program rebuild (the bg
+    shader effect was keyed on `[isSpinning, theme]` → recompiled shaders on every
+    spin toggle; now builds once, reads `u_spin`/`u_dark` from refs). Also: modal
+    `DialogContent` must not use the translucent `.glass` utility (it's for floating
+    nav) — over a live WebGL background it's unreadable AND a backdrop-blur GPU cost;
+    use an opaque `bg-card`.
 
 ## Skills index (in `.claude/skills/`)
 
