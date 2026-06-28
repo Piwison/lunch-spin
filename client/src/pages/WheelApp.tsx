@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -15,6 +15,7 @@ import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Slid
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
+import { isFirstRun } from "@shared/onboarding";
 import { segmentColor } from "@/lib/palette";
 import { ErrorChip } from "@/components/StatusChip";
 
@@ -79,6 +80,25 @@ export default function WheelApp() {
 
   const createSpin = trpc.spins.create.useMutation();
   const isShared = !!wheelData?.isShared;
+
+  // Wheel count drives the first-run experience. Same query key as WheelSelector's
+  // list, so React Query dedupes it — no extra request.
+  const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery();
+  const firstRun = !wheelsLoading && isFirstRun(wheels?.length ?? 0);
+
+  // WheelSelector registers its create-dialog opener here so the first-run card
+  // can launch it (sample vs blank). Ref keeps the callback identity stable.
+  // Relies on WheelSelector rendering (and registering) before the first-run card
+  // becomes interactive — it's an always-mounted sibling above the tab content, so
+  // the ref is populated by the time a button can be clicked. Keep that ordering if
+  // WheelSelector ever becomes conditionally rendered.
+  const createOpenerRef = useRef<((withStarter: boolean) => void) | null>(null);
+  const registerCreateOpener = useCallback(
+    (open: (withStarter: boolean) => void) => {
+      createOpenerRef.current = open;
+    },
+    [],
+  );
 
   // ── Shared-wheel realtime via polling (serverless-friendly) ───────────────
   // Presence: heartbeat + roster ~10s, paused when the tab is hidden.
@@ -320,6 +340,7 @@ export default function WheelApp() {
         <WheelSelector
           selectedWheelId={selectedWheelId}
           onSelect={(id: number) => { setSelectedWheelId(id); navigate(`/app/${id}`); }}
+          registerCreateOpener={registerCreateOpener}
         />
 
         {/* ── MAIN CONTENT ── */}
@@ -380,19 +401,75 @@ export default function WheelApp() {
           {/* ── TAB CONTENT ── */}
           <div className="flex-1 overflow-y-auto">
             {!selectedWheelId ? (
-              /* Empty state — no wheel selected */
-              <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
-                <div
-                  className="w-20 h-20 rounded-full opacity-20"
-                  style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
-                />
-                <div>
-                  <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
-                    NO WHEEL SELECTED
-                  </p>
-                  <p className="text-sm text-muted-foreground">Pick a wheel from the menu or create a new one</p>
+              wheelsLoading ? (
+                /* Hold a neutral state until we know if this is a first run —
+                   avoids flashing "no wheel selected" at a brand-new user. */
+                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+                  <div
+                    className="w-16 h-16 rounded-full animate-orb-spin opacity-60"
+                    style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
+                  />
                 </div>
-              </div>
+              ) : firstRun ? (
+                /* First-run — the user has no wheels yet. Guide them in (decision 2b). */
+                <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center max-w-md mx-auto">
+                  <div
+                    className="w-20 h-20 rounded-full animate-orb-spin"
+                    style={{
+                      background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
+                      boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)",
+                    }}
+                  />
+                  <div>
+                    <p className="text-2xl font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>
+                      Make your first wheel
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Start from a sample to spin right away, or build your own from scratch.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2.5 w-full max-w-xs">
+                    <button
+                      onClick={() => createOpenerRef.current?.(true)}
+                      className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                        boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
+                        color: "white",
+                      }}
+                    >
+                      <Utensils size={15} /> Start from a sample
+                    </button>
+                    <button
+                      onClick={() => createOpenerRef.current?.(false)}
+                      className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:bg-white/5"
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
+                        color: "var(--foreground)",
+                      }}
+                    >
+                      <Plus size={15} /> Create a blank wheel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Empty state — has wheels, none selected */
+                <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
+                  <div
+                    className="w-20 h-20 rounded-full opacity-20"
+                    style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
+                  />
+                  <div>
+                    <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
+                      NO WHEEL SELECTED
+                    </p>
+                    <p className="text-sm text-muted-foreground">Pick a wheel from the menu or create a new one</p>
+                  </div>
+                </div>
+              )
             ) : (
               <div key={activeTab} className="tab-enter">
 
@@ -783,6 +860,7 @@ export default function WheelApp() {
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
                     isShared={isShared}
+                    onGoToWheel={() => setActiveTab("wheel")}
                   />
                 )}
               </div>

@@ -4,6 +4,7 @@ import { getLoginUrl } from "@/const";
 import { segmentColor } from "@/lib/palette";
 import { trpc } from "@/lib/trpc";
 import { pickWinner } from "@shared/pick";
+import { shouldPromptSignup } from "@shared/onboarding";
 import { ArrowRight, Check, MapPin, RotateCw, Sparkles, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
@@ -36,6 +37,8 @@ export default function GuestWheel() {
   const [targetId, setTargetId] = useState<number | null>(null);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  // Client-only counter — gates the post-spin conversion CTA (decision 1b).
+  const [spinCount, setSpinCount] = useState(0);
 
   const restaurants = restaurantsQuery.data;
 
@@ -63,6 +66,7 @@ export default function GuestWheel() {
     setSpinResult(segment);
     setShowResult(true);
     setTargetId(null);
+    setSpinCount((c) => c + 1);
   };
 
   const handleReSpin = () => {
@@ -291,6 +295,25 @@ export default function GuestWheel() {
                   </button>
                 </div>
               </div>
+
+              {/* Conversion moment — earned after the first spin (decision 1b). */}
+              {shouldPromptSignup(spinCount) && (
+                <div className="mt-6 pt-5" style={{ borderTop: "1px solid var(--border)" }}>
+                  <a
+                    href={getLoginUrl()}
+                    className="flex items-center justify-center gap-2 w-full px-5 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                      boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.35)",
+                      color: "white",
+                    }}
+                  >
+                    <Sparkles size={14} /> Make your own wheel — it’s free
+                    <ArrowRight size={14} />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
