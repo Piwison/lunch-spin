@@ -25,6 +25,12 @@ import { parseWheelImport } from "@shared/transfer";
 interface WheelSelectorProps {
   selectedWheelId: number | null;
   onSelect: (id: number) => void;
+  /**
+   * Lets a parent (e.g. WheelApp's first-run card) open the create dialog. The
+   * registered opener takes the desired starter-pack state: `true` = "start from a
+   * sample" (adds STARTER_RESTAURANTS), `false` = blank wheel.
+   */
+  registerCreateOpener?: (open: (withStarter: boolean) => void) => void;
 }
 
 const EXCLUSION_OPTIONS = [
@@ -102,7 +108,7 @@ function WheelActionsMenu({
   );
 }
 
-export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelectorProps) {
+export default function WheelSelector({ selectedWheelId, onSelect, registerCreateOpener }: WheelSelectorProps) {
   const { user } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -169,6 +175,17 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
   useEffect(() => {
     if (wheels) setAddStarterPack(wheels.length === 0);
   }, [wheels]);
+
+  // Expose an imperative opener so the first-run card can launch the create dialog
+  // with the starter-pack toggle pre-set (sample vs blank). setState setters are
+  // stable, so this registers once.
+  useEffect(() => {
+    registerCreateOpener?.((withStarter: boolean) => {
+      setAddStarterPack(withStarter);
+      setCreateError(null);
+      setShowCreate(true);
+    });
+  }, [registerCreateOpener]);
 
   const importStarterPack = trpc.restaurants.addBulk.useMutation();
   const createWheel = trpc.wheels.create.useMutation({

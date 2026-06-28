@@ -8,6 +8,8 @@ interface HistoryTabProps {
   onReenabled: () => void;
   /** Shared wheel? Enables the per-person fairness view in stats. */
   isShared?: boolean;
+  /** Jump to the Wheel tab — wired to the empty-state CTA. */
+  onGoToWheel?: () => void;
 }
 
 function timeAgo(date: Date): string {
@@ -32,7 +34,7 @@ function exclusionTimeLeft(spunAt: Date): string {
   return `${hours}h left`;
 }
 
-export default function HistoryTab({ wheelId, onReenabled, isShared }: HistoryTabProps) {
+export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel }: HistoryTabProps) {
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
@@ -126,9 +128,28 @@ export default function HistoryTab({ wheelId, onReenabled, isShared }: HistoryTa
             ))}
           </div>
         ) : !history || history.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <div className="text-4xl mb-3 opacity-30">🎡</div>
-            <p>No spins yet. Go spin the wheel!</p>
+          <div className="flex flex-col items-center text-center py-12 gap-4">
+            <div className="text-4xl opacity-30">🎡</div>
+            <div>
+              <p className="font-semibold text-foreground/70 mb-1" style={{ fontFamily: "var(--font-display)" }}>
+                No spins yet
+              </p>
+              <p className="text-sm text-muted-foreground">Your picks and exclusions will show up here.</p>
+            </div>
+            {onGoToWheel && (
+              <button
+                onClick={onGoToWheel}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                  boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.35)",
+                  color: "white",
+                }}
+              >
+                <Clock size={14} /> Spin to start a history
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
