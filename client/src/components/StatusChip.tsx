@@ -14,28 +14,28 @@ interface StatusChipProps {
 
 const CHIP_STYLES: Record<ChipVariant, { bg: string; border: string; color: string; glow: string }> = {
   error: {
-    bg: "oklch(0.60 0.22 25 / 0.12)",
-    border: "oklch(0.60 0.22 25 / 0.35)",
-    color: "oklch(0.82 0.14 30)",
-    glow: "oklch(0.60 0.22 25 / 0.15)",
+    bg: "oklch(from var(--destructive) l c h / 0.12)",
+    border: "oklch(from var(--destructive) l c h / 0.35)",
+    color: "var(--destructive)",
+    glow: "oklch(from var(--destructive) l c h / 0.15)",
   },
   success: {
-    bg: "oklch(0.65 0.20 145 / 0.12)",
-    border: "oklch(0.65 0.20 145 / 0.35)",
-    color: "oklch(0.78 0.15 148)",
-    glow: "oklch(0.65 0.20 145 / 0.15)",
+    bg: "oklch(from var(--ok) l c h / 0.12)",
+    border: "oklch(from var(--ok) l c h / 0.35)",
+    color: "var(--ok)",
+    glow: "oklch(from var(--ok) l c h / 0.15)",
   },
   info: {
-    bg: "oklch(0.65 0.25 280 / 0.10)",
-    border: "oklch(0.65 0.25 280 / 0.30)",
-    color: "oklch(0.75 0.15 285)",
-    glow: "oklch(0.65 0.25 280 / 0.12)",
+    bg: "oklch(from var(--info) l c h / 0.10)",
+    border: "oklch(from var(--info) l c h / 0.30)",
+    color: "var(--info)",
+    glow: "oklch(from var(--info) l c h / 0.12)",
   },
   loading: {
-    bg: "oklch(0.72 0.22 30 / 0.08)",
-    border: "oklch(0.72 0.22 30 / 0.25)",
-    color: "oklch(0.80 0.12 40)",
-    glow: "oklch(0.72 0.22 30 / 0.10)",
+    bg: "oklch(from var(--brand) l c h / 0.08)",
+    border: "oklch(from var(--brand) l c h / 0.25)",
+    color: "var(--brand)",
+    glow: "oklch(from var(--brand) l c h / 0.10)",
   },
 };
 

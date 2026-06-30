@@ -40,7 +40,7 @@ export default function JoinWheel() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 text-center">
         <div
           className="w-16 h-16 rounded-full"
-          style={{ background: "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)" }}
+          style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
         />
         <div>
           <h1 className="text-2xl font-bold mb-2" style={{ fontFamily: "var(--font-display)" }}>
@@ -52,7 +52,7 @@ export default function JoinWheel() {
           href={getLoginUrl()}
           className="px-8 py-3 rounded-full font-semibold text-sm"
           style={{
-            background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))",
+            background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
             color: "white",
             fontFamily: "var(--font-display)",
             letterSpacing: "0.05em",
@@ -83,7 +83,7 @@ export default function JoinWheel() {
         <button
           onClick={() => navigate("/app")}
           className="px-6 py-2 rounded-full text-sm font-semibold"
-          style={{ background: "oklch(0.16 0.025 260)", border: "1px solid oklch(0.25 0.03 260)", color: "oklch(0.85 0.01 260)" }}
+          style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
         >
           Go to App
         </button>

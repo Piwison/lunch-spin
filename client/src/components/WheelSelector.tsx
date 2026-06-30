@@ -1,7 +1,15 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, ChevronRight, Trash2, Share2, Copy, Settings, Download, Upload } from "lucide-react";
+import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -17,6 +25,12 @@ import { parseWheelImport } from "@shared/transfer";
 interface WheelSelectorProps {
   selectedWheelId: number | null;
   onSelect: (id: number) => void;
+  /**
+   * Lets a parent (e.g. WheelApp's first-run card) open the create dialog. The
+   * registered opener takes the desired starter-pack state: `true` = "start from a
+   * sample" (adds STARTER_RESTAURANTS), `false` = blank wheel.
+   */
+  registerCreateOpener?: (open: (withStarter: boolean) => void) => void;
 }
 
 const EXCLUSION_OPTIONS = [
@@ -26,7 +40,75 @@ const EXCLUSION_OPTIONS = [
   { value: "7", label: "7 days" },
 ];
 
-export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelectorProps) {
+/** Per-wheel actions, consolidated into one kebab menu so they can never overlap
+ *  the row's select target (the old always-on icon cluster caused tap-hijack on
+ *  mobile). Shared by the desktop rail and the mobile switcher sheet. */
+function WheelActionsMenu({
+  wheel,
+  isOwner,
+  large,
+  onShare,
+  onCopyPublic,
+  onExport,
+  onSettings,
+  onDelete,
+}: {
+  wheel: { isShared: boolean; isPublic: boolean };
+  isOwner: boolean;
+  large?: boolean;
+  onShare: () => void;
+  onCopyPublic: () => void;
+  onExport: () => void;
+  onSettings: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label="Wheel actions"
+          onClick={(e) => e.stopPropagation()}
+          className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ${
+            large ? "h-11 w-11" : "h-9 w-9"
+          }`}
+        >
+          <MoreVertical size={large ? 18 : 16} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="glass border-border/50 min-w-44">
+        {/* Public wheels can be shared with anyone — no sign-in, no token. */}
+        {wheel.isPublic && (
+          <DropdownMenuItem onClick={onCopyPublic} className="gap-2.5">
+            <Globe size={14} /> Copy public link
+          </DropdownMenuItem>
+        )}
+        {wheel.isShared && isOwner && (
+          <DropdownMenuItem onClick={onShare} className="gap-2.5">
+            <Share2 size={14} /> Share invite link
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={onExport} className="gap-2.5">
+          <Download size={14} /> Export
+        </DropdownMenuItem>
+        {isOwner && (
+          <DropdownMenuItem onClick={onSettings} className="gap-2.5">
+            <Settings size={14} /> Settings
+          </DropdownMenuItem>
+        )}
+        {isOwner && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onDelete} variant="destructive" className="gap-2.5">
+              <Trash2 size={14} /> Delete
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export default function WheelSelector({ selectedWheelId, onSelect, registerCreateOpener }: WheelSelectorProps) {
   const { user } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -40,6 +122,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
   const [editWheel, setEditWheel] = useState<{ id: number; name: string; isShared: boolean; isPublic: boolean; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean } | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
+  const [showSwitcher, setShowSwitcher] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
@@ -88,10 +171,23 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
     reader.readAsText(file);
   };
 
-  // Default the starter pack on for a user's very first wheel only.
+  // Default the starter pack on for a user's very first wheel only. Skip while the
+  // create dialog is open so a wheels.list refetch (e.g. window refocus) can't
+  // silently clobber the user's explicit toggle / the imperative opener's choice.
   useEffect(() => {
-    if (wheels) setAddStarterPack(wheels.length === 0);
-  }, [wheels]);
+    if (wheels && !showCreate) setAddStarterPack(wheels.length === 0);
+  }, [wheels, showCreate]);
+
+  // Expose an imperative opener so the first-run card can launch the create dialog
+  // with the starter-pack toggle pre-set (sample vs blank). setState setters are
+  // stable, so this registers once.
+  useEffect(() => {
+    registerCreateOpener?.((withStarter: boolean) => {
+      setAddStarterPack(withStarter);
+      setCreateError(null);
+      setShowCreate(true);
+    });
+  }, [registerCreateOpener]);
 
   const importStarterPack = trpc.restaurants.addBulk.useMutation();
   const createWheel = trpc.wheels.create.useMutation({
@@ -143,110 +239,155 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
     toast.success("Invite link copied!");
   };
 
+  const copyPublicLink = (wheelId: number) => {
+    navigator.clipboard.writeText(`${window.location.origin}/w/${wheelId}`);
+    toast.success("Public link copied!");
+  };
+
+  const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
+
+  /** One row, shared between the desktop rail and the mobile sheet. The select
+   *  target and the kebab are siblings (not nested), so a tap can only ever do
+   *  one thing. */
+  const renderRow = (wheel: NonNullable<typeof wheels>[number], variant: "rail" | "sheet") => {
+    const isSelected = wheel.id === selectedWheelId;
+    const isOwner = wheel.ownerId === user?.id;
+    const inSheet = variant === "sheet";
+    const select = () => {
+      onSelect(wheel.id);
+      if (inSheet) setShowSwitcher(false);
+    };
+    return (
+      <div
+        key={wheel.id}
+        className="group relative flex items-center gap-1 rounded-xl transition-all duration-150"
+        style={{
+          background: isSelected ? "oklch(from var(--brand) l c h / 0.15)" : "transparent",
+          border: isSelected ? "1px solid oklch(from var(--brand) l c h / 0.3)" : "1px solid transparent",
+        }}
+      >
+        <button
+          onClick={select}
+          aria-current={isSelected}
+          className={`flex-1 min-w-0 flex items-center gap-2.5 px-2.5 rounded-xl text-left ${inSheet ? "min-h-[56px] py-2" : "py-2"}`}
+        >
+          <span
+            className="w-6 h-6 rounded-full flex-shrink-0"
+            style={{
+              background: isSelected
+                ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
+                : "var(--border)",
+            }}
+          />
+          <span
+            className="flex-1 truncate text-sm"
+            style={{ color: isSelected ? "var(--foreground)" : "var(--muted-foreground)" }}
+          >
+            {wheel.name}
+          </span>
+          {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand)" }} className="flex-shrink-0" />}
+          <span
+            className="text-muted-foreground/50 flex-shrink-0"
+            title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
+          >
+            {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
+          </span>
+        </button>
+        <div
+          className={`flex-shrink-0 pr-1 ${
+            inSheet ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
+          }`}
+        >
+          <WheelActionsMenu
+            wheel={wheel}
+            isOwner={isOwner}
+            large={inSheet}
+            onShare={() => regenInvite.mutate({ id: wheel.id })}
+            onCopyPublic={() => copyPublicLink(wheel.id)}
+            onExport={() => handleExport(wheel.id, wheel.name)}
+            onSettings={() => setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays, fairnessMode: wheel.fairnessMode, rotateCuisines: wheel.rotateCuisines })}
+            onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
+          />
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
-      <aside
-        className="w-14 md:w-56 border-r border-border/50 flex flex-col py-3 gap-1 overflow-y-auto flex-shrink-0"
-        style={{ background: "oklch(0.10 0.02 260)" }}
-      >
-        <div className="px-2 md:px-3 mb-2 hidden md:block">
+      {/* ── DESKTOP RAIL — floating Liquid Glass panel ── */}
+      <aside className="hidden md:flex w-56 flex-col gap-1 m-2 p-2 rounded-2xl glass-nav overflow-y-auto flex-shrink-0">
+        <div className="px-2 pt-1 pb-2">
           <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
             MY WHEELS
           </span>
         </div>
 
-        {wheels?.map((wheel) => {
-          const isSelected = wheel.id === selectedWheelId;
-          const isOwner = wheel.ownerId === user?.id;
-          return (
-            <div key={wheel.id} className="group relative px-2">
-              <button
-                onClick={() => onSelect(wheel.id)}
-                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left transition-all duration-150"
-                style={{
-                  background: isSelected ? "oklch(0.72 0.22 30 / 0.15)" : "transparent",
-                  border: isSelected ? "1px solid oklch(0.72 0.22 30 / 0.3)" : "1px solid transparent",
-                }}
-              >
-                <div
-                  className="w-6 h-6 rounded-full flex-shrink-0"
-                  style={{
-                    background: isSelected
-                      ? "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #8b5cf6, #ef4444)"
-                      : "oklch(0.20 0.025 260)",
-                  }}
-                />
-                <span className="hidden md:block text-sm truncate flex-1" style={{ color: isSelected ? "oklch(0.90 0.01 260)" : "oklch(0.65 0.02 260)" }}>
-                  {wheel.name}
-                </span>
-                <span
-                  className="hidden md:block text-muted-foreground/50"
-                  title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
-                >
-                  {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
-                </span>
-              </button>
-
-              {/* Actions — always visible on mobile, hover-reveal on desktop */}
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
-                {wheel.isShared && isOwner && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); regenInvite.mutate({ id: wheel.id }); }}
-                    className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-                    title="Share invite link"
-                  >
-                    <Share2 size={12} />
-                  </button>
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleExport(wheel.id, wheel.name); }}
-                  className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-                  title="Export wheel"
-                >
-                  <Download size={12} />
-                </button>
-                {isOwner && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays, fairnessMode: wheel.fairnessMode, rotateCuisines: wheel.rotateCuisines });
-                    }}
-                    className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-                    title="Wheel settings"
-                  >
-                    <Settings size={12} />
-                  </button>
-                )}
-                {isOwner && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
-                    className="p-1 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                    title="Delete wheel"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {wheels?.map((wheel) => renderRow(wheel, "rail"))}
 
         <button
           onClick={() => setShowCreate(true)}
-          className="mx-2 flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150 mt-1"
+          className="mt-1 flex items-center gap-2 px-2.5 py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150"
         >
           <Plus size={16} className="flex-shrink-0" />
-          <span className="hidden md:block text-sm">New Wheel</span>
+          <span className="text-sm">New Wheel</span>
         </button>
-
         <button
           onClick={() => { setImportText(""); setShowImport(true); }}
-          className="mx-2 flex items-center gap-2 px-2 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150"
+          className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150"
         >
           <Upload size={16} className="flex-shrink-0" />
-          <span className="hidden md:block text-sm">Import</span>
+          <span className="text-sm">Import</span>
         </button>
       </aside>
+
+      {/* ── MOBILE — wheel-picker pill + bottom sheet ── */}
+      <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0">
+        <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
+          <SheetTrigger asChild>
+            <button className="w-full flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
+              <span
+                className="w-7 h-7 rounded-full flex-shrink-0"
+                style={{
+                  background: selectedWheel
+                    ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
+                    : "var(--border)",
+                }}
+              />
+              <span className="flex-1 truncate text-sm font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+                {selectedWheel?.name ?? "Select a wheel"}
+              </span>
+              <ChevronDown size={16} className="text-muted-foreground flex-shrink-0" />
+            </button>
+          </SheetTrigger>
+          <SheetContent
+            side="bottom"
+            className="glass-nav border-border/50 rounded-t-3xl max-h-[80vh] gap-0 px-3"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+          >
+            <SheetHeader className="flex-row items-center justify-between pl-1 pr-11 pb-1">
+              <SheetTitle className="text-xs tracking-widest text-muted-foreground" style={{ fontFamily: "var(--font-display)" }}>
+                MY WHEELS
+              </SheetTitle>
+              <button
+                onClick={() => { setShowSwitcher(false); setShowCreate(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-foreground hover:bg-white/10 transition-colors"
+              >
+                <Plus size={14} /> New
+              </button>
+            </SheetHeader>
+            <div className="flex flex-col gap-1 overflow-y-auto py-1">
+              {wheels?.map((wheel) => renderRow(wheel, "sheet"))}
+            </div>
+            <button
+              onClick={() => { setShowSwitcher(false); setImportText(""); setShowImport(true); }}
+              className="mt-1 flex items-center gap-2 px-2.5 py-3 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150"
+            >
+              <Upload size={16} className="flex-shrink-0" /> Import wheel
+            </button>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       {/* Create wheel dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
@@ -312,7 +453,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
               onClick={() => { setCreateError(null); newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines }); }}
               disabled={!newName.trim() || createWheel.isPending}
               className="relative overflow-hidden transition-all duration-200 active:scale-[0.97]"
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {createWheel.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating...</span>
@@ -354,12 +495,10 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 onChange={(e) => setEditWheel({ ...editWheel, name: e.target.value })}
                 className="bg-secondary/50 border-border/50"
               />
-              {editWheel.isShared && (
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">Public (anyone with link)</Label>
-                  <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
-                </div>
-              )}
+              <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
+                <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
+              </div>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
                 <Select value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
@@ -393,7 +532,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
                 }); }}
                 disabled={!editWheel.name.trim() || updateWheel.isPending}
                 className="transition-all duration-200 active:scale-[0.97]"
-                style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
                 {updateWheel.isPending ? (
                   <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
@@ -414,9 +553,14 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             <p className="text-xs text-muted-foreground">
               Paste a wheel export, or load a <code>.json</code> file. It's added as a new wheel you own.
             </p>
-            <label className="self-start text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5">
+            <label
+              htmlFor="wheel-import-file"
+              className="self-start text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5"
+            >
               <Upload size={12} /> Choose file…
               <input
+                id="wheel-import-file"
+                aria-label="Import wheel from JSON file"
                 type="file"
                 accept="application/json,.json"
                 className="hidden"
@@ -433,7 +577,7 @@ export default function WheelSelector({ selectedWheelId, onSelect }: WheelSelect
             <Button
               onClick={submitImport}
               disabled={!importText.trim() || importWheel.isPending}
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.22 30), oklch(0.65 0.25 280))", color: "white" }}
+              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
             >
               {importWheel.isPending ? "Importing..." : "Import Wheel"}
             </Button>

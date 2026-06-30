@@ -6,6 +6,10 @@ import { RestaurantStats } from "./RestaurantStats";
 interface HistoryTabProps {
   wheelId: number;
   onReenabled: () => void;
+  /** Shared wheel? Enables the per-person fairness view in stats. */
+  isShared?: boolean;
+  /** Jump to the Wheel tab — wired to the empty-state CTA. */
+  onGoToWheel?: () => void;
 }
 
 function timeAgo(date: Date): string {
@@ -30,7 +34,7 @@ function exclusionTimeLeft(spunAt: Date): string {
   return `${hours}h left`;
 }
 
-export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
+export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel }: HistoryTabProps) {
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
@@ -71,9 +75,14 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
             className="text-lg font-bold tracking-tight mb-4"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            STATISTICS
+            INSIGHTS
           </h2>
-          <RestaurantStats stats={stats} isLoading={statsLoading} />
+          <RestaurantStats
+            stats={stats}
+            history={history}
+            showPeople={isShared}
+            isLoading={statsLoading}
+          />
         </div>
       )}
 
@@ -96,9 +105,9 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
           <div
             className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
             style={{
-              background: "oklch(0.60 0.22 25 / 0.1)",
-              border: "1px solid oklch(0.60 0.22 25 / 0.3)",
-              color: "oklch(0.80 0.12 40)",
+              background: "oklch(from var(--destructive) l c h / 0.1)",
+              border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
+              color: "var(--brand)",
             }}
           >
             <Clock size={13} className="mt-0.5 flex-shrink-0" />
@@ -119,9 +128,28 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
             ))}
           </div>
         ) : !history || history.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <div className="text-4xl mb-3 opacity-30">🎡</div>
-            <p>No spins yet. Go spin the wheel!</p>
+          <div className="flex flex-col items-center text-center py-12 gap-4">
+            <div className="text-4xl opacity-30">🎡</div>
+            <div>
+              <p className="font-semibold text-foreground/70 mb-1" style={{ fontFamily: "var(--font-display)" }}>
+                No spins yet
+              </p>
+              <p className="text-sm text-muted-foreground">Your picks and exclusions will show up here.</p>
+            </div>
+            {onGoToWheel && (
+              <button
+                onClick={onGoToWheel}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                  boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.35)",
+                  color: "white",
+                }}
+              >
+                <Clock size={14} /> Spin to start a history
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -143,12 +171,12 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                   style={{
                     background:
                       idx === 0
-                        ? "oklch(0.14 0.03 260)"
-                        : "oklch(0.12 0.025 260)",
+                        ? "var(--card)"
+                        : "var(--card)",
                     border:
                       idx === 0
-                        ? "1px solid oklch(0.25 0.04 260)"
-                        : "1px solid oklch(0.18 0.025 260)",
+                        ? "1px solid var(--border)"
+                        : "1px solid var(--border)",
                   }}
                 >
                   {/* Rank / index */}
@@ -166,9 +194,9 @@ export default function HistoryTab({ wheelId, onReenabled }: HistoryTabProps) {
                         <span
                           className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
-                            background: "oklch(0.60 0.22 25 / 0.15)",
-                            color: "oklch(0.75 0.15 40)",
-                            border: "1px solid oklch(0.60 0.22 25 / 0.3)",
+                            background: "oklch(from var(--destructive) l c h / 0.15)",
+                            color: "var(--brand)",
+                            border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
                           }}
                         >
                           excluded · {exclusionTimeLeft(spunAtDate)}

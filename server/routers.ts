@@ -9,6 +9,7 @@ import { applyMoodBoost, explainPick, moodBoost, moodKeywords, type SmartCandida
 import { resolveAddList } from "@shared/parseAddList";
 import { parseRestaurantList } from "@shared/import";
 import { serializeWheel, wheelExportSchema } from "@shared/transfer";
+import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
@@ -31,6 +32,7 @@ import {
   deleteRestaurant,
   deleteWheel,
   getExclusions,
+  getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
   getRestaurantStats,
@@ -71,6 +73,25 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
+
+    // ── Guest (no sign-in) reads ──────────────────────────────────────────────
+    // Public-safe wheel for the /w/:id guest view. Only public wheels resolve;
+    // anything else is NOT_FOUND (a once-public wheel that went private reads the
+    // same — the client shows a graceful "not available" state). Output is shaped
+    // through `toPublicWheel` so no owner/member PII can leak.
+    getPublic: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel || !wheel.isPublic) throw new TRPCError({ code: "NOT_FOUND" });
+        return toPublicWheel(wheel);
+      }),
+
+    // Popular public wheels for the landing "try without signing in" section,
+    // ranked by spin count. No PII; just id/name/counts.
+    listPublic: publicProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(24).default(8) }))
+      .query(async ({ input }) => getPopularPublicWheels(input.limit)),
 
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -210,14 +231,25 @@ export const appRouter = router({
         }));
       }),
 
+    // Guest read for the /w/:id view: the full restaurant list of a public wheel
+    // (guests spin everything — no exclusion state). Public-safe fields only.
+    listPublic: publicProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel || !wheel.isPublic) throw new TRPCError({ code: "NOT_FOUND" });
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        return rests.map(toPublicRestaurant);
+      }),
+
     add: protectedProcedure
-      .input(z.object({ wheelId: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()) }))
+      .input(z.object({ wheelId: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()), mapUrl: z.string().max(512).nullable().optional() }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds);
+        const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
         return { id };
       }),
 
@@ -235,14 +267,14 @@ export const appRouter = router({
       }),
 
     update: protectedProcedure
-      .input(z.object({ id: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()) }))
+      .input(z.object({ id: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()), mapUrl: z.string().max(512).nullable().optional() }))
       .mutation(async ({ ctx, input }) => {
         const restaurant = await getRestaurantById(input.id);
         if (!restaurant) throw new TRPCError({ code: "NOT_FOUND" });
         const wheel = await getWheelById(restaurant.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can edit restaurants" });
-        await updateRestaurant(input.id, input.name, input.notes, input.tagIds);
+        await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
         return { success: true };
       }),
 

@@ -30,6 +30,11 @@ jobs:
       - name: Typecheck
         run: pnpm check
 
+      # Warn-mode adoption: surface lint findings without blocking the PR.
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
       - name: Test
         run: pnpm test
 
