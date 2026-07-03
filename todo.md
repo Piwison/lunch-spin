@@ -1,5 +1,19 @@
 # Lunch Wheel - TODO
 
+> **Roadmap status (2026-07-03):** This file tracks the original v1 build (all
+> boxes below checked). The *current* roadmap lives in `.agents/prd/` and
+> `.agents/design/` — all of it is shipped to `main`:
+> - **M1** Smart Pick · **M2** Self-hosted Google auth · **M3** Serverless
+>   realtime (polling) · **M4** Activation & onboarding (PR #20, US1–US4) —
+>   all **built**.
+> - Guest mode, 2026 nav redesign, Warm-Appetite theme — all **implemented**.
+>
+> **Open, not-yet-done:** only issue **#19** — a live browser smoke test
+> (can't run from the agent sandbox; outbound HTTPS to Vercel/TiDB is blocked)
+> plus a few explicitly-deferred low-priority follow-ups (dynamic axe pass,
+> `DashboardLayout` resize-handle keyboard support, lint backlog). No unbuilt
+> feature has a ready spec — nothing to pick up without new scope.
+
 ## Database & Backend
 - [x] Schema: wheels, restaurants, tags, restaurant_tags, spin_history, wheel_members tables
 - [x] DB helpers: wheels CRUD, restaurants CRUD, tags, spin history, wheel members

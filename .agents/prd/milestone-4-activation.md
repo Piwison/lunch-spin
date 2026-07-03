@@ -1,6 +1,8 @@
 # PRD — Milestone 4: Activation & Onboarding
 
-**Status:** Spec locked 2026-06-28 · building · **Branch:** `claude/milestone-4-activation`
+**Status:** Shipped — merged to `main` via PR #20 (US1–US4 all landed) · ⏳ live
+smoke on deploy still pending (sandbox can't reach prod) · **Branch:**
+`claude/milestone-4-activation`
 
 ## Decisions (locked 2026-06-28)
 - **Guest conversion = earned, not nagged.** Show the "make your own wheel" nudge
