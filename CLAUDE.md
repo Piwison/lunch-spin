@@ -56,6 +56,7 @@ attempt per turn only — re-verify green yourself after it fires). It does NOT 
 | WebGL/canvas/animation conventions | `shader-style` skill |
 | Pre-merge/ship checklist | `deploy-gate` skill |
 | Harness failure modes + fixes | `.agents/protocol/00-quick-diagnostic.md` |
+| New-feature workflow (US/UX gate → autonomous build) | `.agents/protocol/50-feature-lifecycle.md` |
 | Which model/agent to dispatch, escalation | `.agents/protocol/10-model-dispatch.md` |
 | Quality bar, when to escalate/stop/ask | `.agents/protocol/20-judgment-rubric.md` |
 | Delegation prompt templates | `.agents/protocol/30-delegation-templates.md` |
@@ -78,10 +79,11 @@ best run locally).
 
 ## Workflow
 
-- **Before building:** Plan mode; pressure-test scope with `grill-me`; apply
-  `karpathy-guidelines` (surface assumptions, minimal solution, surgical edits,
-  verifiable success criteria). New feature work needs a PRD in `.agents/prd/`
-  with locked decisions before code.
+- **New feature? Follow `50-feature-lifecycle.md`:** confirm **user story + UX/UI
+  design with the owner FIRST** (the gate), then run spec → build → verify → ship
+  **autonomously** to completion. Pressure-test scope with `grill-me`; apply
+  `karpathy-guidelines`. PRD in `.agents/prd/` with locked decisions before code.
+  Bugfixes/refactors/chores skip the gate — just do them (branched + verified).
 - **While building:** TDD (`test-driven-development` skill); pure logic in
   `shared/*` tests-first. Delegate per `10-model-dispatch.md` — main context
   receives conclusions and `file:line`, not raw scans.
