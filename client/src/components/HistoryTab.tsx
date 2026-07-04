@@ -1,7 +1,10 @@
+import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
+import { TasteInsights } from "./TasteInsights";
+import type { SpinEvent } from "@shared/insights";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -55,6 +58,22 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
     restaurants?.map(r => [r.id, r.isExcluded]) ?? []
   );
 
+  // Cuisine-annotated spin timeline for Taste Insights — assembled from the two
+  // queries already loaded here (no new request): a restaurant's cuisine is its
+  // first category:"cuisine" tag, else null → grouped as "Other" downstream.
+  const spinEvents = useMemo<SpinEvent[]>(() => {
+    const cuisineByRestaurant = new Map<number, string | null>();
+    for (const r of restaurants ?? []) {
+      cuisineByRestaurant.set(r.id, r.tags.find(t => t.category === "cuisine")?.name ?? null);
+    }
+    return (history ?? []).map(h => ({
+      restaurantId: h.restaurantId,
+      restaurantName: h.restaurantName,
+      cuisine: cuisineByRestaurant.get(h.restaurantId) ?? null,
+      spunAt: new Date(h.spunAt),
+    }));
+  }, [history, restaurants]);
+
   // Deduplicate history entries to show latest spin per restaurant for exclusion status
   const latestByRestaurant = new Map<
     number,
@@ -69,7 +88,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
   return (
     <div className="p-4 md:p-6 flex flex-col gap-6 max-w-4xl mx-auto w-full">
       {/* Statistics Section */}
-      {stats && stats.length > 0 && (
+      {spinEvents.length > 0 && (
         <div>
           <h2
             className="text-lg font-bold tracking-tight mb-4"
@@ -77,12 +96,17 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
           >
             INSIGHTS
           </h2>
-          <RestaurantStats
-            stats={stats}
-            history={history}
-            showPeople={isShared}
-            isLoading={statsLoading}
-          />
+          <div className="space-y-4">
+            <TasteInsights events={spinEvents} />
+            {stats && stats.length > 0 && (
+              <RestaurantStats
+                stats={stats}
+                history={history}
+                showPeople={isShared}
+                isLoading={statsLoading}
+              />
+            )}
+          </div>
         </div>
       )}
 
