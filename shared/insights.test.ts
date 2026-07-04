@@ -66,6 +66,18 @@ describe("cuisineMix", () => {
   it("returns empty for no events", () => {
     expect(cuisineMix([])).toEqual([]);
   });
+
+  it("uses largest-remainder rounding so percentages sum to exactly 100", () => {
+    const mix = cuisineMix([ev(1, "Italian", 0), ev(2, "Thai", 1), ev(3, "Mexican", 2)]);
+    expect(mix.reduce((sum, m) => sum + m.pct, 0)).toBe(100);
+    // 33.33 each → floors 33/33/33 = 99, the leftover point goes to the first
+    // slice in sort order (Italian, alphabetically first among equal counts).
+    expect(mix).toEqual([
+      { cuisine: "Italian", count: 1, pct: 34 },
+      { cuisine: "Mexican", count: 1, pct: 33 },
+      { cuisine: "Thai", count: 1, pct: 33 },
+    ]);
+  });
 });
 
 describe("varietyScore", () => {
@@ -74,6 +86,13 @@ describe("varietyScore", () => {
     expect(v.score).toBe(0);
     expect(v.band).toBe("none");
     expect(v.totalSpins).toBe(0);
+  });
+
+  it("reports 'none' band below the minimum sample (1–2 spins is noise)", () => {
+    // A single spin would score 100 by the raw formula; the floor suppresses that
+    // misleading "great variety" read until there are enough spins to mean it.
+    expect(varietyScore([ev(1, "Italian", 0)]).band).toBe("none");
+    expect(varietyScore([ev(1, "Italian", 0), ev(2, "Thai", 1)]).band).toBe("none");
   });
 
   it("scores 100 / high when every spin is a different place", () => {

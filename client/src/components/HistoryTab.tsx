@@ -97,7 +97,9 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
             INSIGHTS
           </h2>
           <div className="space-y-4">
-            <TasteInsights events={spinEvents} />
+            {/* Wait for restaurants to load before deriving cuisines — otherwise
+                every event briefly buckets to "Other" (a wrong 100%-Other flash). */}
+            {restaurants && <TasteInsights events={spinEvents} />}
             {stats && stats.length > 0 && (
               <RestaurantStats
                 stats={stats}

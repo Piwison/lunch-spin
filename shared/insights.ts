@@ -41,6 +41,8 @@ export interface RutCallout {
 
 const DAY_MS = 86400000;
 const OTHER = "Other";
+/** Below this many spins in the window, a variety score is statistical noise. */
+const MIN_VARIETY_SPINS = 3;
 
 /** Events whose spin is within the last `days` days (boundary inclusive). */
 export function withinDays(events: SpinEvent[], days: number, now: Date = new Date()): SpinEvent[] {
@@ -51,6 +53,9 @@ export function withinDays(events: SpinEvent[], days: number, now: Date = new Da
 /**
  * Cuisine share, most-frequent first. Untagged spins group under "Other".
  * Count ties break by cuisine name (asc) so the order is stable across renders.
+ * Percentages use largest-remainder rounding so they sum to exactly 100 (no
+ * "33% + 33% + 33% = 99%" on a stats surface); leftover points go to the largest
+ * fractional remainders, ties broken by the already-established sort order.
  */
 export function cuisineMix(events: SpinEvent[]): CuisineSlice[] {
   const total = events.length;
@@ -60,13 +65,25 @@ export function cuisineMix(events: SpinEvent[]): CuisineSlice[] {
     const key = e.cuisine ?? OTHER;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return Array.from(counts.entries())
-    .map(([cuisine, count]) => ({ cuisine, count, pct: Math.round((count / total) * 100) }))
+  const sorted = Array.from(counts.entries())
+    .map(([cuisine, count]) => {
+      const raw = (count / total) * 100;
+      return { cuisine, count, floor: Math.floor(raw), rem: raw - Math.floor(raw) };
+    })
     .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.cuisine.localeCompare(b.cuisine)));
+
+  let leftover = 100 - sorted.reduce((sum, s) => sum + s.floor, 0);
+  const bumpOrder = sorted
+    .map((s, i) => ({ i, rem: s.rem }))
+    .sort((a, b) => (b.rem !== a.rem ? b.rem - a.rem : a.i - b.i));
+  const bumped = new Set<number>();
+  for (let k = 0; k < bumpOrder.length && leftover > 0; k++, leftover--) bumped.add(bumpOrder[k].i);
+
+  return sorted.map((s, i) => ({ cuisine: s.cuisine, count: s.count, pct: s.floor + (bumped.has(i) ? 1 : 0) }));
 }
 
 function bandFor(score: number, totalSpins: number): VarietyBand {
-  if (totalSpins === 0) return "none";
+  if (totalSpins < MIN_VARIETY_SPINS) return "none"; // includes 0 — not enough to read
   if (score >= 70) return "high";
   if (score >= 40) return "medium";
   return "low";
@@ -98,7 +115,9 @@ export function varietyScore(events: SpinEvent[]): VarietySummary {
  * restaurant (or, failing that, a single cuisine) accounts for >= `threshold`
  * of them, name it. A restaurant-level rut is preferred over a cuisine-level one.
  * Returns null when recent picks are well spread. Input order is irrelevant —
- * events are sorted by recency internally.
+ * events are sorted by recency internally. On an equal-count tie the more
+ * recently-seen restaurant/cuisine wins (it's encountered first after the
+ * recency sort), so the callout names the freshest cluster.
  */
 export function currentRut(
   events: SpinEvent[],

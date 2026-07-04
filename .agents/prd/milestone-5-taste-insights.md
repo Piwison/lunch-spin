@@ -1,6 +1,9 @@
 # PRD — Milestone 5: Taste Insights
 
-**Status:** Spec locked 2026-07-04 · building · **Branch:** `claude/product-status-review-uvq160`
+**Status:** Shipped to branch `claude/product-status-review-uvq160` (check clean · 169
+tests · build ok · api/index.js unchanged) · fresh-context code review applied (window
+mismatch, thin-data variety floor, %-sum rounding) · ⏳ live smoke on deploy pending
+(sandbox can't reach prod) · **Branch:** `claude/product-status-review-uvq160`
 
 ## Decisions (locked 2026-07-04, with the owner)
 - **Feature = Taste Insights.** Confirmed by owner (feature pick).

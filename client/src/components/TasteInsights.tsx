@@ -37,44 +37,61 @@ export function TasteInsights({ events }: TasteInsightsProps) {
   const recent = useMemo(() => withinDays(events, WINDOW_DAYS), [events]);
   const variety = useMemo(() => varietyScore(recent), [recent]);
   const mix = useMemo(() => cuisineMix(recent), [recent]);
-  const rut = useMemo(() => currentRut(events), [events]);
+  // Rut is read from the same 30-day window as the rest of the section, so the
+  // three cards can never describe different time periods on the same screen.
+  const rut = useMemo(() => currentRut(recent), [recent]);
 
-  // Nothing to summarise yet — HistoryTab also guards, but stay self-safe.
+  // Nothing in the window to summarise — HistoryTab also guards, but stay self-safe.
   if (variety.totalSpins === 0) return null;
 
-  const band = variety.band === "none" ? BAND_STYLE.low : BAND_STYLE[variety.band];
+  // null band = too few spins for a meaningful score → show a nudge, not a number.
+  const bandStyle = variety.band === "none" ? null : BAND_STYLE[variety.band];
   const maxCount = mix[0]?.count ?? 0;
 
   return (
     <div className="space-y-4">
-      {/* Variety — the headline read */}
-      <Card className="p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <Compass size={15} style={{ color: band.color }} />
-          <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>
-            VARIETY
-          </h3>
-        </div>
-        <div className="flex items-end gap-3 mb-2">
-          <span
-            className="text-4xl font-black leading-none"
-            style={{ fontFamily: "var(--font-display)", color: band.color }}
-          >
-            {variety.score}
-          </span>
-          <span className="text-sm text-muted-foreground pb-1">/ 100 · {band.label}</span>
-        </div>
-        <div className="h-2 rounded-full overflow-hidden mb-3" style={{ background: "var(--muted)" }}>
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${Math.max(variety.score, 4)}%`, background: band.color }}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {plural(variety.distinctRestaurants, "place")} · {plural(variety.distinctCuisines, "cuisine")} ·{" "}
-          {plural(variety.totalSpins, "spin")} in the last {WINDOW_DAYS} days
-        </p>
-      </Card>
+      {/* Variety — the headline read (or a nudge when the sample is too thin) */}
+      {bandStyle ? (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Compass size={15} style={{ color: bandStyle.color }} />
+            <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>
+              VARIETY
+            </h3>
+          </div>
+          <div className="flex items-end gap-3 mb-2">
+            <span
+              className="text-4xl font-black leading-none"
+              style={{ fontFamily: "var(--font-display)", color: bandStyle.color }}
+            >
+              {variety.score}
+            </span>
+            <span className="text-sm text-muted-foreground pb-1">/ 100 · {bandStyle.label}</span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden mb-3" style={{ background: "var(--muted)" }}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${Math.max(variety.score, 4)}%`, background: bandStyle.color }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {plural(variety.distinctRestaurants, "place")} · {plural(variety.distinctCuisines, "cuisine")} ·{" "}
+            {plural(variety.totalSpins, "spin")} in the last {WINDOW_DAYS} days
+          </p>
+        </Card>
+      ) : (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Compass size={15} style={{ color: "var(--muted-foreground)" }} />
+            <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>
+              VARIETY
+            </h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Keep spinning — a few more picks in the last {WINDOW_DAYS} days and your variety score appears here.
+          </p>
+        </Card>
+      )}
 
       {/* In a rut — only when recent spins cluster */}
       {rut && (
