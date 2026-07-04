@@ -17,6 +17,7 @@ import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
 import { segmentColor } from "@/lib/palette";
+import { primaryTag } from "@shared/primaryTag";
 import { ErrorChip } from "@/components/StatusChip";
 
 type Tab = "wheel" | "restaurants" | "history";
@@ -195,7 +196,7 @@ export default function WheelApp() {
     filteredRestaurants.map((r, i) => ({
       id: r.id,
       label: r.name,
-      color: segmentColor(r.tags[0]?.color, i),
+      color: segmentColor(primaryTag(r)?.color, i),
     })),
     [filteredRestaurants]
   );

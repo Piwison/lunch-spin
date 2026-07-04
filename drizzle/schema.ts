@@ -1,6 +1,8 @@
 import {
   boolean,
+  decimal,
   int,
+  json,
   mysqlEnum,
   mysqlTable,
   primaryKey,
@@ -82,6 +84,16 @@ export const restaurants = mysqlTable("restaurants", {
   mapUrl: varchar("mapUrl", { length: 512 }), // optional Google Maps link for DIRECTIONS
   addedBy: int("addedBy").notNull(),
   primaryTagId: int("primaryTagId"), // determines wheel segment color
+  // ── Located-place fields (P0 "located wheel"). placeId null + source="user"
+  //    preserves the original user-typed restaurant as a subtype. ──
+  placeId: varchar("placeId", { length: 256 }), // provider place id; null = user-typed
+  lat: decimal("lat", { precision: 9, scale: 6 }),
+  lng: decimal("lng", { precision: 9, scale: 6 }),
+  address: varchar("address", { length: 512 }),
+  priceLevel: int("priceLevel"), // 1..4 (nullable)
+  cuisine: varchar("cuisine", { length: 64 }),
+  openHours: json("openHours"), // raw provider hours; open-now is a hint, not a hard filter
+  source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

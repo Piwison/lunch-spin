@@ -2,6 +2,7 @@ import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import ThemeToggle from "@/components/ThemeToggle";
 import { getLoginUrl } from "@/const";
 import { segmentColor } from "@/lib/palette";
+import { primaryTag } from "@shared/primaryTag";
 import { trpc } from "@/lib/trpc";
 import { pickWinner } from "@shared/pick";
 import { shouldPromptSignup } from "@shared/onboarding";
@@ -47,7 +48,7 @@ export default function GuestWheel() {
       (restaurants ?? []).map((r, i) => ({
         id: r.id,
         label: r.name,
-        color: segmentColor(r.tags[0]?.color, i),
+        color: segmentColor(primaryTag(r)?.color, i),
       })),
     [restaurants],
   );

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Eval harness for AGENTS.md — proves the documented toolchain and invariants hold.
+# Usage: bash .agent-check          full run (includes pnpm build, slower)
+#        bash .agent-check --fast   skip build + bundle-staleness check
+set -u
+fail=0
+check() {
+  local label=$1; shift
+  if "$@" >/dev/null 2>&1; then echo "ok   $label"; else echo "FAIL $label"; fail=1; fi
+}
+
+# 1. Command validity — documented scripts exit 0 on a clean tree
+check "pnpm check (tsc --noEmit)" pnpm check
+check "pnpm test (vitest run)"    pnpm test
+if [ "${1:-}" != "--fast" ]; then
+  check "pnpm build" pnpm build
+  # The committed serverless bundle must match a fresh build of current sources;
+  # a diff here means server/ or shared/ changed without rebuilding api/index.js.
+  check "api/index.js not stale"  git diff --quiet -- api/index.js
+fi
+# pnpm db:push is NOT run here — it needs the real DATABASE_URL and mutates the live DB.
+
+# 2. State & path invariants — AGENTS.md anchor points map to real files
+for f in server/routers.ts server/_core/vercelHandler.ts api/index.js \
+         drizzle/schema.ts vercel.json shared/const.ts \
+         client/src/pages/WheelApp.tsx client/src/components/SpinWheel.tsx; do
+  check "path exists: $f" test -f "$f"
+done
+check "vercel.json rewrites /api/(.*)" grep -qF '"source": "/api/(.*)"' vercel.json
+check "packageManager pinned to pnpm"  grep -qF '"packageManager": "pnpm@' package.json
+
+# 3. Skill success criteria — the TDD seam: every shared module ships its own
+#    mock-input/expected-output proof as a .test.ts sibling (run by pnpm test above).
+for f in shared/*.ts; do
+  case "$f" in *.test.ts|shared/const.ts|shared/types.ts) continue ;; esac
+  check "test sibling: $f" test -f "${f%.ts}.test.ts"
+done
+
+if [ "$fail" -eq 0 ]; then echo "ALL CHECKS PASSED"; else echo "CHECKS FAILED"; fi
+exit "$fail"

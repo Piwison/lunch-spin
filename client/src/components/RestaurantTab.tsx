@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { segmentColor } from "@/lib/palette";
+import { primaryTag } from "@shared/primaryTag";
 import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
 
@@ -342,7 +343,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
       ) : (
         <div className="flex flex-col gap-2">
           {visibleRestaurants.map((r, i) => {
-            const dotColor = segmentColor(r.tags[0]?.color, i);
+            const primary = primaryTag(r);
+            const dotColor = segmentColor(primary?.color, i);
             return (
             <div
               key={r.id}
@@ -357,7 +359,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               {/* Color swatch — matches wheel segment */}
               <div
                 className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 transition-all duration-200"
-                title={r.tags[0]?.name ? `Tagged "${r.tags[0].name}"` : "Wheel color"}
+                title={primary?.name ? `Tagged "${primary.name}"` : "Wheel color"}
                 style={{
                   background: dotColor,
                   boxShadow: `0 0 8px ${dotColor}99`,

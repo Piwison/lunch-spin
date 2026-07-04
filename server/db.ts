@@ -382,8 +382,15 @@ export async function getRestaurantStats(wheelId: number) {
   // mysql2's `execute` resolves to a `[rows, fields]` tuple; unwrap to the rows
   // array. (Mapping over the tuple itself yielded malformed rows with no name,
   // which crashed the stats UI.) Tolerate a driver that already returns rows.
-  const raw = result as any;
-  const rows: any[] = Array.isArray(raw?.[0]) ? raw[0] : Array.isArray(raw) ? raw : [];
+  // `normalizeStatRow` coerces each field, so the row type only needs to name
+  // the columns the SELECT produces — no `any`.
+  type StatRow = { id: number; name: string; pickCount: unknown; lastPickedAt: unknown };
+  const raw: unknown = result;
+  const rows: StatRow[] = Array.isArray(raw)
+    ? Array.isArray(raw[0])
+      ? (raw[0] as StatRow[])
+      : (raw as StatRow[])
+    : [];
   return rows.map(normalizeStatRow);
 }
 
