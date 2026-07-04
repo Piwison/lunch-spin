@@ -16,7 +16,9 @@ import { drizzle } from "drizzle-orm/mysql2";
 // drizzle/schema.ts
 import {
   boolean,
+  decimal,
   int,
+  json,
   mysqlEnum,
   mysqlTable,
   primaryKey,
@@ -78,6 +80,19 @@ var restaurants = mysqlTable("restaurants", {
   addedBy: int("addedBy").notNull(),
   primaryTagId: int("primaryTagId"),
   // determines wheel segment color
+  // ── Located-place fields (P0 "located wheel"). placeId null + source="user"
+  //    preserves the original user-typed restaurant as a subtype. ──
+  placeId: varchar("placeId", { length: 256 }),
+  // provider place id; null = user-typed
+  lat: decimal("lat", { precision: 9, scale: 6 }),
+  lng: decimal("lng", { precision: 9, scale: 6 }),
+  address: varchar("address", { length: 512 }),
+  priceLevel: int("priceLevel"),
+  // 1..4 (nullable)
+  cuisine: varchar("cuisine", { length: 64 }),
+  openHours: json("openHours"),
+  // raw provider hours; open-now is a hint, not a hard filter
+  source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 });
@@ -332,16 +347,42 @@ async function getRestaurantsByWheel(wheelId) {
     tags: rtags.filter((t2) => t2.restaurantId === r.id).map((t2) => ({ id: t2.tagId, name: t2.tagName, color: t2.tagColor, category: t2.tagCategory }))
   }));
 }
-async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = null) {
+async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = null, place = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, mapUrl, primaryTagId });
+  const result = await db.insert(restaurants).values({
+    wheelId,
+    addedBy,
+    name,
+    notes,
+    mapUrl,
+    primaryTagId,
+    ...place ? {
+      placeId: place.placeId,
+      // decimal columns take strings in drizzle-mysql; null stays null.
+      lat: place.lat == null ? null : String(place.lat),
+      lng: place.lng == null ? null : String(place.lng),
+      address: place.address,
+      priceLevel: place.priceLevel,
+      cuisine: place.cuisine,
+      openHours: place.openHours ?? null,
+      source: "provider"
+    } : {}
+  });
   const restaurantId = result.insertId;
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId, tagId })));
   }
   return restaurantId;
+}
+async function getWheelPlaceIds(wheelId) {
+  const db = await getDb();
+  if (!db) return /* @__PURE__ */ new Set();
+  const rows = await db.select({ placeId: restaurants.placeId }).from(restaurants).where(eq(restaurants.wheelId, wheelId));
+  const ids = /* @__PURE__ */ new Set();
+  for (const r of rows) if (r.placeId) ids.add(r.placeId);
+  return ids;
 }
 async function addRestaurants(wheelId, addedBy, names) {
   const db = await getDb();
@@ -450,7 +491,7 @@ async function getRestaurantStats(wheelId) {
     ORDER BY pickCount DESC, lastPickedAt DESC
   `);
   const raw = result;
-  const rows = Array.isArray(raw?.[0]) ? raw[0] : Array.isArray(raw) ? raw : [];
+  const rows = Array.isArray(raw) ? Array.isArray(raw[0]) ? raw[0] : raw : [];
   return rows.map(normalizeStatRow);
 }
 async function pingPresence(wheelId, userId, name) {
@@ -1448,6 +1489,176 @@ function activePresence(rows, nowMs, ttlMs) {
   return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
 }
 
+// shared/nearby.ts
+var MIN_SEGMENTS = 6;
+var MAX_SEGMENTS = 12;
+var DEFAULT_RADIUS_M = 900;
+var SOFT_FAIL = 0.12;
+var CLOSED_FAIL = 0.05;
+var CHAIN_DEMOTION = 0.5;
+var WALK_METERS_PER_MIN = 80;
+function estimateWalkMinutes(meters, metersPerMin = WALK_METERS_PER_MIN) {
+  if (!(meters > 0)) return 0;
+  return Math.max(1, Math.round(meters / metersPerMin));
+}
+function isLowDensity(count, min = MIN_SEGMENTS) {
+  return count < min;
+}
+function dedupeChains(places) {
+  const bestByChain = /* @__PURE__ */ new Map();
+  const out = [];
+  for (const p of places) {
+    if (p.chain) {
+      const cur = bestByChain.get(p.chain);
+      if (!cur || p.walkMinutes < cur.walkMinutes) bestByChain.set(p.chain, p);
+    } else {
+      out.push(p);
+    }
+  }
+  out.push(...Array.from(bestByChain.values()));
+  return out.sort((a, b) => a.walkMinutes - b.walkMinutes || a.name.localeCompare(b.name));
+}
+function filterWeight(p, f = {}) {
+  let w = 1;
+  if (f.maxWalk != null && p.walkMinutes > f.maxWalk) w *= SOFT_FAIL;
+  if (f.maxPrice != null && p.priceLevel != null && p.priceLevel > f.maxPrice) w *= SOFT_FAIL;
+  if (f.openNow && p.open === false) w *= CLOSED_FAIL;
+  return w;
+}
+function spinWeight(p, f = {}) {
+  return filterWeight(p, f) * (p.chain ? CHAIN_DEMOTION : 1);
+}
+function rankNearby(places, filters = {}, opts = {}) {
+  const min = opts.minSegments ?? MIN_SEGMENTS;
+  const max = opts.maxSegments ?? MAX_SEGMENTS;
+  const deduped = dedupeChains(places);
+  const chainsGrouped = places.length - deduped.length;
+  const segments = deduped.slice(0, max);
+  const weights = segments.map((p) => spinWeight(p, filters));
+  return { segments, weights, chainsGrouped, lowDensity: isLowDensity(segments.length, min) };
+}
+
+// shared/placeMapping.ts
+var EARTH_RADIUS_M = 6371e3;
+var toRad = (deg) => deg * Math.PI / 180;
+function haversineMeters(a, b) {
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+var TYPE_CUISINE = {
+  japanese_restaurant: "Japanese",
+  sushi_restaurant: "Japanese",
+  ramen_restaurant: "Japanese",
+  chinese_restaurant: "Chinese",
+  korean_restaurant: "Korean",
+  thai_restaurant: "Thai",
+  vietnamese_restaurant: "Vietnamese",
+  indian_restaurant: "Indian",
+  italian_restaurant: "Italian",
+  pizza_restaurant: "Pizza",
+  mexican_restaurant: "Mexican",
+  american_restaurant: "American",
+  french_restaurant: "French",
+  mediterranean_restaurant: "Mediterranean",
+  greek_restaurant: "Greek",
+  spanish_restaurant: "Spanish",
+  turkish_restaurant: "Turkish",
+  middle_eastern_restaurant: "Middle Eastern",
+  seafood_restaurant: "Seafood",
+  steak_house: "Steakhouse",
+  barbecue_restaurant: "BBQ",
+  hamburger_restaurant: "Burgers",
+  fast_food_restaurant: "Fast Food",
+  breakfast_restaurant: "Breakfast",
+  brunch_restaurant: "Brunch",
+  vegetarian_restaurant: "Vegetarian",
+  vegan_restaurant: "Vegan",
+  sandwich_shop: "Sandwiches",
+  cafe: "Cafe",
+  coffee_shop: "Cafe",
+  bakery: "Bakery"
+};
+function cuisineFromTypes(types) {
+  if (!types) return null;
+  for (const t2 of types) {
+    const c = TYPE_CUISINE[t2];
+    if (c) return c;
+  }
+  return null;
+}
+function normalizePriceLevel(level) {
+  if (level == null || Number.isNaN(level)) return null;
+  return Math.min(4, Math.max(1, Math.round(level)));
+}
+function toNearbyPlace(raw, origin) {
+  const loc = raw.geometry?.location ?? null;
+  const distanceMeters = loc ? Math.round(haversineMeters(origin, loc)) : null;
+  const walkMinutes = distanceMeters == null ? 0 : estimateWalkMinutes(distanceMeters);
+  let open = raw.opening_hours?.open_now;
+  if (raw.business_status && raw.business_status !== "OPERATIONAL") open = false;
+  const placeId = raw.place_id ?? "";
+  return {
+    id: placeId,
+    placeId,
+    name: raw.name ?? "Unnamed place",
+    walkMinutes,
+    distanceMeters,
+    cuisine: cuisineFromTypes(raw.types),
+    priceLevel: normalizePriceLevel(raw.price_level),
+    open,
+    chain: null,
+    lat: loc?.lat ?? null,
+    lng: loc?.lng ?? null,
+    address: raw.vicinity ?? raw.formatted_address ?? null
+  };
+}
+function mapProviderResults(rows, origin) {
+  return rows.filter((r) => r.place_id).map((r) => toNearbyPlace(r, origin));
+}
+
+// server/_core/map.ts
+function getMapsConfig() {
+  const baseUrl = ENV.forgeApiUrl;
+  const apiKey = ENV.forgeApiKey;
+  if (!baseUrl || !apiKey) {
+    throw new Error(
+      "Google Maps proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+    );
+  }
+  return {
+    baseUrl: baseUrl.replace(/\/+$/, ""),
+    apiKey
+  };
+}
+async function makeRequest(endpoint, params = {}, options = {}) {
+  const { baseUrl, apiKey } = getMapsConfig();
+  const url = new URL(`${baseUrl}/v1/maps/proxy${endpoint}`);
+  url.searchParams.append("key", apiKey);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== void 0 && value !== null) {
+      url.searchParams.append(key, String(value));
+    }
+  });
+  const response = await fetch(url.toString(), {
+    method: options.method || "GET",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: options.body ? JSON.stringify(options.body) : void 0
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Google Maps API request failed (${response.status} ${response.statusText}): ${errorText}`
+    );
+  }
+  return await response.json();
+}
+
 // server/routers.ts
 var PRESENCE_TTL_MS = 25e3;
 var appRouter = router({
@@ -1624,6 +1835,122 @@ var appRouter = router({
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
       await deleteRestaurant(input.id);
       return { success: true };
+    })
+  }),
+  // ─── Places (located wheel) ───────────────────────────────────────────────────
+  places: router({
+    // Nearby restaurant search for the "located wheel". Given the caller's
+    // coordinates, ask the place provider for nearby restaurants, map each row
+    // to the domain shape (`shared/placeMapping`), and rank it (`shared/nearby`)
+    // — chain de-dup, walk-time order, soft filters, low-density flag. Read-only:
+    // it proposes places the client can add; nothing is written here, and the
+    // server still owns the eventual spin. Modelled as a mutation because it is
+    // an on-demand action driven by a location the client just captured.
+    searchNearby: protectedProcedure.input(
+      z3.object({
+        wheelId: z3.number(),
+        lat: z3.number().min(-90).max(90),
+        lng: z3.number().min(-180).max(180),
+        radius: z3.number().int().min(100).max(5e3).optional(),
+        keyword: z3.string().max(120).optional()
+      })
+    ).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+        throw new TRPCError3({
+          code: "PRECONDITION_FAILED",
+          message: "Nearby search isn't configured on this server."
+        });
+      }
+      const radius = input.radius ?? DEFAULT_RADIUS_M;
+      let res;
+      try {
+        res = await makeRequest("/maps/api/place/nearbysearch/json", {
+          location: `${input.lat},${input.lng}`,
+          radius,
+          type: "restaurant",
+          ...input.keyword ? { keyword: input.keyword } : {}
+        });
+      } catch {
+        throw new TRPCError3({
+          code: "BAD_GATEWAY",
+          message: "Couldn't reach the place provider. Try again in a moment."
+        });
+      }
+      if (res.status && res.status !== "OK" && res.status !== "ZERO_RESULTS") {
+        throw new TRPCError3({
+          code: "BAD_GATEWAY",
+          message: `Place provider error: ${res.status}`
+        });
+      }
+      const origin = { lat: input.lat, lng: input.lng };
+      const mapped = mapProviderResults(res.results ?? [], origin);
+      const ranked = rankNearby(mapped);
+      const existing = await getWheelPlaceIds(input.wheelId);
+      const places = ranked.segments.map((p) => ({
+        placeId: p.placeId,
+        name: p.name,
+        walkMinutes: p.walkMinutes,
+        distanceMeters: p.distanceMeters ?? null,
+        cuisine: p.cuisine,
+        priceLevel: p.priceLevel,
+        open: p.open ?? null,
+        lat: p.lat,
+        lng: p.lng,
+        address: p.address,
+        alreadyAdded: existing.has(p.placeId)
+      }));
+      return {
+        places,
+        chainsGrouped: ranked.chainsGrouped,
+        lowDensity: ranked.lowDensity,
+        radius
+      };
+    }),
+    // Persist a chosen nearby place onto the wheel as a provider-sourced
+    // restaurant. De-duplicated by placeId so the same physical spot can't be
+    // added twice. Reuses `restaurants.add`'s ownership model (any member adds).
+    addNearby: protectedProcedure.input(
+      z3.object({
+        wheelId: z3.number(),
+        place: z3.object({
+          placeId: z3.string().min(1).max(256),
+          name: z3.string().min(1).max(128),
+          lat: z3.number().min(-90).max(90).nullable(),
+          lng: z3.number().min(-180).max(180).nullable(),
+          address: z3.string().max(512).nullable(),
+          priceLevel: z3.number().int().min(1).max(4).nullable(),
+          cuisine: z3.string().max(64).nullable(),
+          mapUrl: z3.string().max(512).nullable().optional()
+        })
+      })
+    ).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const existing = await getWheelPlaceIds(input.wheelId);
+      if (existing.has(input.place.placeId)) {
+        return { id: null, duplicate: true };
+      }
+      const id = await addRestaurant(
+        input.wheelId,
+        ctx.user.id,
+        input.place.name,
+        null,
+        [],
+        input.place.mapUrl ?? null,
+        {
+          placeId: input.place.placeId,
+          lat: input.place.lat,
+          lng: input.place.lng,
+          address: input.place.address,
+          priceLevel: input.place.priceLevel,
+          cuisine: input.place.cuisine
+        }
+      );
+      return { id, duplicate: false };
     })
   }),
   // ─── Spins ───────────────────────────────────────────────────────────────────

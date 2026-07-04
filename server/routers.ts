@@ -14,6 +14,10 @@ import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
+import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
+import { mapProviderResults, type ProviderPlace } from "@shared/placeMapping";
+import { ENV } from "./_core/env";
+import { makeRequest } from "./_core/map";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -39,6 +43,7 @@ import {
   getSpinHistory,
   getTagsForWheel,
   getUserById,
+  getWheelPlaceIds,
   importWheelData,
   getUserWheels,
   getWheelById,
@@ -288,6 +293,132 @@ export const appRouter = router({
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
         await deleteRestaurant(input.id);
         return { success: true };
+      }),
+  }),
+
+  // ─── Places (located wheel) ───────────────────────────────────────────────────
+
+  places: router({
+    // Nearby restaurant search for the "located wheel". Given the caller's
+    // coordinates, ask the place provider for nearby restaurants, map each row
+    // to the domain shape (`shared/placeMapping`), and rank it (`shared/nearby`)
+    // — chain de-dup, walk-time order, soft filters, low-density flag. Read-only:
+    // it proposes places the client can add; nothing is written here, and the
+    // server still owns the eventual spin. Modelled as a mutation because it is
+    // an on-demand action driven by a location the client just captured.
+    searchNearby: protectedProcedure
+      .input(
+        z.object({
+          wheelId: z.number(),
+          lat: z.number().min(-90).max(90),
+          lng: z.number().min(-180).max(180),
+          radius: z.number().int().min(100).max(5000).optional(),
+          keyword: z.string().max(120).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Nearby search isn't configured on this server.",
+          });
+        }
+
+        const radius = input.radius ?? DEFAULT_RADIUS_M;
+        let res: { results?: ProviderPlace[]; status?: string; error_message?: string };
+        try {
+          res = await makeRequest("/maps/api/place/nearbysearch/json", {
+            location: `${input.lat},${input.lng}`,
+            radius,
+            type: "restaurant",
+            ...(input.keyword ? { keyword: input.keyword } : {}),
+          });
+        } catch {
+          throw new TRPCError({
+            code: "BAD_GATEWAY",
+            message: "Couldn't reach the place provider. Try again in a moment.",
+          });
+        }
+        if (res.status && res.status !== "OK" && res.status !== "ZERO_RESULTS") {
+          throw new TRPCError({
+            code: "BAD_GATEWAY",
+            message: `Place provider error: ${res.status}`,
+          });
+        }
+
+        const origin = { lat: input.lat, lng: input.lng };
+        const mapped = mapProviderResults(res.results ?? [], origin);
+        const ranked = rankNearby(mapped);
+        const existing = await getWheelPlaceIds(input.wheelId);
+        const places = ranked.segments.map((p) => ({
+          placeId: p.placeId,
+          name: p.name,
+          walkMinutes: p.walkMinutes,
+          distanceMeters: p.distanceMeters ?? null,
+          cuisine: p.cuisine,
+          priceLevel: p.priceLevel,
+          open: p.open ?? null,
+          lat: p.lat,
+          lng: p.lng,
+          address: p.address,
+          alreadyAdded: existing.has(p.placeId),
+        }));
+        return {
+          places,
+          chainsGrouped: ranked.chainsGrouped,
+          lowDensity: ranked.lowDensity,
+          radius,
+        };
+      }),
+
+    // Persist a chosen nearby place onto the wheel as a provider-sourced
+    // restaurant. De-duplicated by placeId so the same physical spot can't be
+    // added twice. Reuses `restaurants.add`'s ownership model (any member adds).
+    addNearby: protectedProcedure
+      .input(
+        z.object({
+          wheelId: z.number(),
+          place: z.object({
+            placeId: z.string().min(1).max(256),
+            name: z.string().min(1).max(128),
+            lat: z.number().min(-90).max(90).nullable(),
+            lng: z.number().min(-180).max(180).nullable(),
+            address: z.string().max(512).nullable(),
+            priceLevel: z.number().int().min(1).max(4).nullable(),
+            cuisine: z.string().max(64).nullable(),
+            mapUrl: z.string().max(512).nullable().optional(),
+          }),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const existing = await getWheelPlaceIds(input.wheelId);
+        if (existing.has(input.place.placeId)) {
+          return { id: null, duplicate: true as const };
+        }
+        const id = await addRestaurant(
+          input.wheelId,
+          ctx.user.id,
+          input.place.name,
+          null,
+          [],
+          input.place.mapUrl ?? null,
+          {
+            placeId: input.place.placeId,
+            lat: input.place.lat,
+            lng: input.place.lng,
+            address: input.place.address,
+            priceLevel: input.place.priceLevel,
+            cuisine: input.place.cuisine,
+          },
+        );
+        return { id, duplicate: false as const };
       }),
   }),
 

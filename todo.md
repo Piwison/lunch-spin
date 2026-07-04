@@ -74,3 +74,13 @@
 - [x] Fix app crash on wheel creation — SSE subscriptions (onSpin, onPresence, onSession) crash the whole app
 - [x] Fix wheel settings edit — settings button now always visible on mobile (not just hover)
 - [x] Fix blurry wheel label text — added devicePixelRatio scaling to canvas for crisp HiDPI rendering
+
+## Milestone 5: Located Wheel (P0)
+- [x] Pure seam: shared/placeMapping.ts (provider JSON → NearbyPlace) + tests
+- [x] DB: addRestaurant place fields (source="provider") + getWheelPlaceIds dedup
+- [x] tRPC router: places.searchNearby (ranked) + places.addNearby (dedup by placeId)
+- [x] Client: NearbyDialog (geolocation → ranked list → add) + RestaurantTab "NEARBY" button
+- [x] Reuse shared/nearby.ts ranking (walk-time order, soft filters, low-density, chain dedup)
+- [ ] DEPLOY-GATE: apply migration 0008 (place columns) to live DATABASE_URL — generated ≠ applied
+- [ ] DEPLOY-GATE: set BUILT_IN_FORGE_API_URL / BUILT_IN_FORGE_API_KEY (or "not configured" state shows)
+- [ ] DEPLOY-GATE: live smoke — locate → ranked results; keyword narrows; Add persists + dedupes; widen works
