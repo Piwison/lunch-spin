@@ -256,7 +256,7 @@ async function createWheel(ownerId, name, isShared, isPublic, inviteToken, exclu
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const result = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null, exclusionDays, fairnessMode, rotateCuisines });
-  return result.insertId;
+  return result[0].insertId;
 }
 async function getWheelById(id) {
   const db = await getDb();
@@ -333,7 +333,7 @@ async function createCustomTag(name, createdBy, wheelId) {
   const colors = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
   const result = await db.insert(tags).values({ name, category: "custom", color, createdBy, wheelId });
-  return result.insertId;
+  return result[0].insertId;
 }
 async function getRestaurantsByWheel(wheelId) {
   const db = await getDb();
@@ -370,7 +370,7 @@ async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = nul
       source: "provider"
     } : {}
   });
-  const restaurantId = result.insertId;
+  const restaurantId = result[0].insertId;
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId, tagId })));
   }
@@ -423,7 +423,7 @@ async function importWheelData(ownerId, data) {
       if (id == null) {
         const color = TAG_PALETTE[tg.name.charCodeAt(0) % TAG_PALETTE.length];
         const res = await db.insert(tags).values({ name: tg.name, category: tg.category, color, createdBy: ownerId, wheelId });
-        id = res.insertId;
+        id = res[0].insertId;
         tagMap.set(k, id);
       }
       tagIds.push(id);
@@ -442,7 +442,7 @@ async function recordSpin(wheelId, restaurantId, spunBy) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
-  return result.insertId;
+  return result[0].insertId;
 }
 async function getSpinHistory(wheelId) {
   const db = await getDb();
