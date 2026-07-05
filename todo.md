@@ -82,5 +82,5 @@
 - [x] Client: NearbyDialog (geolocation → ranked list → add) + RestaurantTab "NEARBY" button
 - [x] Reuse shared/nearby.ts ranking (walk-time order, soft filters, low-density, chain dedup)
 - [ ] DEPLOY-GATE: apply migration 0008 (place columns) to live DATABASE_URL — generated ≠ applied
-- [ ] DEPLOY-GATE: set BUILT_IN_FORGE_API_URL / BUILT_IN_FORGE_API_KEY (or "not configured" state shows)
+- [ ] DEPLOY-GATE: set GOOGLE_MAPS_API_KEY in Vercel (Places API enabled) — replaces the dead Manus forge proxy
 - [ ] DEPLOY-GATE: live smoke — locate → ranked results; keyword narrows; Add persists + dedupes; widen works

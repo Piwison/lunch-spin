@@ -15,9 +15,8 @@ import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } fro
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
-import { mapProviderResults, type ProviderPlace } from "@shared/placeMapping";
-import { ENV } from "./_core/env";
-import { makeRequest } from "./_core/map";
+import { mapProviderResults } from "@shared/placeMapping";
+import { isPlacesConfigured, searchNearbyRestaurants } from "./places";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -319,7 +318,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+        if (!isPlacesConfigured()) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "Nearby search isn't configured on this server.",
@@ -327,14 +326,9 @@ export const appRouter = router({
         }
 
         const radius = input.radius ?? DEFAULT_RADIUS_M;
-        let res: { results?: ProviderPlace[]; status?: string; error_message?: string };
+        let res: Awaited<ReturnType<typeof searchNearbyRestaurants>>;
         try {
-          res = await makeRequest("/maps/api/place/nearbysearch/json", {
-            location: `${input.lat},${input.lng}`,
-            radius,
-            type: "restaurant",
-            ...(input.keyword ? { keyword: input.keyword } : {}),
-          });
+          res = await searchNearbyRestaurants(input.lat, input.lng, radius, input.keyword);
         } catch {
           throw new TRPCError({
             code: "BAD_GATEWAY",

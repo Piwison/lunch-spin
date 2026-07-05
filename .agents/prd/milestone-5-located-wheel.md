@@ -21,12 +21,21 @@
 - **Pure seam:** provider-JSON → domain translation lives in
   `shared/placeMapping.ts` (+ tests), matching the repo's `shared/*` convention.
   No `server/_core/oauth|sdk|context|trpc` / `shared/const.ts` / auth edits.
+- **Direct Google Places API, not the Manus proxy.** `server/_core/map.ts` is a
+  Manus-platform template ("credentials automatically injected") that's dead
+  weight since this repo migrated off Manus — PRODUCTION.md says outright
+  "Forge/storage env vars are not required." `server/places.ts` (new, outside
+  the guarded `server/_core/` directory) calls Google's Places API directly with
+  a self-hosted `GOOGLE_MAPS_API_KEY`, the same pattern as this repo's
+  `GOOGLE_CLIENT_ID`/`SECRET`.
 
 ## Problem
 The wheel only knows restaurants you type in. New users face a blank wheel, and
 even active wheels miss the "what's actually walkable from here right now" case.
-The place-provider proxy (`server/_core/map.ts`) and place-fields schema shipped
-as groundwork but had no server route or UI wiring them together.
+A place-fields schema shipped as groundwork (migration `0008`) but had no server
+route or UI wiring it up, and the repo's only maps integration
+(`server/_core/map.ts`) was a leftover Manus-platform proxy with no self-hosted
+equivalent.
 
 ## Goal
 Let a member fill a wheel from real nearby restaurants in a few taps — ordered by
@@ -48,11 +57,14 @@ stays server-authoritative and the location is never stored.
   `cuisineFromTypes` (maps Google `types[]` → a cuisine label or null — never
   invents one), `normalizePriceLevel` (0..4 → our 1..4), and `toNearbyPlace` /
   `mapProviderResults` producing the `NearbyPlace` shape `shared/nearby.ts` ranks.
-- **Server** (`server/routers.ts` → `places` router):
-  - `searchNearby` (mutation, read-only): membership-gated; calls the provider's
-    nearbysearch via `server/_core/map.ts`, maps + `rankNearby`s the rows, and
-    marks each with `alreadyAdded` (via `getWheelPlaceIds`). Degrades cleanly:
-    `PRECONDITION_FAILED` when the proxy isn't configured, `BAD_GATEWAY` on a
+- **Server** (`server/places.ts` + `server/routers.ts` → `places` router):
+  - `server/places.ts`: `searchNearbyRestaurants` fetches Google's Places
+    nearbysearch endpoint directly (`GOOGLE_MAPS_API_KEY`); `isPlacesConfigured`
+    reports whether that key is set. Deliberately outside `server/_core/`.
+  - `searchNearby` (mutation, read-only): membership-gated; calls
+    `searchNearbyRestaurants`, maps + `rankNearby`s the rows, and marks each with
+    `alreadyAdded` (via `getWheelPlaceIds`). Degrades cleanly:
+    `PRECONDITION_FAILED` when the key isn't configured, `BAD_GATEWAY` on a
     provider/network error.
   - `addNearby` (mutation): de-dupes by `placeId`, then persists via
     `addRestaurant(..., place)` with `source="provider"`.
@@ -67,9 +79,12 @@ stays server-authoritative and the location is never stored.
 
 ## Components
 - `shared/placeMapping.ts` (new, +12 tests).
+- `server/places.ts` (new): direct Google Places API client, outside `_core/`.
 - `server/db.ts`: `PlaceFields`, `addRestaurant(place?)`, `getWheelPlaceIds`.
 - `server/routers.ts`: `places` router (`searchNearby`, `addNearby`).
 - `client/src/components/NearbyDialog.tsx` (new) + `RestaurantTab.tsx` button.
+- `.env.example`: `GOOGLE_MAPS_API_KEY` (replaces the dead Manus forge vars for
+  this feature).
 - Regenerated `api/index.js` (server changed).
 
 ## Non-goals
@@ -86,8 +101,9 @@ stays server-authoritative and the location is never stored.
      (`placeId`, `lat`, `lng`, `address`, `priceLevel`, `cuisine`, `openHours`,
      `source`) must actually exist, not just be generated. (`addNearby` writes
      them; a stale DB throws on insert.)
-  2. `BUILT_IN_FORGE_API_URL` / `BUILT_IN_FORGE_API_KEY` set in the Vercel env, or
-     "Add nearby" surfaces the "not available on this server" state by design.
+  2. `GOOGLE_MAPS_API_KEY` set in the Vercel env (a Maps Platform key with
+     Places API enabled), or "Add nearby" surfaces the "not available on this
+     server" state by design.
   3. Live smoke: grant location → results ranked by walk time; keyword narrows;
      Add persists + shows "Added" + de-dupes; widen works in a thin area.
 

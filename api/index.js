@@ -1620,43 +1620,25 @@ function mapProviderResults(rows, origin) {
   return rows.filter((r) => r.place_id).map((r) => toNearbyPlace(r, origin));
 }
 
-// server/_core/map.ts
-function getMapsConfig() {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Google Maps proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-  return {
-    baseUrl: baseUrl.replace(/\/+$/, ""),
-    apiKey
-  };
+// server/places.ts
+var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
+function isPlacesConfigured() {
+  return !!process.env.GOOGLE_MAPS_API_KEY;
 }
-async function makeRequest(endpoint, params = {}, options = {}) {
-  const { baseUrl, apiKey } = getMapsConfig();
-  const url = new URL(`${baseUrl}/v1/maps/proxy${endpoint}`);
-  url.searchParams.append("key", apiKey);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== void 0 && value !== null) {
-      url.searchParams.append(key, String(value));
-    }
-  });
-  const response = await fetch(url.toString(), {
-    method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: options.body ? JSON.stringify(options.body) : void 0
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Google Maps API request failed (${response.status} ${response.statusText}): ${errorText}`
-    );
+async function searchNearbyRestaurants(lat, lng, radius, keyword) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  const url = new URL(NEARBY_SEARCH_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("location", `${lat},${lng}`);
+  url.searchParams.set("radius", String(radius));
+  url.searchParams.set("type", "restaurant");
+  if (keyword) url.searchParams.set("keyword", keyword);
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
   }
-  return await response.json();
+  return await res.json();
 }
 
 // server/routers.ts
@@ -1857,7 +1839,7 @@ var appRouter = router({
     ).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+      if (!isPlacesConfigured()) {
         throw new TRPCError3({
           code: "PRECONDITION_FAILED",
           message: "Nearby search isn't configured on this server."
@@ -1866,12 +1848,7 @@ var appRouter = router({
       const radius = input.radius ?? DEFAULT_RADIUS_M;
       let res;
       try {
-        res = await makeRequest("/maps/api/place/nearbysearch/json", {
-          location: `${input.lat},${input.lng}`,
-          radius,
-          type: "restaurant",
-          ...input.keyword ? { keyword: input.keyword } : {}
-        });
+        res = await searchNearbyRestaurants(input.lat, input.lng, radius, input.keyword);
       } catch {
         throw new TRPCError3({
           code: "BAD_GATEWAY",
