@@ -17,7 +17,8 @@ import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
-import { isPlacesConfigured, searchNearbyRestaurants } from "./places";
+import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
+import { isPlacesConfigured, searchNearbyRestaurants, walkingMatrix } from "./places";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -346,11 +347,25 @@ export const appRouter = router({
         const origin = { lat: input.lat, lng: input.lng };
         const mapped = mapProviderResults(res.results ?? [], origin);
         const ranked = rankNearby(mapped);
+
+        // Refine the ranked segments (≤12 → one Distance Matrix request) with
+        // real walking times; re-ranked nearest-first on merge. Strictly
+        // optional — any failure (API disabled, quota, network) keeps the
+        // haversine estimates and each place says which one it carries.
+        let segments = mergeWalkTimes(ranked.segments, []);
+        try {
+          const elements = await walkingMatrix(origin, routableCoords(ranked.segments));
+          segments = mergeWalkTimes(ranked.segments, elements);
+        } catch {
+          // estimates stand
+        }
+
         const existing = await getWheelPlaceIds(input.wheelId);
-        const places = ranked.segments.map((p) => ({
+        const places = segments.map((p) => ({
           placeId: p.placeId,
           name: p.name,
           walkMinutes: p.walkMinutes,
+          walkSource: p.walkSource,
           distanceMeters: p.distanceMeters ?? null,
           cuisine: p.cuisine,
           priceLevel: p.priceLevel,

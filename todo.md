@@ -92,3 +92,11 @@
 - [x] places.addNearby auto-links provider cuisine → existing tag → primaryTagId (segment color, rotation)
 - [x] NearbyDialog toast reports "tagged X"; filter groups + Smart Add mapping revive with no code change
 - [ ] DEPLOY-GATE: drizzle-kit migrate against live DB applies 0008 + 0009 together
+
+## Milestone 7: Real Walk Times (Distance Matrix)
+- [x] Pure seam: shared/walkTime.ts (routableCoords, mergeWalkTimes — align, degrade, re-sort) + tests
+- [x] formatWalk "~" marker for estimates vs routed times
+- [x] server/places.ts walkingMatrix (one request, ≤12 destinations, mode=walking) + fetch-stubbed tests
+- [x] searchNearby refines ranked segments; any failure keeps haversine estimates (walkSource flag)
+- [x] NearbyDialog: "~7 min walk" for estimates, plain for routed, tooltip explains
+- [ ] DEPLOY-GATE: enable "Distance Matrix API" on the existing GOOGLE_MAPS_API_KEY (degrades to ~estimates without it)

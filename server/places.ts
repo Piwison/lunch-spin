@@ -11,8 +11,10 @@
  */
 
 import type { ProviderPlace } from "@shared/placeMapping";
+import type { MatrixElement } from "@shared/walkTime";
 
 const NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
+const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 
 export interface NearbySearchResponse {
   results?: ProviderPlace[];
@@ -47,4 +49,41 @@ export async function searchNearbyRestaurants(
     throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
   }
   return (await res.json()) as NearbySearchResponse;
+}
+
+/**
+ * Real walking times from one origin to the ranked destinations ("lat,lng"
+ * strings, max ~12 — well under the API's 25-per-request cap), via Google's
+ * Distance Matrix API with mode=walking. One request per nearby search.
+ * Throws on any failure — the caller treats the whole refinement as optional
+ * and falls back to the haversine estimates (shared/walkTime.ts contract).
+ * Needs "Distance Matrix API" enabled on the same GOOGLE_MAPS_API_KEY.
+ */
+export async function walkingMatrix(
+  origin: { lat: number; lng: number },
+  destinations: string[],
+): Promise<MatrixElement[]> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  if (destinations.length === 0) return [];
+
+  const url = new URL(DISTANCE_MATRIX_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("origins", `${origin.lat},${origin.lng}`);
+  url.searchParams.set("destinations", destinations.join("|"));
+  url.searchParams.set("mode", "walking");
+  url.searchParams.set("units", "metric");
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw new Error(`Distance Matrix request failed (${res.status} ${res.statusText})`);
+  }
+  const data = (await res.json()) as {
+    status?: string;
+    rows?: { elements?: MatrixElement[] }[];
+  };
+  if (data.status !== "OK") {
+    throw new Error(`Distance Matrix error: ${data.status ?? "unknown"}`);
+  }
+  return data.rows?.[0]?.elements ?? [];
 }

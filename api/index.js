@@ -1645,8 +1645,31 @@ function matchCuisineTag(label, tags2) {
   return foodType;
 }
 
+// shared/walkTime.ts
+var hasCoords = (p) => p.lat != null && p.lng != null;
+function routableCoords(places) {
+  return places.filter(hasCoords).map((p) => `${p.lat},${p.lng}`);
+}
+function mergeWalkTimes(places, elements) {
+  let cursor = 0;
+  const merged = places.map((p) => {
+    if (!hasCoords(p)) return { ...p, walkSource: "estimate" };
+    const el = elements[cursor++];
+    const seconds = el?.status === "OK" ? el.duration?.value : void 0;
+    if (seconds == null) return { ...p, walkSource: "estimate" };
+    return {
+      ...p,
+      walkMinutes: Math.max(1, Math.round(seconds / 60)),
+      distanceMeters: el?.distance?.value ?? p.distanceMeters ?? null,
+      walkSource: "route"
+    };
+  });
+  return merged.sort((a, b) => a.walkMinutes - b.walkMinutes || a.name.localeCompare(b.name));
+}
+
 // server/places.ts
 var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
+var DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 function isPlacesConfigured() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
 }
@@ -1664,6 +1687,26 @@ async function searchNearbyRestaurants(lat, lng, radius, keyword) {
     throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
   }
   return await res.json();
+}
+async function walkingMatrix(origin, destinations) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  if (destinations.length === 0) return [];
+  const url = new URL(DISTANCE_MATRIX_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("origins", `${origin.lat},${origin.lng}`);
+  url.searchParams.set("destinations", destinations.join("|"));
+  url.searchParams.set("mode", "walking");
+  url.searchParams.set("units", "metric");
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw new Error(`Distance Matrix request failed (${res.status} ${res.statusText})`);
+  }
+  const data = await res.json();
+  if (data.status !== "OK") {
+    throw new Error(`Distance Matrix error: ${data.status ?? "unknown"}`);
+  }
+  return data.rows?.[0]?.elements ?? [];
 }
 
 // server/routers.ts
@@ -1889,11 +1932,18 @@ var appRouter = router({
       const origin = { lat: input.lat, lng: input.lng };
       const mapped = mapProviderResults(res.results ?? [], origin);
       const ranked = rankNearby(mapped);
+      let segments = mergeWalkTimes(ranked.segments, []);
+      try {
+        const elements = await walkingMatrix(origin, routableCoords(ranked.segments));
+        segments = mergeWalkTimes(ranked.segments, elements);
+      } catch {
+      }
       const existing = await getWheelPlaceIds(input.wheelId);
-      const places = ranked.segments.map((p) => ({
+      const places = segments.map((p) => ({
         placeId: p.placeId,
         name: p.name,
         walkMinutes: p.walkMinutes,
+        walkSource: p.walkSource,
         distanceMeters: p.distanceMeters ?? null,
         cuisine: p.cuisine,
         priceLevel: p.priceLevel,

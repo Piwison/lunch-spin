@@ -22,6 +22,8 @@ type NearbyResult = {
   placeId: string;
   name: string;
   walkMinutes: number;
+  /** "route" = real Distance Matrix walking time; "estimate" = haversine. */
+  walkSource: "route" | "estimate";
   distanceMeters: number | null;
   cuisine: string | null;
   priceLevel: number | null;
@@ -287,7 +289,9 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm truncate">{p.name}</p>
                       <div className="flex items-center gap-2 flex-wrap mt-1 text-[11px] text-muted-foreground">
-                        <span className="flex items-center gap-1"><Footprints size={11} /> {formatWalk(p.walkMinutes)}</span>
+                        <span className="flex items-center gap-1" title={p.walkSource === "route" ? "Walking route time" : "Straight-line estimate"}>
+                          <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
+                        </span>
                         {p.priceLevel != null && <span style={{ color: "var(--brand)" }}>{"$".repeat(p.priceLevel)}</span>}
                         {p.cuisine && <span>{p.cuisine}</span>}
                         {p.open === true && <span style={{ color: "var(--success, #4ade80)" }}>Open now</span>}
