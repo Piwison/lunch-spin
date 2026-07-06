@@ -1620,6 +1620,31 @@ function mapProviderResults(rows, origin) {
   return rows.filter((r) => r.place_id).map((r) => toNearbyPlace(r, origin));
 }
 
+// shared/cuisineTag.ts
+var SYNONYMS = {
+  barbecue: "bbq",
+  burger: "burgers",
+  sandwich: "sandwiches",
+  "sandwich shop": "sandwiches",
+  "coffee shop": "cafe",
+  coffee: "cafe",
+  veggie: "vegetarian"
+};
+function matchCuisineTag(label, tags2) {
+  if (!label) return null;
+  const raw = label.trim().toLowerCase();
+  if (!raw) return null;
+  const wanted = SYNONYMS[raw] ?? raw;
+  let foodType = null;
+  for (const t2 of tags2) {
+    if (t2.category !== "cuisine" && t2.category !== "food_type") continue;
+    if (t2.name.toLowerCase() !== wanted) continue;
+    if (t2.category === "cuisine") return t2;
+    foodType ??= t2;
+  }
+  return foodType;
+}
+
 // server/places.ts
 var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
 function isPlacesConfigured() {
@@ -1911,12 +1936,14 @@ var appRouter = router({
       if (existing.has(input.place.placeId)) {
         return { id: null, duplicate: true };
       }
+      const wheelTags = await getTagsForWheel(input.wheelId);
+      const cuisineTag = matchCuisineTag(input.place.cuisine, wheelTags);
       const id = await addRestaurant(
         input.wheelId,
         ctx.user.id,
         input.place.name,
         null,
-        [],
+        cuisineTag ? [cuisineTag.id] : [],
         input.place.mapUrl ?? null,
         {
           placeId: input.place.placeId,
@@ -1927,7 +1954,7 @@ var appRouter = router({
           cuisine: input.place.cuisine
         }
       );
-      return { id, duplicate: false };
+      return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
     })
   }),
   // ─── Spins ───────────────────────────────────────────────────────────────────

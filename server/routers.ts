@@ -16,6 +16,7 @@ import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
+import { matchCuisineTag } from "@shared/cuisineTag";
 import { isPlacesConfigured, searchNearbyRestaurants } from "./places";
 import {
   clearRoundAll,
@@ -396,12 +397,18 @@ export const appRouter = router({
         if (existing.has(input.place.placeId)) {
           return { id: null, duplicate: true as const };
         }
+        // Auto-link the provider cuisine to an EXISTING cuisine/food_type tag
+        // (never invents one — the 0009 seed catalog carries the labels
+        // placeMapping emits). The matched tag becomes the primary tag, so the
+        // place gets its wheel-segment color and joins cuisine rotation.
+        const wheelTags = await getTagsForWheel(input.wheelId);
+        const cuisineTag = matchCuisineTag(input.place.cuisine, wheelTags);
         const id = await addRestaurant(
           input.wheelId,
           ctx.user.id,
           input.place.name,
           null,
-          [],
+          cuisineTag ? [cuisineTag.id] : [],
           input.place.mapUrl ?? null,
           {
             placeId: input.place.placeId,
@@ -412,7 +419,7 @@ export const appRouter = router({
             cuisine: input.place.cuisine,
           },
         );
-        return { id, duplicate: false as const };
+        return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
       }),
   }),
 

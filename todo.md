@@ -84,3 +84,11 @@
 - [ ] DEPLOY-GATE: apply migration 0008 (place columns) to live DATABASE_URL — generated ≠ applied
 - [ ] DEPLOY-GATE: set GOOGLE_MAPS_API_KEY in Vercel (Places API enabled) — replaces the dead Manus forge proxy
 - [ ] DEPLOY-GATE: live smoke — locate → ranked results; keyword narrows; Add persists + dedupes; widen works
+
+## Milestone 6: Cuisine Tags Come Alive
+- [x] Root cause: predefined tag catalog was never seeded — cuisine filters, Smart Add mapping, rotateCuisines all dormant
+- [x] Migration 0009: seed 15 cuisine + 16 food_type system tags (idempotent, palette colors, drizzle-kit --custom)
+- [x] Pure seam: shared/cuisineTag.ts matchCuisineTag (synonyms, category priority, never custom) + tests
+- [x] places.addNearby auto-links provider cuisine → existing tag → primaryTagId (segment color, rotation)
+- [x] NearbyDialog toast reports "tagged X"; filter groups + Smart Add mapping revive with no code change
+- [ ] DEPLOY-GATE: drizzle-kit migrate against live DB applies 0008 + 0009 together

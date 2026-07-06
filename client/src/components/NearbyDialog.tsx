@@ -107,7 +107,13 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
         onSuccess: (res) => {
           setAdded((prev) => new Set(prev).add(p.placeId));
           onAdded();
-          toast.success(res.duplicate ? `${p.name} is already on the wheel` : `Added ${p.name}`);
+          toast.success(
+            res.duplicate
+              ? `${p.name} is already on the wheel`
+              : res.taggedAs
+                ? `Added ${p.name} · tagged ${res.taggedAs}`
+                : `Added ${p.name}`,
+          );
         },
         onError: (e) => toast.error(e.message),
       },
