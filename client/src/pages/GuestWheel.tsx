@@ -96,11 +96,8 @@ export default function GuestWheel() {
       <Shell>
         <div className="flex flex-col items-center gap-4">
           <div
-            className="w-12 h-12 rounded-full animate-orb-spin"
-            style={{
-              background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
-              boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
-            }}
+            className="w-12 h-12 orb-wheel animate-orb-spin"
+            style={{ boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)" }}
           />
           <p className="text-sm text-muted-foreground">Loading wheel…</p>
         </div>
@@ -230,25 +227,27 @@ export default function GuestWheel() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Faint glow only — heavy per-glyph shadows stack into a muddy
+                smear behind the title (same treatment as WheelApp's overlay). */}
             <div
               className="absolute inset-0 pointer-events-none"
-              style={{ background: `radial-gradient(circle at 50% 0%, ${spinResult.color}22 0%, transparent 70%)` }}
+              style={{ background: `radial-gradient(circle at 50% 0%, ${spinResult.color}14 0%, transparent 65%)` }}
             />
             <div className="relative">
               <div className="text-5xl mb-4 animate-float">🎉</div>
               <p
-                className="text-xs mb-2 tracking-[0.2em]"
+                className="text-xs mb-2 tracking-[0.2em] flex items-center justify-center gap-2"
                 style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
               >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
                 TODAY'S LUNCH
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
               </p>
+              {/* No text glow: cool-hued halos turn to mud on the warm card —
+                  the segment color already speaks through border, dots, buttons. */}
               <h2
                 className="text-3xl font-black mb-8 leading-tight"
-                style={{
-                  fontFamily: "var(--font-display)",
-                  color: spinResult.color,
-                  textShadow: `0 0 30px ${spinResult.color}88, 0 0 60px ${spinResult.color}44`,
-                }}
+                style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
               >
                 {spinResult.label}
               </h2>

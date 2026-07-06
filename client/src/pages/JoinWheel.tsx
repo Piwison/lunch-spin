@@ -38,10 +38,7 @@ export default function JoinWheel() {
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 text-center">
-        <div
-          className="w-16 h-16 rounded-full"
-          style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
-        />
+        <div className="w-16 h-16 orb-wheel" />
         <div>
           <h1 className="text-2xl font-bold mb-2" style={{ fontFamily: "var(--font-display)" }}>
             YOU'VE BEEN INVITED

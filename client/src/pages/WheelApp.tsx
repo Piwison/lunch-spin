@@ -267,11 +267,8 @@ export default function WheelApp() {
       <div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--background)" }}>
         <div className="flex flex-col items-center gap-4">
           <div
-            className="w-12 h-12 rounded-full animate-orb-spin"
-            style={{
-              background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
-              boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
-            }}
+            className="w-12 h-12 orb-wheel animate-orb-spin"
+            style={{ boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)" }}
           />
           <p className="text-sm text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
             LOADING...
@@ -294,9 +291,8 @@ export default function WheelApp() {
       >
         <div className="flex items-center gap-3">
           <div
-            className="w-7 h-7 rounded-full flex-shrink-0 animate-orb-spin"
+            className="w-7 h-7 orb-wheel flex-shrink-0 animate-orb-spin"
             style={{
-              background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
               boxShadow: "0 0 12px oklch(from var(--brand) l c h / 0.5)",
               animationDuration: "20s",
             }}
@@ -406,20 +402,14 @@ export default function WheelApp() {
                 /* Hold a neutral state until we know if this is a first run —
                    avoids flashing "no wheel selected" at a brand-new user. */
                 <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-                  <div
-                    className="w-16 h-16 rounded-full animate-orb-spin opacity-60"
-                    style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
-                  />
+                  <div className="w-16 h-16 orb-wheel animate-orb-spin opacity-60" />
                 </div>
               ) : firstRun ? (
                 /* First-run — the user has no wheels yet. Guide them in (decision 2b). */
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center max-w-md mx-auto">
                   <div
-                    className="w-20 h-20 rounded-full animate-orb-spin"
-                    style={{
-                      background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
-                      boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)",
-                    }}
+                    className="w-20 h-20 orb-wheel animate-orb-spin"
+                    style={{ boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
                   />
                   <div>
                     <p className="text-2xl font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>
@@ -459,10 +449,7 @@ export default function WheelApp() {
               ) : (
                 /* Empty state — has wheels, none selected */
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
-                  <div
-                    className="w-20 h-20 rounded-full opacity-20"
-                    style={{ background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))" }}
-                  />
+                  <div className="w-20 h-20 orb-wheel opacity-20" />
                   <div>
                     <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
                       NO WHEEL SELECTED
@@ -922,28 +909,29 @@ export default function WheelApp() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Background glow blob */}
+            {/* Background glow blob — kept faint: heavy per-glyph shadows on the
+                title used to stack into a muddy smear behind the winner name. */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                background: `radial-gradient(circle at 50% 0%, ${spinResult.color}22 0%, transparent 70%)`,
+                background: `radial-gradient(circle at 50% 0%, ${spinResult.color}14 0%, transparent 65%)`,
               }}
             />
             <div className="relative">
               <div className="text-5xl mb-4 animate-float">🎉</div>
               <p
-                className="text-xs mb-2 tracking-[0.2em]"
+                className="text-xs mb-2 tracking-[0.2em] flex items-center justify-center gap-2"
                 style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
               >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
                 TODAY'S LUNCH
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
               </p>
+              {/* No text glow: cool-hued halos turn to mud on the warm card —
+                  the segment color already speaks through border, dots, buttons. */}
               <h2
                 className="text-3xl font-black mb-8 leading-tight"
-                style={{
-                  fontFamily: "var(--font-display)",
-                  color: spinResult.color,
-                  textShadow: `0 0 30px ${spinResult.color}88, 0 0 60px ${spinResult.color}44`,
-                }}
+                style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
               >
                 {spinResult.label}
               </h2>

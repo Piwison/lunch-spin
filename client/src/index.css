@@ -262,6 +262,26 @@
 
 .reveal { opacity: 0; animation: reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 .animate-orb-spin { animation: orb-spin 28s linear infinite; }
+
+/* The brand mark: a miniature lunch wheel. Eight hard-stop slices from the
+   segment palette (client/src/lib/palette.ts) around a theme-colored hub, so
+   every orb in the app — header, hero, first-run, loading — reads as the
+   product itself instead of a plain gradient ball. Pair with animate-orb-spin. */
+.orb-wheel {
+  border-radius: 9999px;
+  background:
+    radial-gradient(closest-side, var(--background) 0 24%, rgba(0, 0, 0, 0.35) 24.5% 29%, transparent 30%),
+    conic-gradient(
+      #e3893e 0 45deg,
+      #dcab4a 45deg 90deg,
+      #8fb46b 90deg 135deg,
+      #5aa6a0 135deg 180deg,
+      #5f8fd4 180deg 225deg,
+      #8b7fd6 225deg 270deg,
+      #d56fa3 270deg 315deg,
+      #e2674f 315deg 360deg
+    );
+}
 .animate-ring-rotate { animation: ring-rotate 12s linear infinite; }
 .tab-enter { animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
 .cta-pulse { animation: cta-pulse 2.6s ease-in-out infinite; }
