@@ -2,12 +2,15 @@ import { trpc } from "@/lib/trpc";
 import { RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
+import { formatExclusionTimeLeft } from "@shared/exclusion";
 
 interface HistoryTabProps {
   wheelId: number;
   onReenabled: () => void;
   /** Shared wheel? Enables the per-person fairness view in stats. */
   isShared?: boolean;
+  /** This wheel's exclusion window in days — drives the legend copy. */
+  exclusionDays?: number;
   /** Jump to the Wheel tab — wired to the empty-state CTA. */
   onGoToWheel?: () => void;
 }
@@ -24,17 +27,7 @@ function timeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-function exclusionTimeLeft(spunAt: Date): string {
-  const expiresAt = new Date(spunAt).getTime() + 3 * 24 * 60 * 60 * 1000;
-  const remaining = expiresAt - Date.now();
-  if (remaining <= 0) return "expired";
-  const hours = Math.floor(remaining / 3600000);
-  const days = Math.floor(remaining / 86400000);
-  if (days > 0) return `${days}d ${hours % 24}h left`;
-  return `${hours}h left`;
-}
-
-export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel }: HistoryTabProps) {
+export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDays, onGoToWheel }: HistoryTabProps) {
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
@@ -50,9 +43,13 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
     onError: e => toast.error(e.message),
   });
 
-  // Build a map of restaurantId → isExcluded from restaurants list
-  const excludedMap = new Map<number, boolean>(
-    restaurants?.map(r => [r.id, r.isExcluded]) ?? []
+  // restaurantId → server-computed exclusion expiry. The server derives this
+  // from the wheel's own exclusion window, so the countdown shown here can
+  // never drift from the real rule (the window is configurable per wheel).
+  const excludedUntilMap = new Map<number, Date>(
+    (restaurants ?? [])
+      .filter(r => r.isExcluded && r.excludedUntil)
+      .map(r => [r.id, new Date(r.excludedUntil!)])
   );
 
   // Deduplicate history entries to show latest spin per restaurant for exclusion status
@@ -87,7 +84,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
       )}
 
       {/* History Section */}
-      <div>
+      <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2
             className="text-lg font-bold tracking-tight"
@@ -112,8 +109,11 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
           >
             <Clock size={13} className="mt-0.5 flex-shrink-0" />
             <span>
-              Restaurants are auto-excluded for 3 days after being spun. You can
-              manually re-enable them below.
+              Restaurants are auto-excluded
+              {exclusionDays
+                ? ` for ${exclusionDays} day${exclusionDays !== 1 ? "s" : ""}`
+                : ""}{" "}
+              after being spun. You can manually re-enable them below.
             </span>
           </div>
         )}
@@ -156,27 +156,24 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
             {history.map((entry, idx) => {
               const isLatestForRestaurant =
                 latestByRestaurant.get(entry.restaurantId)?.id === entry.id;
-              const isCurrentlyExcluded =
-                excludedMap.get(entry.restaurantId) ?? false;
+              const excludedUntil = excludedUntilMap.get(entry.restaurantId);
+              const isCurrentlyExcluded = excludedUntil !== undefined;
               const showReenableBtn =
                 isLatestForRestaurant &&
                 isCurrentlyExcluded &&
                 !entry.manuallyReenabled;
               const spunAtDate = new Date(entry.spunAt);
+              const timeLeft = excludedUntil
+                ? formatExclusionTimeLeft(excludedUntil)
+                : null;
 
               return (
                 <div
                   key={entry.id}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl"
                   style={{
-                    background:
-                      idx === 0
-                        ? "var(--card)"
-                        : "var(--card)",
-                    border:
-                      idx === 0
-                        ? "1px solid var(--border)"
-                        : "1px solid var(--border)",
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
                   }}
                 >
                   {/* Rank / index */}
@@ -199,16 +196,16 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
                             border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
                           }}
                         >
-                          excluded · {exclusionTimeLeft(spunAtDate)}
+                          excluded · {timeLeft === "expired" ? "expired" : `${timeLeft} left`}
                         </span>
                       )}
                       {entry.manuallyReenabled && (
                         <span
                           className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
-                            background: "oklch(0.70 0.20 160 / 0.15)",
-                            color: "oklch(0.70 0.20 160)",
-                            border: "1px solid oklch(0.70 0.20 160 / 0.3)",
+                            background: "oklch(from var(--ok) l c h / 0.15)",
+                            color: "var(--ok)",
+                            border: "1px solid oklch(from var(--ok) l c h / 0.3)",
                           }}
                         >
                           re-enabled
@@ -232,9 +229,9 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
                       disabled={reenable.isPending}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all active:scale-95 hover:brightness-125 flex-shrink-0 disabled:opacity-50"
                       style={{
-                        background: "oklch(0.70 0.20 160 / 0.15)",
-                        border: "1px solid oklch(0.70 0.20 160 / 0.4)",
-                        color: "oklch(0.70 0.20 160)",
+                        background: "oklch(from var(--ok) l c h / 0.15)",
+                        border: "1px solid oklch(from var(--ok) l c h / 0.4)",
+                        color: "var(--ok)",
                       }}
                     >
                       {reenable.isPending

@@ -61,6 +61,15 @@ export default function WheelApp() {
     if (!loading && !user) navigate("/");
   }, [user, loading, navigate]);
 
+  // Keep the selected wheel in sync with the URL so browser back/forward (and
+  // direct links) actually switch wheels — state alone only captures the first
+  // render's params.
+  useEffect(() => {
+    const parsed = params.wheelId ? parseInt(params.wheelId) : NaN;
+    const fromUrl = Number.isFinite(parsed) ? parsed : null;
+    setSelectedWheelId((current) => (current === fromUrl ? current : fromUrl));
+  }, [params.wheelId]);
+
   const { data: tags } = trpc.tags.list.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId }
@@ -74,10 +83,26 @@ export default function WheelApp() {
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId }
   );
-  const { data: wheelData } = trpc.wheels.get.useQuery(
+  const { data: wheelData, error: wheelError } = trpc.wheels.get.useQuery(
     { id: selectedWheelId! },
-    { enabled: !!selectedWheelId }
+    {
+      enabled: !!selectedWheelId,
+      retry: (count, err) =>
+        err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
+    }
   );
+
+  // A wheel that definitively can't be loaded (deleted, or a stale/bad link)
+  // would strand the app on erroring queries — fall back to the wheel picker.
+  // Transient/network errors are retried above and don't eject the user.
+  useEffect(() => {
+    const code = wheelError?.data?.code;
+    if (code !== "NOT_FOUND" && code !== "FORBIDDEN") return;
+    toast.error("That wheel isn't available anymore.");
+    setSelectedWheelId(null);
+    navigate("/app", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wheelError]);
 
   const createSpin = trpc.spins.create.useMutation();
   const isShared = !!wheelData?.isShared;
@@ -848,6 +873,7 @@ export default function WheelApp() {
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
                     isShared={isShared}
+                    exclusionDays={wheelData?.exclusionDays}
                     onGoToWheel={() => setActiveTab("wheel")}
                   />
                 )}
@@ -969,8 +995,8 @@ export default function WheelApp() {
                     onClick={() => setShowResult(false)}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
                     style={{
-                      background: "oklch(0.70 0.18 150 / 0.15)",
-                      border: "1px solid oklch(0.70 0.18 150 / 0.45)",
+                      background: "oklch(from var(--ok) l c h / 0.15)",
+                      border: "1px solid oklch(from var(--ok) l c h / 0.45)",
                       color: "var(--ok)",
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.06em",

@@ -40,6 +40,16 @@ const EXCLUSION_OPTIONS = [
   { value: "7", label: "7 days" },
 ];
 
+/** The preset options, plus the wheel's current value if it isn't a preset
+ *  (possible via import, which allows any 0–30) — otherwise the settings
+ *  select renders blank. */
+function exclusionOptionsFor(current: number) {
+  if (EXCLUSION_OPTIONS.some((o) => o.value === String(current))) return EXCLUSION_OPTIONS;
+  return [...EXCLUSION_OPTIONS, { value: String(current), label: `${current} days` }].sort(
+    (a, b) => parseInt(a.value) - parseInt(b.value),
+  );
+}
+
 /** Per-wheel actions, consolidated into one kebab menu so they can never overlap
  *  the row's select target (the old always-on icon cluster caused tap-hijack on
  *  mobile). Shared by the desktop rail and the mobile switcher sheet. */
@@ -210,7 +220,13 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     onError: (e) => { setCreateError(e.message); },
   });
   const deleteWheel = trpc.wheels.delete.useMutation({
-    onSuccess: () => { utils.wheels.list.invalidate(); toast.success("Wheel deleted"); },
+    onSuccess: (_data, vars) => {
+      utils.wheels.list.invalidate();
+      // Refetching the deleted wheel 404s, which tells WheelApp to drop the
+      // selection instead of sitting on a dead wheel.
+      utils.wheels.get.invalidate({ id: vars.id });
+      toast.success("Wheel deleted");
+    },
     onError: (e) => toast.error(`Failed to delete wheel: ${e.message}`),
   });
   const regenInvite = trpc.wheels.regenerateInvite.useMutation({
@@ -498,7 +514,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {EXCLUSION_OPTIONS.map((opt) => (
+                    {exclusionOptionsFor(editWheel.exclusionDays).map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>

@@ -284,8 +284,8 @@ export default function GuestWheel() {
                     onClick={() => setShowResult(false)}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
                     style={{
-                      background: "oklch(0.70 0.18 150 / 0.15)",
-                      border: "1px solid oklch(0.70 0.18 150 / 0.45)",
+                      background: "oklch(from var(--ok) l c h / 0.15)",
+                      border: "1px solid oklch(from var(--ok) l c h / 0.45)",
                       color: "var(--ok)",
                       fontFamily: "var(--font-display)",
                       letterSpacing: "0.06em",
