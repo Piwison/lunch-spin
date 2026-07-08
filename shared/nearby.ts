@@ -69,9 +69,10 @@ export function estimateWalkMinutes(meters: number, metersPerMin = WALK_METERS_P
   return Math.max(1, Math.round(meters / metersPerMin));
 }
 
-/** Human label, e.g. "6 min walk". */
-export function formatWalk(minutes: number): string {
-  return `${Math.max(1, Math.round(minutes))} min walk`;
+/** Human label, e.g. "6 min walk" — "~6 min walk" when it's an estimate
+ *  (straight-line haversine) rather than a routed walking time. */
+export function formatWalk(minutes: number, approx = false): string {
+  return `${approx ? "~" : ""}${Math.max(1, Math.round(minutes))} min walk`;
 }
 
 /** True when a set this size should trigger low-density handling. */

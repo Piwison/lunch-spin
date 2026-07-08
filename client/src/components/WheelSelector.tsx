@@ -272,12 +272,8 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
           className={`flex-1 min-w-0 flex items-center gap-2.5 px-2.5 rounded-xl text-left ${inSheet ? "min-h-[56px] py-2" : "py-2"}`}
         >
           <span
-            className="w-6 h-6 rounded-full flex-shrink-0"
-            style={{
-              background: isSelected
-                ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
-                : "var(--border)",
-            }}
+            className={`w-6 h-6 rounded-full flex-shrink-0 ${isSelected ? "orb-wheel" : ""}`}
+            style={isSelected ? undefined : { background: "var(--border)" }}
           />
           <span
             className="flex-1 truncate text-sm"
@@ -347,12 +343,8 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
           <SheetTrigger asChild>
             <button className="w-full flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
               <span
-                className="w-7 h-7 rounded-full flex-shrink-0"
-                style={{
-                  background: selectedWheel
-                    ? "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))"
-                    : "var(--border)",
-                }}
+                className={`w-7 h-7 rounded-full flex-shrink-0 ${selectedWheel ? "orb-wheel" : ""}`}
+                style={selectedWheel ? undefined : { background: "var(--border)" }}
               />
               <span className="flex-1 truncate text-sm font-semibold" style={{ fontFamily: "var(--font-display)" }}>
                 {selectedWheel?.name ?? "Select a wheel"}

@@ -19,6 +19,16 @@ const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);
 const SPIN_DURATION = 5000; // ms
 const MIN_ROTATIONS = 6;
 
+// Perceived lightness of a #rrggbb segment color (sRGB luma, 0..1). Segment
+// fills span light amber to deep blue, so label ink must adapt per slice —
+// a fixed white label fails on the light slices.
+function hexLuma(hex: string): number {
+  const m = /^#?([0-9a-f]{6})/i.exec(hex);
+  if (!m) return 0.5;
+  const n = parseInt(m[1]!, 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+
 export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart, targetId }: SpinWheelProps) {
   const { theme } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -166,7 +176,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = token("--muted-foreground");
-      ctx.font = `600 14px 'Fredoka', sans-serif`;
+      ctx.font = `600 14px ${token("--font-display")}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Add restaurants", cx, cy - 10);
@@ -216,34 +226,54 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
       ctx.stroke();
       ctx.restore();
 
-      // Label
+      // Label — classic prize-wheel typography: text runs along the slice
+      // bisector (hub → rim), flipped upright on the left half so nothing
+      // renders upside-down. Radial layout keeps each label inside its own
+      // slice, so adjacent labels can never collide the way horizontal ones
+      // did at the top of the wheel.
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(mid);
-      const labelR = r * 0.62;
-      ctx.translate(labelR, 0);
-      ctx.rotate(-mid);
-
-      const maxWidth = r * 0.5;
-      const fontSize = segments.length > 10 ? 10 : segments.length > 7 ? 11 : 13;
-      ctx.font = `600 ${fontSize}px 'Poppins', sans-serif`;
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
+      const innerR = 34; // clear the hub
+      const outerR = r - 14; // breathe at the rim
+      const maxWidth = outerR - innerR;
+      const fontSize = segments.length > 10 ? 11 : segments.length > 7 ? 12 : 14;
+      ctx.font = `600 ${fontSize}px ${token("--font-display")}`;
       ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(0,0,0,0.8)";
-      ctx.shadowBlur = 4;
 
-      // Truncate label if needed
+      // Ink adapts to the slice: near-black on light fills (amber, sage),
+      // white with a soft plate shadow on dark ones.
+      if (hexLuma(seg.color) > 0.6) {
+        ctx.fillStyle = "rgba(30, 19, 12, 0.92)";
+      } else {
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = "rgba(0,0,0,0.55)";
+        ctx.shadowBlur = 3;
+      }
+
       let label = seg.label;
       while (ctx.measureText(label).width > maxWidth && label.length > 3) {
         label = label.slice(0, -1);
       }
       if (label !== seg.label) label = label.slice(0, -1) + "…";
-      ctx.fillText(label, 0, 0);
+
+      // Which half of the wheel is this slice pointing at right now?
+      const facing = ((mid % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      if (facing > Math.PI / 2 && facing < (3 * Math.PI) / 2) {
+        // Left half: rotate an extra half-turn and right-align so the text
+        // stays upright, occupying the same hub→rim span.
+        ctx.rotate(mid + Math.PI);
+        ctx.textAlign = "right";
+        ctx.fillText(label, -innerR, 0);
+      } else {
+        ctx.rotate(mid);
+        ctx.textAlign = "left";
+        ctx.fillText(label, innerR, 0);
+      }
       ctx.restore();
     });
 
-    // Center circle
+    // Center hub — a small dial with a brand-warm keyline so the wheel has a
+    // jewel at its pivot instead of a flat dark disc.
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, 22, 0, Math.PI * 2);
@@ -254,16 +284,29 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     ctx.shadowColor = "rgba(0,0,0,0.8)";
     ctx.shadowBlur = 10;
     ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(255,255,255,0.15)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 17, 0, Math.PI * 2);
+    ctx.strokeStyle = token("--brand");
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.restore();
 
-    // Outer ring glow
+    // Rim — a defined double keyline (bright inner, dark outer) so the wheel
+    // ends with intent instead of dissolving into the glow.
     ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.arc(cx, cy, r + 1, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
     ctx.lineWidth = 3;
     ctx.stroke();
     ctx.restore();

@@ -64,6 +64,13 @@
       "when": 1783017657253,
       "tag": "0008_place_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1783337913746,
+      "tag": "0009_seed_predefined_tags",
+      "breakpoints": true
     }
   ]
 }

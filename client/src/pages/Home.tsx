@@ -277,11 +277,10 @@ export default function Home() {
                   <path d="M10 22L1.5 4.5H18.5L10 22Z" fill="white" stroke="var(--muted)" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
               </div>
-              {/* Wheel face */}
+              {/* Wheel face — real palette segments, so the hero IS the product */}
               <div
-                className="w-36 h-36 rounded-full animate-orb-spin"
+                className="w-36 h-36 orb-wheel animate-orb-spin"
                 style={{
-                  background: "conic-gradient(from 0deg, var(--brand), var(--brand-2), var(--brand))",
                   boxShadow: "0 0 60px oklch(from var(--brand) l c h / 0.5), 0 0 120px oklch(from var(--brand-2) l c h / 0.25), inset 0 0 0 2px rgba(255,255,255,0.1)",
                 }}
               />

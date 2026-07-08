@@ -83,7 +83,7 @@ export async function createWheel(ownerId: number, name: string, isShared: boole
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const result = await db.insert(wheels).values({ ownerId, name, isShared, isPublic, inviteToken: inviteToken ?? null, exclusionDays, fairnessMode, rotateCuisines });
-  return (result as any).insertId as number;
+  return (result as any)[0].insertId as number;
 }
 
 export async function getWheelById(id: number) {
@@ -200,7 +200,7 @@ export async function createCustomTag(name: string, createdBy: number, wheelId: 
   const colors = ["#f43f5e","#fb923c","#facc15","#4ade80","#22d3ee","#818cf8","#e879f9","#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
   const result = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy, wheelId });
-  return (result as any).insertId as number;
+  return (result as any)[0].insertId as number;
 }
 
 // ─── Restaurants ──────────────────────────────────────────────────────────────
@@ -222,16 +222,71 @@ export async function getRestaurantsByWheel(wheelId: number) {
   }));
 }
 
-export async function addRestaurant(wheelId: number, addedBy: number, name: string, notes: string | null, tagIds: number[], mapUrl: string | null = null) {
+// Optional located-place fields carried when a restaurant originates from the
+// place provider (source="provider") rather than being user-typed.
+export interface PlaceFields {
+  placeId: string;
+  lat: number | null;
+  lng: number | null;
+  address: string | null;
+  priceLevel: number | null;
+  cuisine: string | null;
+  openHours?: unknown;
+}
+
+export async function addRestaurant(
+  wheelId: number,
+  addedBy: number,
+  name: string,
+  notes: string | null,
+  tagIds: number[],
+  mapUrl: string | null = null,
+  place: PlaceFields | null = null,
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const primaryTagId = tagIds[0] ?? null;
-  const result = await db.insert(restaurants).values({ wheelId, addedBy, name, notes, mapUrl, primaryTagId });
-  const restaurantId = (result as any).insertId as number;
+  const result = await db.insert(restaurants).values({
+    wheelId,
+    addedBy,
+    name,
+    notes,
+    mapUrl,
+    primaryTagId,
+    ...(place
+      ? {
+          placeId: place.placeId,
+          // decimal columns take strings in drizzle-mysql; null stays null.
+          lat: place.lat == null ? null : String(place.lat),
+          lng: place.lng == null ? null : String(place.lng),
+          address: place.address,
+          priceLevel: place.priceLevel,
+          cuisine: place.cuisine,
+          openHours: place.openHours ?? null,
+          source: "provider" as const,
+        }
+      : {}),
+  });
+  const restaurantId = (result as any)[0].insertId as number;
   if (tagIds.length > 0) {
     await db.insert(restaurantTags).values(tagIds.map((tagId) => ({ restaurantId, tagId })));
   }
   return restaurantId;
+}
+
+// Provider place ids already on a wheel — used to de-duplicate "Add nearby" so
+// the same physical restaurant can't be added twice. User-typed rows have a
+// null placeId and never appear here.
+export async function getWheelPlaceIds(wheelId: number): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db
+    .select({ placeId: restaurants.placeId })
+    .from(restaurants)
+    .where(eq(restaurants.wheelId, wheelId));
+  const ids = new Set<string>();
+  for (const r of rows) if (r.placeId) ids.add(r.placeId);
+  return ids;
 }
 
 // Bulk-insert restaurants by name only (used by paste import). Returns the
@@ -284,7 +339,7 @@ export async function importWheelData(ownerId: number, data: WheelExport): Promi
       if (id == null) {
         const color = TAG_PALETTE[tg.name.charCodeAt(0) % TAG_PALETTE.length]!;
         const res = await db.insert(tags).values({ name: tg.name, category: tg.category, color, createdBy: ownerId, wheelId });
-        id = (res as any).insertId as number;
+        id = (res as any)[0].insertId as number;
         tagMap.set(k, id);
       }
       tagIds.push(id);
@@ -307,7 +362,7 @@ export async function recordSpin(wheelId: number, restaurantId: number, spunBy: 
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
-  return (result as any).insertId as number;
+  return (result as any)[0].insertId as number;
 }
 
 export async function getSpinHistory(wheelId: number) {

@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, MapPin, SlidersHorizontal, ChevronDown, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, MapPin, SlidersHorizontal, ChevronDown, AlertTriangle, Navigation } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +9,7 @@ import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
+import NearbyDialog from "@/components/NearbyDialog";
 
 interface RestaurantTabProps {
   wheelId: number;
@@ -32,6 +33,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const [newTagName, setNewTagName] = useState("");
   const [showTagCreate, setShowTagCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showNearby, setShowNearby] = useState(false);
   const [importText, setImportText] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
@@ -167,6 +169,20 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            onClick={() => setShowNearby(true)}
+            title="Add nearby restaurants"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              color: "var(--muted-foreground)",
+              fontFamily: "var(--font-display)",
+              letterSpacing: "0.06em",
+            }}
+          >
+            <Navigation size={14} /> <span className="hidden sm:inline">NEARBY</span>
+          </button>
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
             title="Import"
@@ -509,6 +525,14 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Nearby search dialog */}
+      <NearbyDialog
+        wheelId={wheelId}
+        open={showNearby}
+        onOpenChange={setShowNearby}
+        onAdded={invalidate}
+      />
 
       {/* Custom tag creation dialog */}
       <Dialog open={showTagCreate} onOpenChange={setShowTagCreate}>

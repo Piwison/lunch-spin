@@ -20,13 +20,12 @@ interface RestaurantStatsProps {
   isLoading?: boolean;
 }
 
-const ACCENTS = [
-  "var(--brand)",
-  "var(--brand-2)",
-  "oklch(0.70 0.20 160)",
-  "oklch(0.75 0.18 60)",
-  "oklch(0.68 0.22 340)",
-];
+// One measure, one hue: bars carry brand warmth (leader at full strength,
+// the rest dimmed) instead of a rank-cycled rainbow. Elsewhere in the app a
+// color IS a restaurant's identity (wheel segment, list dot) — recycling
+// arbitrary hues by rank position here would contradict that language.
+const barColor = (idx: number) =>
+  idx === 0 ? "linear-gradient(90deg, var(--brand), var(--brand-2))" : "oklch(from var(--brand) l c h / 0.45)";
 
 /** "3d ago" / "today" / "never" from a whole-day count. */
 function lastPickedLabel(lastPickedAt: Date | null): string {
@@ -93,7 +92,11 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
         </Card>
         <Card className="p-4">
           <div className="text-xs font-medium text-muted-foreground">Favourite</div>
-          <div className="text-sm font-bold mt-1.5 truncate" title={favorite?.name} style={{ fontFamily: "var(--font-display)" }}>
+          <div
+            className="text-sm font-bold mt-1.5 leading-tight line-clamp-2 break-words"
+            title={favorite?.name}
+            style={{ fontFamily: "var(--font-display)" }}
+          >
             {favorite?.name ?? "—"}
           </div>
         </Card>
@@ -137,14 +140,10 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
         <div className="space-y-3">
           {top.map((r, idx) => {
             const pct = maxPicks > 0 ? (r.pickCount / maxPicks) * 100 : 0;
-            const accent = ACCENTS[idx % ACCENTS.length];
             return (
               <div key={r.id}>
                 <div className="flex items-center justify-between mb-1 gap-2">
-                  <span className="text-sm font-medium truncate flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: accent }} />
-                    {r.name}
-                  </span>
+                  <span className="text-sm font-medium truncate">{r.name}</span>
                   <span className="text-xs text-muted-foreground flex-shrink-0">
                     {r.pickCount} · {lastPickedLabel(r.lastPickedAt)}
                   </span>
@@ -152,7 +151,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
                 <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
                   <div
                     className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.max(pct, 6)}%`, background: accent }}
+                    style={{ width: `${Math.max(pct, 6)}%`, background: barColor(idx) }}
                   />
                 </div>
               </div>
@@ -172,7 +171,6 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
           <div className="space-y-3">
             {people.map((p, idx) => {
               const pct = maxPersonPicks > 0 ? (p.count / maxPersonPicks) * 100 : 0;
-              const accent = ACCENTS[idx % ACCENTS.length];
               return (
                 <div key={p.userId}>
                   <div className="flex items-center justify-between mb-1 gap-2">
@@ -184,7 +182,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
                   <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
                     <div
                       className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.max(pct, 6)}%`, background: accent }}
+                      style={{ width: `${Math.max(pct, 6)}%`, background: barColor(idx) }}
                     />
                   </div>
                 </div>

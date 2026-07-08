@@ -74,3 +74,29 @@
 - [x] Fix app crash on wheel creation — SSE subscriptions (onSpin, onPresence, onSession) crash the whole app
 - [x] Fix wheel settings edit — settings button now always visible on mobile (not just hover)
 - [x] Fix blurry wheel label text — added devicePixelRatio scaling to canvas for crisp HiDPI rendering
+
+## Milestone 5: Located Wheel (P0)
+- [x] Pure seam: shared/placeMapping.ts (provider JSON → NearbyPlace) + tests
+- [x] DB: addRestaurant place fields (source="provider") + getWheelPlaceIds dedup
+- [x] tRPC router: places.searchNearby (ranked) + places.addNearby (dedup by placeId)
+- [x] Client: NearbyDialog (geolocation → ranked list → add) + RestaurantTab "NEARBY" button
+- [x] Reuse shared/nearby.ts ranking (walk-time order, soft filters, low-density, chain dedup)
+- [ ] DEPLOY-GATE: apply migration 0008 (place columns) to live DATABASE_URL — generated ≠ applied
+- [ ] DEPLOY-GATE: set GOOGLE_MAPS_API_KEY in Vercel (Places API enabled) — replaces the dead Manus forge proxy
+- [ ] DEPLOY-GATE: live smoke — locate → ranked results; keyword narrows; Add persists + dedupes; widen works
+
+## Milestone 6: Cuisine Tags Come Alive
+- [x] Root cause: predefined tag catalog was never seeded — cuisine filters, Smart Add mapping, rotateCuisines all dormant
+- [x] Migration 0009: seed 15 cuisine + 16 food_type system tags (idempotent, palette colors, drizzle-kit --custom)
+- [x] Pure seam: shared/cuisineTag.ts matchCuisineTag (synonyms, category priority, never custom) + tests
+- [x] places.addNearby auto-links provider cuisine → existing tag → primaryTagId (segment color, rotation)
+- [x] NearbyDialog toast reports "tagged X"; filter groups + Smart Add mapping revive with no code change
+- [ ] DEPLOY-GATE: drizzle-kit migrate against live DB applies 0008 + 0009 together
+
+## Milestone 7: Real Walk Times (Distance Matrix)
+- [x] Pure seam: shared/walkTime.ts (routableCoords, mergeWalkTimes — align, degrade, re-sort) + tests
+- [x] formatWalk "~" marker for estimates vs routed times
+- [x] server/places.ts walkingMatrix (one request, ≤12 destinations, mode=walking) + fetch-stubbed tests
+- [x] searchNearby refines ranked segments; any failure keeps haversine estimates (walkSource flag)
+- [x] NearbyDialog: "~7 min walk" for estimates, plain for routed, tooltip explains
+- [ ] DEPLOY-GATE: enable "Distance Matrix API" on the existing GOOGLE_MAPS_API_KEY (degrades to ~estimates without it)

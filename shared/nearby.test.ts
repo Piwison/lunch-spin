@@ -30,9 +30,10 @@ describe("estimateWalkMinutes / formatWalk", () => {
     expect(estimateWalkMinutes(30)).toBe(1);
     expect(estimateWalkMinutes(0)).toBe(0);
   });
-  it("formats a label", () => {
+  it("formats a label, with a ~ prefix for estimates", () => {
     expect(formatWalk(6)).toBe("6 min walk");
     expect(formatWalk(0)).toBe("1 min walk");
+    expect(formatWalk(6, true)).toBe("~6 min walk");
   });
 });
 
