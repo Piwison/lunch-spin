@@ -108,7 +108,10 @@ var spinHistory = mysqlTable("spin_history", {
   spunBy: int("spunBy").notNull(),
   spunAt: timestamp("spunAt").defaultNow().notNull(),
   // If true, user manually re-enabled this restaurant before 3-day window expires
-  manuallyReenabled: boolean("manuallyReenabled").default(false).notNull()
+  manuallyReenabled: boolean("manuallyReenabled").default(false).notNull(),
+  // Post-spin "how was it?" verdict; null = unrated. The latest rating per
+  // restaurant biases future spins (shared/rating.ts).
+  rating: mysqlEnum("rating", ["loved", "ok", "never"])
 });
 var wheelPresence = mysqlTable("wheel_presence", {
   wheelId: int("wheelId").notNull(),
@@ -454,8 +457,31 @@ async function getSpinHistory(wheelId) {
     spunBy: spinHistory.spunBy,
     spunByName: users.name,
     spunAt: spinHistory.spunAt,
-    manuallyReenabled: spinHistory.manuallyReenabled
+    manuallyReenabled: spinHistory.manuallyReenabled,
+    rating: spinHistory.rating
   }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(eq(spinHistory.wheelId, wheelId)).orderBy(sql`${spinHistory.spunAt} DESC`);
+}
+async function rateSpin(spinId, wheelId, spunBy, rating) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rows = await db.select({ restaurantId: spinHistory.restaurantId }).from(spinHistory).where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, spunBy))).limit(1);
+  if (rows.length === 0) return null;
+  await db.update(spinHistory).set({ rating }).where(eq(spinHistory.id, spinId));
+  return rows[0].restaurantId;
+}
+async function getLatestRatings(wheelId) {
+  const db = await getDb();
+  if (!db) return /* @__PURE__ */ new Map();
+  const rows = await db.select({
+    restaurantId: spinHistory.restaurantId,
+    rating: spinHistory.rating,
+    spunAt: spinHistory.spunAt
+  }).from(spinHistory).where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.rating} IS NOT NULL`)).orderBy(sql`${spinHistory.spunAt} DESC`);
+  const latest = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (r.rating && !latest.has(r.restaurantId)) latest.set(r.restaurantId, r.rating);
+  }
+  return latest;
 }
 async function getExclusions(wheelId, windowDays) {
   const db = await getDb();
@@ -1463,6 +1489,23 @@ function applyVoteWeights(base, votes, voteWeight = VOTE_WEIGHT) {
   }));
 }
 
+// shared/rating.ts
+var RATINGS = ["loved", "ok", "never"];
+var LOVED_BOOST = 1.6;
+var NEVER_DAMP = 0.15;
+function ratingWeight(r) {
+  if (r === "loved") return LOVED_BOOST;
+  if (r === "never") return NEVER_DAMP;
+  return 1;
+}
+function applyRatingWeights(base, ratingById) {
+  if (ratingById.size === 0) return base;
+  return base.map((w) => ({
+    restaurantId: w.restaurantId,
+    weight: w.weight * ratingWeight(ratingById.get(w.restaurantId))
+  }));
+}
+
 // shared/realtimeState.ts
 function push(map, key, value) {
   const list = map.get(key);
@@ -2036,8 +2079,10 @@ var appRouter = router({
       }
       const votes = voteCounts(session);
       const hasVotes = votes.size > 0;
+      const ratings = await getLatestRatings(input.wheelId);
+      const hasRatings = ratings.size > 0;
       let restaurantId;
-      if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes) {
+      if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
         let base;
         if (wheel.fairnessMode) {
           const stats = await getRestaurantStats(input.wheelId);
@@ -2063,6 +2108,7 @@ var appRouter = router({
             cuisineLastPicked
           );
         }
+        base = applyRatingWeights(base, ratings);
         restaurantId = pickWeighted(applyVoteWeights(base, votes));
       } else {
         restaurantId = pickWinner(eligible);
@@ -2096,6 +2142,19 @@ var appRouter = router({
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await reenableRestaurant(input.wheelId, input.restaurantId, wheel.exclusionDays);
       return { success: true };
+    }),
+    // "How was it?" — set/change the verdict on a spin the caller made. Scoped
+    // to the caller's own spins (rateSpin checks spunBy), so on a shared wheel
+    // you rate your own picks. The latest rating per restaurant then biases
+    // future spins via applyRatingWeights.
+    rate: protectedProcedure.input(z3.object({ wheelId: z3.number(), spinId: z3.number(), rating: z3.enum(RATINGS) })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const restaurantId = await rateSpin(input.spinId, input.wheelId, ctx.user.id, input.rating);
+      if (restaurantId == null) {
+        throw new TRPCError3({ code: "NOT_FOUND", message: "Spin not found or not yours to rate" });
+      }
+      return { success: true, restaurantId };
     })
   }),
   // ─── Presence ────────────────────────────────────────────────────────────────
@@ -2232,6 +2291,7 @@ var appRouter = router({
           cuisineLastPicked
         );
       }
+      base = applyRatingWeights(base, await getLatestRatings(input.wheelId));
       base = applyVoteWeights(base, voteCounts(session));
       const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });
       base = applyMoodBoost(base, moodBoost(candidates, keywords));

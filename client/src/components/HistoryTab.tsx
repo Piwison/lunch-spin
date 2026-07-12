@@ -1,16 +1,26 @@
 import { trpc } from "@/lib/trpc";
-import { RefreshCw, Clock } from "lucide-react";
+import { RefreshCw, Clock, Smile, Meh, Frown } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
+import { RATINGS, ratingLabel, type Rating } from "@shared/rating";
 
 interface HistoryTabProps {
   wheelId: number;
   onReenabled: () => void;
   /** Shared wheel? Enables the per-person fairness view in stats. */
   isShared?: boolean;
+  /** The signed-in user — only their own spins are rateable. */
+  currentUserId: number;
   /** Jump to the Wheel tab — wired to the empty-state CTA. */
   onGoToWheel?: () => void;
 }
+
+// Icon + accent per rating, for the "how was it?" control and read-only badges.
+const RATING_META: Record<Rating, { Icon: typeof Smile; color: string }> = {
+  loved: { Icon: Smile, color: "oklch(0.72 0.19 150)" },
+  ok: { Icon: Meh, color: "oklch(0.75 0.15 80)" },
+  never: { Icon: Frown, color: "oklch(0.62 0.22 20)" },
+};
 
 function timeAgo(date: Date): string {
   const now = Date.now();
@@ -34,7 +44,7 @@ function exclusionTimeLeft(spunAt: Date): string {
   return `${hours}h left`;
 }
 
-export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel }: HistoryTabProps) {
+export default function HistoryTab({ wheelId, onReenabled, isShared, currentUserId, onGoToWheel }: HistoryTabProps) {
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
@@ -47,6 +57,11 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
       onReenabled();
       toast.success("Restaurant re-enabled on the wheel");
     },
+    onError: e => toast.error(e.message),
+  });
+
+  const rate = trpc.spins.rate.useMutation({
+    onSuccess: () => utils.spins.history.invalidate({ wheelId }),
     onError: e => toast.error(e.message),
   });
 
@@ -218,6 +233,48 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, onGoToWheel
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {timeAgo(spunAtDate)} · by {entry.spunByName ?? "Unknown"}
                     </p>
+
+                    {/* "How was it?" — own spins get an editable control; others'
+                        rated spins show a read-only verdict. */}
+                    {entry.spunBy === currentUserId ? (
+                      <div className="flex items-center gap-1 mt-1.5">
+                        {RATINGS.map((r) => {
+                          const { Icon, color } = RATING_META[r];
+                          const active = entry.rating === r;
+                          return (
+                            <button
+                              key={r}
+                              onClick={() =>
+                                rate.mutate({ wheelId, spinId: entry.id, rating: r })
+                              }
+                              disabled={rate.isPending}
+                              title={ratingLabel(r)}
+                              aria-label={ratingLabel(r)}
+                              aria-pressed={active}
+                              className="flex items-center justify-center h-7 w-7 rounded-full transition-all duration-150 active:scale-90 disabled:opacity-60"
+                              style={{
+                                background: active ? `oklch(from ${color} l c h / 0.18)` : "transparent",
+                                border: `1px solid ${active ? color : "var(--border)"}`,
+                                color: active ? color : "var(--muted-foreground)",
+                              }}
+                            >
+                              <Icon size={14} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : entry.rating ? (
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        {(() => {
+                          const { Icon, color } = RATING_META[entry.rating];
+                          return (
+                            <span className="flex items-center gap-1 text-xs" style={{ color }}>
+                              <Icon size={13} /> {ratingLabel(entry.rating)}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Re-enable button */}

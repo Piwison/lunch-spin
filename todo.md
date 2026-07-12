@@ -100,3 +100,12 @@
 - [x] searchNearby refines ranked segments; any failure keeps haversine estimates (walkSource flag)
 - [x] NearbyDialog: "~7 min walk" for estimates, plain for routed, tooltip explains
 - [ ] DEPLOY-GATE: enable "Distance Matrix API" on the existing GOOGLE_MAPS_API_KEY (degrades to ~estimates without it)
+
+## Milestone 8: "How was it?" — post-spin ratings
+- [x] Pure seam: shared/rating.ts (ratingWeight loved×1.6 / ok×1 / never×0.15, applyRatingWeights) + tests
+- [x] Migration 0010: rating enum column on spin_history (nullable)
+- [x] DB: rateSpin (author-scoped), getLatestRatings (latest per restaurant), getSpinHistory selects rating
+- [x] spins.rate mutation; applyRatingWeights folded into spins.create + smart.pick weighting chains
+- [x] HistoryTab: Smile/Meh/Frown control on own spins, read-only verdict on others'
+- [x] Verified: "never" rating → picked 0/90 in authoritative spin (bias real, not cosmetic)
+- [ ] DEPLOY-GATE: drizzle-kit migrate applies 0010 (nullable column, safe with old rows)
