@@ -13,6 +13,7 @@ import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
+import { applyRatingWeights, RATINGS } from "@shared/rating";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -40,8 +41,10 @@ import {
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
+  getLatestRatings,
   getRestaurantStats,
   getSpinHistory,
+  rateSpin,
   getTagsForWheel,
   getUserById,
   getWheelPlaceIds,
@@ -476,12 +479,15 @@ export const appRouter = router({
         }
 
         // Base weights: fairness mode favours neglected spots, else uniform.
-        // Cuisine rotation and votes then bias the spin on top. A plain wheel
-        // with no signals stays a uniform pick.
+        // Cuisine rotation, past ratings, and votes then bias the spin on top.
+        // A plain wheel with no signals stays a uniform pick.
         const votes = voteCounts(session);
         const hasVotes = votes.size > 0;
+        // Persistent preference: the latest "how was it?" per restaurant.
+        const ratings = await getLatestRatings(input.wheelId);
+        const hasRatings = ratings.size > 0;
         let restaurantId: number;
-        if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes) {
+        if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
           let base: Weighted[];
           if (wheel.fairnessMode) {
             const stats = await getRestaurantStats(input.wheelId);
@@ -508,6 +514,9 @@ export const appRouter = router({
               cuisineLastPicked,
             );
           }
+          // Ratings are a persistent preference; votes are the live round signal
+          // and apply last so a team can still override "never again" this round.
+          base = applyRatingWeights(base, ratings);
           restaurantId = pickWeighted(applyVoteWeights(base, votes));
         } else {
           restaurantId = pickWinner(eligible);
@@ -555,6 +564,22 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         await reenableRestaurant(input.wheelId, input.restaurantId, wheel.exclusionDays);
         return { success: true };
+      }),
+
+    // "How was it?" — set/change the verdict on a spin the caller made. Scoped
+    // to the caller's own spins (rateSpin checks spunBy), so on a shared wheel
+    // you rate your own picks. The latest rating per restaurant then biases
+    // future spins via applyRatingWeights.
+    rate: protectedProcedure
+      .input(z.object({ wheelId: z.number(), spinId: z.number(), rating: z.enum(RATINGS) }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const restaurantId = await rateSpin(input.spinId, input.wheelId, ctx.user.id, input.rating);
+        if (restaurantId == null) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Spin not found or not yours to rate" });
+        }
+        return { success: true, restaurantId };
       }),
   }),
 
@@ -702,7 +727,8 @@ export const appRouter = router({
         });
 
         // Base weights mirror spins.create: fairness (or uniform) → cuisine
-        // rotation → votes → mood boost. Equal weights collapse to a uniform pick.
+        // rotation → ratings → votes → mood boost. Equal weights collapse to a
+        // uniform pick.
         let base: Weighted[];
         if (wheel.fairnessMode) {
           base = computeWeights(
@@ -728,6 +754,7 @@ export const appRouter = router({
             cuisineLastPicked,
           );
         }
+        base = applyRatingWeights(base, await getLatestRatings(input.wheelId));
         base = applyVoteWeights(base, voteCounts(session));
 
         const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });

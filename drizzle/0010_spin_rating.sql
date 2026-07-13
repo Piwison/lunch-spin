@@ -1,0 +1,1 @@
+ALTER TABLE `spin_history` ADD `rating` enum('loved','ok','never');

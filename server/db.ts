@@ -377,12 +377,56 @@ export async function getSpinHistory(wheelId: number) {
       spunByName: users.name,
       spunAt: spinHistory.spunAt,
       manuallyReenabled: spinHistory.manuallyReenabled,
+      rating: spinHistory.rating,
     })
     .from(spinHistory)
     .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
     .innerJoin(users, eq(spinHistory.spunBy, users.id))
     .where(eq(spinHistory.wheelId, wheelId))
     .orderBy(sql`${spinHistory.spunAt} DESC`);
+}
+
+// Set (or change) the "how was it?" verdict on one spin. Scoped to the wheel
+// and to the spin's own author (spunBy) so a member can only rate a spin they
+// made. Returns the affected restaurantId, or null if nothing matched.
+export async function rateSpin(
+  spinId: number,
+  wheelId: number,
+  spunBy: number,
+  rating: "loved" | "ok" | "never",
+): Promise<number | null> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rows = await db
+    .select({ restaurantId: spinHistory.restaurantId })
+    .from(spinHistory)
+    .where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, spunBy)))
+    .limit(1);
+  if (rows.length === 0) return null;
+  await db.update(spinHistory).set({ rating }).where(eq(spinHistory.id, spinId));
+  return rows[0]!.restaurantId;
+}
+
+// The latest rating per restaurant on a wheel (most-recent rated spin wins) —
+// the persistent preference signal that biases future spins. Restaurants with
+// no rated spin are simply absent.
+export async function getLatestRatings(wheelId: number): Promise<Map<number, "loved" | "ok" | "never">> {
+  const db = await getDb();
+  if (!db) return new Map();
+  const rows = await db
+    .select({
+      restaurantId: spinHistory.restaurantId,
+      rating: spinHistory.rating,
+      spunAt: spinHistory.spunAt,
+    })
+    .from(spinHistory)
+    .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.rating} IS NOT NULL`))
+    .orderBy(sql`${spinHistory.spunAt} DESC`);
+  const latest = new Map<number, "loved" | "ok" | "never">();
+  for (const r of rows) {
+    if (r.rating && !latest.has(r.restaurantId)) latest.set(r.restaurantId, r.rating);
+  }
+  return latest;
 }
 
 // Returns a map of restaurantId → the timestamp it becomes available again.

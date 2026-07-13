@@ -874,6 +874,7 @@ export default function WheelApp() {
                     onReenabled={refetchRestaurants}
                     isShared={isShared}
                     exclusionDays={wheelData?.exclusionDays}
+                    currentUserId={user.id}
                     onGoToWheel={() => setActiveTab("wheel")}
                   />
                 )}

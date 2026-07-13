@@ -121,6 +121,9 @@ export const spinHistory = mysqlTable("spin_history", {
   spunAt: timestamp("spunAt").defaultNow().notNull(),
   // If true, user manually re-enabled this restaurant before 3-day window expires
   manuallyReenabled: boolean("manuallyReenabled").default(false).notNull(),
+  // Post-spin "how was it?" verdict; null = unrated. The latest rating per
+  // restaurant biases future spins (shared/rating.ts).
+  rating: mysqlEnum("rating", ["loved", "ok", "never"]),
 });
 
 export type SpinHistory = typeof spinHistory.$inferSelect;
