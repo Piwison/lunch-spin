@@ -848,6 +848,7 @@ export default function WheelApp() {
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
                     isShared={isShared}
+                    currentUserId={user.id}
                     onGoToWheel={() => setActiveTab("wheel")}
                   />
                 )}

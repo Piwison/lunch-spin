@@ -71,6 +71,13 @@
       "when": 1783337913746,
       "tag": "0009_seed_predefined_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1783869227241,
+      "tag": "0010_spin_rating",
+      "breakpoints": true
     }
   ]
 }
