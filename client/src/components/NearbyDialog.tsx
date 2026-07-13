@@ -294,7 +294,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                         </span>
                         {p.priceLevel != null && <span style={{ color: "var(--brand)" }}>{"$".repeat(p.priceLevel)}</span>}
                         {p.cuisine && <span>{p.cuisine}</span>}
-                        {p.open === true && <span style={{ color: "var(--success, #4ade80)" }}>Open now</span>}
+                        {p.open === true && <span style={{ color: "var(--ok)" }}>Open now</span>}
                         {p.open === false && <span className="opacity-70">Closed</span>}
                       </div>
                       {p.address && <p className="text-[11px] text-muted-foreground/70 truncate mt-0.5">{p.address}</p>}
@@ -305,7 +305,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                       className="flex items-center justify-center gap-1 h-9 px-3 rounded-full text-xs font-semibold flex-shrink-0 transition-all active:scale-95 disabled:opacity-100"
                       style={
                         isAdded
-                          ? { background: "oklch(from var(--success, #4ade80) l c h / 0.15)", color: "var(--success, #4ade80)", border: "1px solid oklch(from var(--success, #4ade80) l c h / 0.3)" }
+                          ? { background: "oklch(from var(--ok) l c h / 0.15)", color: "var(--ok)", border: "1px solid oklch(from var(--ok) l c h / 0.3)" }
                           : { background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }
                       }
                     >
