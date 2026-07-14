@@ -131,3 +131,55 @@
 - [x] HistoryTab: Smile/Meh/Frown control on own spins, read-only verdict on others'
 - [x] Verified: "never" rating → picked 0/90 in authoritative spin (bias real, not cosmetic)
 - [ ] DEPLOY-GATE: drizzle-kit migrate applies 0010 (nullable column, safe with old rows)
+
+## Round 9 — real-user testing (reported 2026-07-14; specs resolved via grill, NOT STARTED)
+
+Status: RECORDED + SPEC'D. Ready to implement; not yet started. Gate each with
+pnpm check && test && build, and rebuild api/index.js for any server/ or shared/ change.
+
+1. [ ] Join broken — invitee opens the REAL invite link (/join/:token) but "joins,
+       nothing changes": not shown as a member / can't see the wheel.
+       Where: JoinWheel.tsx → wheels.join (routers.ts:170) → addWheelMember (db.ts:166).
+       Mutation returns success (they see "JOINED!"), so addWheelMember didn't throw.
+       getUserWheels DOES include joined wheels, so the sidebar isn't the cause.
+       PLAN: REPRODUCE FIRST against live — confirm the wheel_members row actually
+       persists on the live DB (known failure mode #2: migrations generated≠applied),
+       and that both invitee AND owner rosters refresh (wheels.get isn't polled — likely
+       a missing invalidate/refetch after join on both sides). Fix root cause, one guard.
+2. [ ] Shared/guest views default to LIGHT mode.
+       DECISION: force light ONLY on /w/ (GuestWheel) and /join (JoinWheel) — ignore
+       OS/localStorage on those routes. Logged-in app keeps light-default + working toggle.
+3. [ ] Replace top-right SIGN OUT button with a profile AVATAR → dropdown.
+       Where: WheelApp.tsx header (:357-381). Menu items (v1): name+email header,
+       Office (#4), Default wheel (#5), Theme toggle (MOVED off header into menu),
+       Sign out. The standalone header ThemeToggle goes away.
+4. [ ] User office → walking distance to each restaurant, run on demand.
+       DECISIONS:
+       - Scope: ONE office per user (global). New users columns: officeLat/officeLng/
+         officeLabel (migration — apply to live DB, deploy gate).
+       - Input (in profile menu): paste a Google Maps link (reuse resolvePlaceLink) OR
+         "use my location" (browser geolocation). Save resolved coords to the user.
+       - Metric: WALKING TIME via existing walkingMatrix() (Distance Matrix, mode=walking),
+         formatted with shared/walkTime.ts. Requires Distance Matrix API (deploy gate).
+       - Coverage: only restaurants with coords or a saved Maps link (resolve+cache its
+         lat/lng). Name-only restaurants show "no location" and are skipped.
+       - UI: "Distances from office" button on the Restaurants tab; after running, each
+         row shows "~N min". Cache in client until office or restaurant set changes.
+5. [ ] Default wheel (auto-opened on entry).
+       DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
+       on each wheel row in WheelSelector to set it; profile menu shows current default.
+       WheelApp auto-open (:118-124) uses defaultWheelId, falls back to wheels[0].
+6. [ ] Add-restaurant tags: fewer presets + user-extensible per category.
+       Where: RestaurantTab.tsx TagSelector (:156).
+       DECISIONS: show a CURATED 5 presets per category (Cuisine + Food Type) with a
+       "More" expander revealing the rest (nothing removed). "Create tag" flow lets the
+       user pick the category (Cuisine / Food Type / Custom) — createCustom must accept a
+       category param so the new tag lands under that heading.
+7. [ ] Notification chips too long → duration: 3000 on the Toaster in App.tsx
+       (ThemedToaster toastOptions). Applies to ALL toasts.
+8. [ ] Spin takes too long → users lose patience. Make it SNAPPIER, ~3s total,
+       still a smooth stop (no lurch — keep the velocity-matched hand-off).
+       Where: SpinWheel.tsx — reduce MIN_LAND_ROTATIONS (4) and the derived landDuration
+       so the deceleration is ~2s (total ~3s with typical server latency); keep the
+       free-spin→land velocity match. (Free-spin can't be hard-capped without the winner,
+       but the landing is the main lever.)
