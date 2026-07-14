@@ -7,9 +7,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
+import { matchCuisineTag } from "@shared/cuisineTag";
 import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
 import NearbyDialog from "@/components/NearbyDialog";
+
+/** Loose check: does this string look like a Google Maps link worth resolving? */
+const looksLikeMapLink = (s: string) =>
+  /(google\.[a-z.]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/)/i.test(s.trim());
 
 interface RestaurantTabProps {
   wheelId: number;
@@ -76,6 +81,24 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const createTag = trpc.tags.createCustom.useMutation({
     onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setShowTagCreate(false); setTagError(null); toast.success("Tag created!"); },
     onError: (e) => setTagError(e.message),
+  });
+
+  // Paste a Google Maps link → look the place up → prefill the name (and a
+  // matching cuisine tag). The write still goes through restaurants.add.
+  const resolveLink = trpc.places.resolveLink.useMutation({
+    onSuccess: ({ place }) => {
+      setForm((f) => {
+        const tag = matchCuisineTag(place.cuisine, tags ?? []);
+        return {
+          ...f,
+          name: place.name,
+          tagIds: tag && !f.tagIds.includes(tag.id) ? [...f.tagIds, tag.id] : f.tagIds,
+        };
+      });
+      setFormError(null);
+      toast.success(`Found: ${place.name}`);
+    },
+    onError: (e) => setFormError(e.message),
   });
 
   // Full catalog — for the add/edit form, where you can assign any tag.
@@ -477,19 +500,33 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
               rows={2}
             />
             <div className="flex flex-col gap-1.5">
-              <div className="relative">
-                <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                <Input
-                  type="url"
-                  inputMode="url"
-                  placeholder="Google Maps link (optional)"
-                  value={form.mapUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, mapUrl: e.target.value }))}
-                  className="bg-secondary/50 border-border/50 pl-9"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <Input
+                    type="url"
+                    inputMode="url"
+                    placeholder="Paste a Google Maps link"
+                    value={form.mapUrl}
+                    onChange={(e) => setForm((f) => ({ ...f, mapUrl: e.target.value }))}
+                    className="bg-secondary/50 border-border/50 pl-9"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim() }); }}
+                  disabled={!looksLikeMapLink(form.mapUrl) || resolveLink.isPending}
+                  title="Look up the place name from this Google Maps link"
+                  className="flex-shrink-0"
+                  style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+                >
+                  {resolveLink.isPending
+                    ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                    : "Look up"}
+                </Button>
               </div>
               <p className="text-[11px] text-muted-foreground px-1">
-                Paste the place's Google Maps link — "DIRECTIONS" after a spin opens it directly.
+                Paste a Google Maps link and tap <span className="font-medium">Look up</span> to fill the name automatically — the link also powers "DIRECTIONS" after a spin.
               </p>
             </div>
             <TagSelector />
