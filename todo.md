@@ -151,20 +151,35 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        OS/localStorage on those routes. Logged-in app keeps light-default + working toggle.
 3. [ ] Replace top-right SIGN OUT button with a profile AVATAR → dropdown.
        Where: WheelApp.tsx header (:357-381). Menu items (v1): name+email header,
-       Office (#4), Default wheel (#5), Theme toggle (MOVED off header into menu),
-       Sign out. The standalone header ThemeToggle goes away.
-4. [ ] User office → walking distance to each restaurant, run on demand.
+       Default wheel (#5), Theme toggle (MOVED off header into menu), Sign out.
+       The standalone header ThemeToggle goes away. (Office is NOT here — #4 made it
+       a per-wheel setting, so there's no user-level office.)
+4. [ ] Per-wheel DISTANCE MODE — walking time from the wheel's origin to each restaurant.
+       (Redesigned from "per-user office" after PM grill: home vs office, privacy,
+       and "not all wheels relate to the office" pushed it onto the wheel.)
        DECISIONS:
-       - Scope: ONE office per user (global). New users columns: officeLat/officeLng/
-         officeLabel (migration — apply to live DB, deploy gate).
-       - Input (in profile menu): paste a Google Maps link (reuse resolvePlaceLink) OR
-         "use my location" (browser geolocation). Save resolved coords to the user.
+       - Lives as a toggle in WHEEL SETTINGS (owner-only; editWheel dialog in
+         WheelSelector). OFF by default; fully optional, nothing is gated on it.
+       - New wheel columns (migration — apply to live DB, deploy gate): distanceEnabled
+         (bool, default false), originLat, originLng, originLabel (default "Office",
+         editable — personal wheels may relabel e.g. "Home").
+       - Shared wheels: ONE shared origin, framed as "Office / meeting point", set by
+         the owner and team-visible (a workplace, so acceptable). Home is steered to
+         personal wheels only — we don't expose members' homes.
+       - Origin input (in wheel settings): paste a Google Maps link (reuse
+         resolvePlaceLink) OR "use my location" (geolocation). Owner-only.
        - Metric: WALKING TIME via existing walkingMatrix() (Distance Matrix, mode=walking),
          formatted with shared/walkTime.ts. Requires Distance Matrix API (deploy gate).
-       - Coverage: only restaurants with coords or a saved Maps link (resolve+cache its
-         lat/lng). Name-only restaurants show "no location" and are skipped.
-       - UI: "Distances from office" button on the Restaurants tab; after running, each
-         row shows "~N min". Cache in client until office or restaurant set changes.
+       - Coverage: restaurants with coords or a saved Maps link (resolve + CACHE lat/lng
+         on the restaurant row — a restaurant is a public place). Name-only → "no
+         location", skipped.
+       - Compute: auto when the origin is saved (all located restaurants) + auto for each
+         newly-added restaurant; manual "Recompute" button too. Recompute all when the
+         origin changes. Because the origin is a single per-wheel value, walk-times are
+         the SAME for everyone → persist walkSeconds (nullable) on the restaurant row
+         (NOT per-user), members read it.
+       - Display: inline "~N min" on Restaurant-tab rows + optional "nearest first" sort
+         toggle; also show the winner's walk-time in the spin result modal.
 5. [ ] Default wheel (auto-opened on entry).
        DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
        on each wheel row in WheelSelector to set it; profile menu shows current default.
