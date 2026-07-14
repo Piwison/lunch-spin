@@ -16,8 +16,9 @@ interface SpinWheelProps {
 }
 
 const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 4);
-const SPIN_DURATION = 5000; // ms
-const MIN_ROTATIONS = 6;
+const LAND_DURATION = 3600; // ms to decelerate onto the winner
+const FREE_SPIN_SPEED = 0.011; // rad/ms while awaiting the server (~1.75 turns/s)
+const MIN_LAND_ROTATIONS = 3; // full turns during the deceleration, min
 
 // Perceived lightness of a #rrggbb segment color (sRGB luma, 0..1). Segment
 // fills span light amber to deep blue, so label ink must adapt per slice —
@@ -37,11 +38,18 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
   const progRef = useRef<WebGLProgram | null>(null);
   const rafRef = useRef<number>(0);
   const bgRafRef = useRef<number>(0);
-  const startTimeRef = useRef<number>(0);
-  const startAngleRef = useRef<number>(0);
-  const targetAngleRef = useRef<number>(0);
   const currentAngleRef = useRef<number>(0);
   const [displayAngle, setDisplayAngle] = useState(0);
+
+  // Latest props mirrored into refs so the spin animation can read them without
+  // listing them as effect dependencies — otherwise every unrelated re-render
+  // (e.g. shared-wheel polling) would restart the spin and it would never stop.
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const onSpinEndRef = useRef(onSpinEnd);
+  onSpinEndRef.current = onSpinEnd;
+  const targetIdRef = useRef(targetId);
+  targetIdRef.current = targetId;
 
   // ── WebGL shader background ─────────────────────────────────────────────────
   useEffect(() => {
@@ -333,43 +341,70 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
     drawWheel(displayAngle);
   }, [displayAngle, drawWheel]);
 
-  // Spin animation
+  // Spin animation — two phases so the wheel responds instantly and never
+  // stalls on the server round-trip:
+  //   1. FREE-SPIN: as soon as isSpinning flips true, the wheel turns at a
+  //      constant speed (targetId may still be null while the server picks).
+  //   2. LAND: once the winner (targetId) is known, decelerate onto that slice.
+  // Depends ONLY on isSpinning, reading segments/onSpinEnd/targetId from refs,
+  // so re-renders during the spin can't cancel or restart it.
   useEffect(() => {
-    if (!isSpinning || segments.length === 0) return;
+    if (!isSpinning) return;
+    if (segmentsRef.current.length === 0) return;
 
-    // Land on the server-chosen segment so the displayed winner matches the
-    // recorded/broadcast pick. Fall back to random only if no/unknown target.
-    const chosenIdx = targetId == null ? -1 : segments.findIndex((s) => s.id === targetId);
-    const targetIdx = chosenIdx >= 0 ? chosenIdx : Math.floor(Math.random() * segments.length);
-    const sliceAngle = (Math.PI * 2) / segments.length;
-    // Pointer is at top (−π/2). We want targetIdx segment to land there.
-    const targetCenter = -Math.PI / 2 - (targetIdx * sliceAngle + sliceAngle / 2);
-    const extraRotations = MIN_ROTATIONS * Math.PI * 2 + Math.random() * Math.PI * 2;
-    const totalDelta = extraRotations + ((targetCenter - startAngleRef.current) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    let landing = false;
+    let landStart = 0;
+    let landFrom = 0;
+    let landTo = 0;
+    let landSegment: WheelSegment | null = null;
+    let last = performance.now();
 
-    startAngleRef.current = currentAngleRef.current;
-    targetAngleRef.current = currentAngleRef.current + totalDelta;
-    startTimeRef.current = performance.now();
+    const beginLanding = (now: number) => {
+      const segs = segmentsRef.current;
+      const tId = targetIdRef.current;
+      const idx = tId == null ? -1 : segs.findIndex((s) => s.id === tId);
+      const targetIdx = idx >= 0 ? idx : Math.floor(Math.random() * segs.length);
+      landSegment = segs[targetIdx] ?? null;
+      const sliceAngle = (Math.PI * 2) / segs.length;
+      // Pointer is at top (−π/2); land targetIdx's centre there.
+      const targetCenter = -Math.PI / 2 - (targetIdx * sliceAngle + sliceAngle / 2);
+      const cur = currentAngleRef.current;
+      const delta =
+        MIN_LAND_ROTATIONS * Math.PI * 2 +
+        (((targetCenter - cur) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      landFrom = cur;
+      landTo = cur + delta;
+      landStart = now;
+      landing = true;
+    };
 
-    const animate = () => {
-      const elapsed = performance.now() - startTimeRef.current;
-      const progress = Math.min(elapsed / SPIN_DURATION, 1);
-      const eased = EASE_OUT(progress);
-      const angle = startAngleRef.current + (targetAngleRef.current - startAngleRef.current) * eased;
-      currentAngleRef.current = angle;
-      setDisplayAngle(angle);
-
-      if (progress < 1) {
-        rafRef.current = requestAnimationFrame(animate);
+    const frame = (now: number) => {
+      if (!landing) {
+        currentAngleRef.current += FREE_SPIN_SPEED * (now - last);
+        last = now;
+        setDisplayAngle(currentAngleRef.current);
+        if (targetIdRef.current != null) beginLanding(now);
+        rafRef.current = requestAnimationFrame(frame);
       } else {
-        currentAngleRef.current = targetAngleRef.current;
-        setDisplayAngle(targetAngleRef.current);
-        onSpinEnd(segments[targetIdx]!);
+        const progress = Math.min((now - landStart) / LAND_DURATION, 1);
+        currentAngleRef.current = landFrom + (landTo - landFrom) * EASE_OUT(progress);
+        setDisplayAngle(currentAngleRef.current);
+        if (progress < 1) {
+          rafRef.current = requestAnimationFrame(frame);
+        } else {
+          currentAngleRef.current = landTo;
+          setDisplayAngle(landTo);
+          if (landSegment) onSpinEndRef.current(landSegment);
+        }
       }
     };
-    rafRef.current = requestAnimationFrame(animate);
+
+    // Winner already known at spin-start (e.g. guest wheel) → skip free-spin and
+    // decelerate straight away (still at least MIN_LAND_ROTATIONS turns).
+    if (targetIdRef.current != null) beginLanding(performance.now());
+    rafRef.current = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [isSpinning, segments, onSpinEnd, targetId]);
+  }, [isSpinning]);
 
   const size = 400;
 

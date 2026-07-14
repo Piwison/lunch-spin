@@ -239,18 +239,24 @@ export default function WheelApp() {
       setSpinError("No restaurants available. Add some or adjust your filters.");
       return;
     }
-    if (!selectedWheelId || createSpin.isPending) return;
+    if (!selectedWheelId || createSpin.isPending || isSpinning) return;
     setShowResult(false);
     setSpinResult(null);
     setSpinError(null);
+    // Start the wheel spinning immediately for instant feedback; it free-spins
+    // while the server picks the winner, then decelerates onto it. This hides
+    // the server round-trip (serverless cold start) instead of dead-waiting.
+    setTargetId(null);
+    setIsSpinning(true);
     try {
       const { restaurantId } = await createSpin.mutateAsync({
         wheelId: selectedWheelId,
         candidateIds: wheelSegments.map((s) => s.id),
       });
       setTargetId(restaurantId);
-      setIsSpinning(true);
     } catch (e) {
+      setIsSpinning(false);
+      setTargetId(null);
       setSpinError(e instanceof Error ? e.message : "Couldn't start the spin. Try again.");
     }
   };
@@ -283,9 +289,16 @@ export default function WheelApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [showResult]);
 
-  const cuisineTags = tags?.filter((t) => t.category === "cuisine") ?? [];
-  const foodTypeTags = tags?.filter((t) => t.category === "food_type") ?? [];
-  const customTags = tags?.filter((t) => t.category === "custom") ?? [];
+  // Only offer tags that at least one restaurant on the wheel actually carries —
+  // the predefined catalog is large (15 cuisines + 16 food types), so showing
+  // every one turns the filter into a wall of mostly-useless chips.
+  const usedTagIds = useMemo(
+    () => new Set((restaurants ?? []).flatMap((r) => r.tags.map((t) => t.id))),
+    [restaurants],
+  );
+  const cuisineTags = (tags ?? []).filter((t) => t.category === "cuisine" && usedTagIds.has(t.id));
+  const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
+  const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
 
   if (loading) {
     return (
@@ -420,8 +433,8 @@ export default function WheelApp() {
             </div>
           )}
 
-          {/* ── TAB CONTENT ── */}
-          <div className="flex-1 overflow-y-auto">
+          {/* ── TAB CONTENT ── (pb clears the fixed mobile nav) */}
+          <div className="flex-1 overflow-y-auto pb-28 md:pb-0">
             {!selectedWheelId ? (
               wheelsLoading ? (
                 /* Hold a neutral state until we know if this is a first run —
@@ -521,8 +534,9 @@ export default function WheelApp() {
                       </div>
                     )}
 
-                    {/* ── FILTER BAR (compact, collapsible) ── */}
-                    {(restaurants?.length ?? 0) > 0 && (
+                    {/* ── FILTER BAR (compact, collapsible) — only when there are
+                          actually tags in use to filter by ── */}
+                    {(restaurants?.length ?? 0) > 0 && usedTagIds.size > 0 && (
                       <div
                         className="w-full rounded-xl overflow-hidden transition-all duration-300"
                         style={{
@@ -882,10 +896,14 @@ export default function WheelApp() {
             )}
           </div>
 
-          {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule ── */}
+          {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule, fixed to the
+                viewport so it's reachable at any scroll position ── */}
           <nav
-            className="md:hidden flex-shrink-0 flex justify-center px-3 pt-2"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)" }}
+            className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pt-3"
+            style={{
+              paddingBottom: "calc(env(safe-area-inset-bottom) + 0.5rem)",
+              background: "linear-gradient(to top, var(--background) 55%, transparent)",
+            }}
             aria-label="Views"
           >
             <div className="w-full max-w-md flex items-center gap-1 p-1.5 rounded-[1.75rem] glass-nav">

@@ -78,9 +78,20 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
     onError: (e) => setTagError(e.message),
   });
 
+  // Full catalog — for the add/edit form, where you can assign any tag.
   const cuisineTags = tags?.filter((t) => t.category === "cuisine") ?? [];
   const foodTypeTags = tags?.filter((t) => t.category === "food_type") ?? [];
   const customTags = tags?.filter((t) => t.category === "custom") ?? [];
+
+  // Tags actually present on this wheel — for the FILTER, so it doesn't list the
+  // whole predefined catalog when only a few tags are in use.
+  const usedTagIds = useMemo(
+    () => new Set((restaurants ?? []).flatMap((r) => r.tags.map((t) => t.id))),
+    [restaurants],
+  );
+  const usedCuisineTags = cuisineTags.filter((t) => usedTagIds.has(t.id));
+  const usedFoodTypeTags = foodTypeTags.filter((t) => usedTagIds.has(t.id));
+  const usedCustomTags = customTags.filter((t) => usedTagIds.has(t.id));
 
   const toggleFilterTag = (tagId: number) => {
     setSelectedTagIds((prev) =>
@@ -230,7 +241,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
       )}
 
       {/* Filter by tags — mirrors the Wheel tab so the list can be narrowed too */}
-      {(restaurants?.length ?? 0) > 0 && (tags?.length ?? 0) > 0 && (
+      {(restaurants?.length ?? 0) > 0 && usedTagIds.size > 0 && (
         <div
           className="w-full rounded-xl overflow-hidden transition-all duration-300"
           style={{
@@ -276,7 +287,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
 
           {showFilters && (
             <div className="px-4 pb-4 border-t border-border/30">
-              {[{ label: "CUISINE", items: cuisineTags }, { label: "FOOD TYPE", items: foodTypeTags }, { label: "CUSTOM", items: customTags }].map(({ label, items }) =>
+              {[{ label: "CUISINE", items: usedCuisineTags }, { label: "FOOD TYPE", items: usedFoodTypeTags }, { label: "CUSTOM", items: usedCustomTags }].map(({ label, items }) =>
                 items.length > 0 ? (
                   <div key={label} className="mt-3">
                     <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>{label}</p>

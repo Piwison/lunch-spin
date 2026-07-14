@@ -75,6 +75,17 @@
 - [x] Fix wheel settings edit — settings button now always visible on mobile (not just hover)
 - [x] Fix blurry wheel label text — added devicePixelRatio scaling to canvas for crisp HiDPI rendering
 
+## Bug Fixes (Round 6) — post-launch UX from real testing
+- [x] SPIN never stops on shared wheels — animation effect restarted on every poll re-render;
+      rewrote SpinWheel as a two-phase (free-spin → land) animation keyed only on isSpinning,
+      reading segments/onSpinEnd/targetId from refs so re-renders can't restart it
+- [x] SPIN ~3s dead-wait before moving — now starts spinning instantly on click and decelerates
+      onto the server-chosen winner when it arrives (hides the serverless round-trip)
+- [x] Too many filter tags — filters now list only tags actually attached to a restaurant on the
+      wheel (the M6 predefined catalog is 31 tags), in both WheelApp and RestaurantTab
+- [x] Mobile tab bar scrolled away — docked the Wheel/Restaurants/History nav fixed to the
+      viewport bottom (safe-area padding + content bottom-padding so nothing hides behind it)
+
 ## Milestone 5: Located Wheel (P0)
 - [x] Pure seam: shared/placeMapping.ts (provider JSON → NearbyPlace) + tests
 - [x] DB: addRestaurant place fields (source="provider") + getWheelPlaceIds dedup
