@@ -1710,9 +1710,83 @@ function mergeWalkTimes(places, elements) {
   return merged.sort((a, b) => a.walkMinutes - b.walkMinutes || a.name.localeCompare(b.name));
 }
 
+// shared/mapLink.ts
+var SHORT_HOSTS = /(^|\.)(goo\.gl|maps\.app\.goo\.gl|g\.co)$/i;
+var GOOGLE_HOST = /(^|\.)google\.[a-z.]+$|(^|\.)google\.com$|(^|\.)maps\.google\.[a-z.]+$/i;
+var isLat = (n) => Number.isFinite(n) && Math.abs(n) <= 90;
+var isLng = (n) => Number.isFinite(n) && Math.abs(n) <= 180;
+function parseLatLng(s) {
+  const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(s);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
+  return isLat(lat) && isLng(lng) ? { lat, lng } : null;
+}
+function extractPlaceId(u) {
+  const qpid = u.searchParams.get("query_place_id") || u.searchParams.get("place_id");
+  if (qpid) return qpid;
+  const q = u.searchParams.get("q") ?? "";
+  const m = /^place_id:(.+)$/i.exec(q.trim());
+  return m ? m[1] : null;
+}
+function extractCoords(u) {
+  const at = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(u.pathname + u.search);
+  if (at) {
+    const lat = parseFloat(at[1]);
+    const lng = parseFloat(at[2]);
+    if (isLat(lat) && isLng(lng)) return { lat, lng };
+  }
+  const data = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/.exec(u.pathname + u.search);
+  if (data) {
+    const lat = parseFloat(data[1]);
+    const lng = parseFloat(data[2]);
+    if (isLat(lat) && isLng(lng)) return { lat, lng };
+  }
+  return null;
+}
+function extractPlaceName(u) {
+  const m = /\/maps\/place\/([^/@]+)/.exec(u.pathname);
+  if (!m) return null;
+  try {
+    const name = decodeURIComponent(m[1].replace(/\+/g, " ")).trim();
+    return name && !parseLatLng(name) ? name : null;
+  } catch {
+    return null;
+  }
+}
+function parseMapLink(input) {
+  let u;
+  try {
+    u = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (SHORT_HOSTS.test(u.hostname)) return { kind: "short", url: u.toString() };
+  if (!GOOGLE_HOST.test(u.hostname)) return null;
+  const coords = extractCoords(u);
+  const placeId = extractPlaceId(u);
+  if (placeId) {
+    return { kind: "placeId", placeId, name: extractPlaceName(u), lat: coords?.lat ?? null, lng: coords?.lng ?? null };
+  }
+  const nameFromPath = extractPlaceName(u);
+  const qParam = (u.searchParams.get("q") || u.searchParams.get("query") || "").trim();
+  const query = nameFromPath ?? (qParam && !parseLatLng(qParam) ? qParam : null);
+  if (query) {
+    return { kind: "text", query, lat: coords?.lat ?? null, lng: coords?.lng ?? null };
+  }
+  const qCoords = qParam ? parseLatLng(qParam) : null;
+  const only = coords ?? qCoords;
+  if (only) return { kind: "coords", lat: only.lat, lng: only.lng };
+  return null;
+}
+
 // server/places.ts
 var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
 var DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
+var PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
+var FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json";
+var PLACE_FIELDS = "place_id,name,geometry,formatted_address,types,price_level";
 function isPlacesConfigured() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
 }
@@ -1750,6 +1824,91 @@ async function walkingMatrix(origin, destinations) {
     throw new Error(`Distance Matrix error: ${data.status ?? "unknown"}`);
   }
   return data.rows?.[0]?.elements ?? [];
+}
+var SHORT_HOSTS2 = /(^|\.)(goo\.gl|maps\.app\.goo\.gl|g\.co)$/i;
+var GOOGLE_HOSTS = /(^|\.)(google\.[a-z.]+|maps\.google\.[a-z.]+)$/i;
+function mapGooglePlace(p) {
+  if (!p.name) return null;
+  const loc = p.geometry?.location;
+  return {
+    placeId: p.place_id ?? null,
+    name: p.name,
+    lat: typeof loc?.lat === "number" ? loc.lat : null,
+    lng: typeof loc?.lng === "number" ? loc.lng : null,
+    address: p.formatted_address ?? null,
+    cuisine: cuisineFromTypes(p.types),
+    priceLevel: normalizePriceLevel(p.price_level)
+  };
+}
+async function expandShortLink(url) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return null;
+  }
+  if (!SHORT_HOSTS2.test(host)) return null;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6e3);
+  try {
+    const res = await fetch(url, { redirect: "follow", signal: ctl.signal });
+    const finalHost = new URL(res.url).hostname;
+    if (!GOOGLE_HOSTS.test(finalHost)) return null;
+    return res.url;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function placeDetails(placeId, apiKey) {
+  const url = new URL(PLACE_DETAILS_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set("fields", PLACE_FIELDS);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Place Details failed (${res.status})`);
+  const data = await res.json();
+  if (data.status !== "OK" || !data.result) return null;
+  return mapGooglePlace(data.result);
+}
+async function findPlace(text2, bias, apiKey) {
+  const url = new URL(FIND_PLACE_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("input", text2);
+  url.searchParams.set("inputtype", "textquery");
+  url.searchParams.set("fields", PLACE_FIELDS);
+  if (bias) url.searchParams.set("locationbias", `point:${bias.lat},${bias.lng}`);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Find Place failed (${res.status})`);
+  const data = await res.json();
+  if (data.status !== "OK" || !data.candidates?.length) return null;
+  return mapGooglePlace(data.candidates[0]);
+}
+async function resolvePlaceLink(rawUrl) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  let parsed = parseMapLink(rawUrl);
+  if (parsed?.kind === "short") {
+    const expanded = await expandShortLink(parsed.url);
+    parsed = expanded ? parseMapLink(expanded) : null;
+    if (parsed?.kind === "short") parsed = null;
+  }
+  if (!parsed) return null;
+  if (parsed.kind === "placeId") {
+    const byId = await placeDetails(parsed.placeId, apiKey);
+    if (byId) return byId;
+    if (parsed.name) {
+      const bias = parsed.lat != null && parsed.lng != null ? { lat: parsed.lat, lng: parsed.lng } : null;
+      return findPlace(parsed.name, bias, apiKey);
+    }
+    return null;
+  }
+  if (parsed.kind === "text") {
+    const bias = parsed.lat != null && parsed.lng != null ? { lat: parsed.lat, lng: parsed.lng } : null;
+    return findPlace(parsed.query, bias, apiKey);
+  }
+  return null;
 }
 
 // server/routers.ts
@@ -2048,6 +2207,36 @@ var appRouter = router({
         }
       );
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
+    }),
+    // Resolve a pasted Google Maps link into a nameable place (Place Details /
+    // Find Place, expanding short links). Read-only proposal — the client
+    // prefills the add form and the user confirms; the write still goes through
+    // restaurants.add. Member-gated; degrades like searchNearby when unconfigured.
+    resolveLink: protectedProcedure.input(z3.object({ wheelId: z3.number(), url: z3.string().min(1).max(2048) })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      if (!isPlacesConfigured()) {
+        throw new TRPCError3({
+          code: "PRECONDITION_FAILED",
+          message: "Place lookup isn't configured on this server."
+        });
+      }
+      let place;
+      try {
+        place = await resolvePlaceLink(input.url);
+      } catch {
+        throw new TRPCError3({
+          code: "BAD_GATEWAY",
+          message: "Couldn't reach the place provider. Try again in a moment."
+        });
+      }
+      if (!place) {
+        throw new TRPCError3({
+          code: "NOT_FOUND",
+          message: "Couldn't find a place in that link. Paste a Google Maps place link."
+        });
+      }
+      return { place };
     })
   }),
   // ─── Spins ───────────────────────────────────────────────────────────────────

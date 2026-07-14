@@ -75,6 +75,17 @@
 - [x] Fix wheel settings edit — settings button now always visible on mobile (not just hover)
 - [x] Fix blurry wheel label text — added devicePixelRatio scaling to canvas for crisp HiDPI rendering
 
+## Round 7 — UX from real testing
+- [x] Auto-open the user's first wheel on login (no re-picking every visit); first-run card still shown at zero wheels
+- [x] Spin "suddenly faster then stop" — velocity discontinuity at the free-spin→land hand-off;
+      quad ease-out with duration set so its initial speed equals the free-spin speed (no lurch)
+- [x] Paste a Google Maps link → "Look up" resolves the place name (Place Details / Find Place,
+      short-link expansion): shared/mapLink.ts (pure, +tests), server/places.ts resolvePlaceLink
+      (+stubbed tests), places.resolveLink router; RestaurantTab prefills name + matched cuisine tag
+- [x] Extra bottom padding on the fixed mobile nav so it isn't clipped on devices w/o safe-area inset
+- [x] Hid the "Import wheel" option (not useful for normal users; dialog kept dormant)
+- [ ] DEPLOY-GATE: "Look up" needs Places API on GOOGLE_MAPS_API_KEY (already enabled) — verify live
+
 ## Bug Fixes (Round 6) — post-launch UX from real testing
 - [x] SPIN never stops on shared wheels — animation effect restarted on every poll re-render;
       rewrote SpinWheel as a two-phase (free-spin → land) animation keyed only on isSpinning,

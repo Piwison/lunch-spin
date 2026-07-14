@@ -19,7 +19,7 @@ import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
-import { isPlacesConfigured, searchNearbyRestaurants, walkingMatrix } from "./places";
+import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, walkingMatrix } from "./places";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -438,6 +438,39 @@ export const appRouter = router({
           },
         );
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
+      }),
+
+    // Resolve a pasted Google Maps link into a nameable place (Place Details /
+    // Find Place, expanding short links). Read-only proposal — the client
+    // prefills the add form and the user confirms; the write still goes through
+    // restaurants.add. Member-gated; degrades like searchNearby when unconfigured.
+    resolveLink: protectedProcedure
+      .input(z.object({ wheelId: z.number(), url: z.string().min(1).max(2048) }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!isPlacesConfigured()) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Place lookup isn't configured on this server.",
+          });
+        }
+        let place;
+        try {
+          place = await resolvePlaceLink(input.url);
+        } catch {
+          throw new TRPCError({
+            code: "BAD_GATEWAY",
+            message: "Couldn't reach the place provider. Try again in a moment.",
+          });
+        }
+        if (!place) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Couldn't find a place in that link. Paste a Google Maps place link.",
+          });
+        }
+        return { place };
       }),
   }),
 
