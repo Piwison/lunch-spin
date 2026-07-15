@@ -151,11 +151,15 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        OS/localStorage on those routes. Logged-in app keeps light-default + working toggle.
        DONE: App.tsx keys ThemeProvider on route (switchable=false, defaultTheme="light"
        for /w/ and /join/); removed GuestWheel's ThemeToggle so there's no dark option there.
-3. [ ] Replace top-right SIGN OUT button with a profile AVATAR → dropdown.
+3. [x] Replace top-right SIGN OUT button with a profile AVATAR → dropdown.
        Where: WheelApp.tsx header (:357-381). Menu items (v1): name+email header,
        Default wheel (#5), Theme toggle (MOVED off header into menu), Sign out.
        The standalone header ThemeToggle goes away. (Office is NOT here — #4 made it
        a per-wheel setting, so there's no user-level office.)
+       DONE: avatar button (gradient initial, matches the old name-pill styling) opens
+       a DropdownMenu: name+email label, "Default wheel" (jumps to it, or a disabled
+       "star one in the sidebar" hint if unset), theme toggle, sign out (destructive
+       variant). Client-only — api/index.js unchanged.
 4. [ ] Per-wheel DISTANCE MODE — walking time from the wheel's origin to each restaurant.
        (Redesigned from "per-user office" after PM grill: home vs office, privacy,
        and "not all wheels relate to the office" pushed it onto the wheel.)

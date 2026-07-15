@@ -4,14 +4,13 @@ import { trpc } from "@/lib/trpc";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
-import ThemeToggle from "@/components/ThemeToggle";
 import RestaurantTab from "@/components/RestaurantTab";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -19,6 +18,15 @@ import { isFirstRun } from "@shared/onboarding";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { ErrorChip } from "@/components/StatusChip";
+import { useTheme } from "@/contexts/ThemeContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -30,6 +38,7 @@ const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
 
 export default function WheelApp() {
   const { user, loading, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [, navigate] = useLocation();
   const params = useParams<{ wheelId?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("wheel");
@@ -331,6 +340,7 @@ export default function WheelApp() {
   if (!user) return null;
 
   const isOwner = wheelData?.ownerId === user.id;
+  const defaultWheel = wheels?.find((w) => w.id === user.defaultWheelId);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
@@ -356,29 +366,50 @@ export default function WheelApp() {
         </div>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
-          {user.name && (
-            <span
-              className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground px-3 py-1.5 rounded-full"
-              style={{ background: "var(--card)", border: "1px solid var(--border)" }}
-            >
-              <span
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="Account menu"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-transform active:scale-90 hover:brightness-110"
                 style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
-                {user.name.charAt(0).toUpperCase()}
-              </span>
-              {user.name}
-            </span>
-          )}
-          <button
-            onClick={() => logout().then(() => navigate("/"))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground transition-all duration-200 hover:bg-white/5 active:scale-95"
-            style={{ fontFamily: "var(--font-display)", letterSpacing: "0.05em" }}
-          >
-            <LogOut size={12} />
-            <span className="hidden sm:block">SIGN OUT</span>
-          </button>
+                {user.name?.charAt(0).toUpperCase() ?? "?"}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="glass border-border/50 w-56">
+              <DropdownMenuLabel className="flex flex-col gap-0.5">
+                <span className="text-sm font-semibold truncate">{user.name || "-"}</span>
+                <span className="text-xs text-muted-foreground font-normal truncate">{user.email || "-"}</span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {defaultWheel ? (
+                <DropdownMenuItem onClick={() => { setSelectedWheelId(defaultWheel.id); navigate(`/app/${defaultWheel.id}`); }} className="gap-2.5">
+                  <Star size={14} fill="var(--brand)" style={{ color: "var(--brand)" }} />
+                  <span className="flex flex-col">
+                    <span>Default wheel</span>
+                    <span className="text-xs text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
+                  </span>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem disabled className="gap-2.5">
+                  <Star size={14} />
+                  <span className="text-xs">No default wheel — star one in the sidebar</span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={toggleTheme} className="gap-2.5">
+                {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+                {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => logout().then(() => navigate("/"))}
+                variant="destructive"
+                className="gap-2.5"
+              >
+                <LogOut size={14} /> Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
