@@ -9,7 +9,7 @@ import { maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
 // here should no-op cleanly rather than throw.
 describe("distance mode graceful degradation (no DB configured)", () => {
   it("recomputeWheelDistances no-ops when the wheel can't be loaded", async () => {
-    await expect(recomputeWheelDistances(999)).resolves.toEqual({ computed: 0, unlocatable: 0 });
+    await expect(recomputeWheelDistances(999)).resolves.toEqual({ computed: 0, unlocatable: 0, matrixFailed: false });
   });
 
   it("maybeComputeOneDistance resolves without throwing", async () => {

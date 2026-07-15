@@ -226,7 +226,9 @@ export const appRouter = router({
           originLabel: input.originLabel ?? wheel.originLabel ?? "Office",
         });
 
-        const result = input.enabled ? await recomputeWheelDistances(input.id) : { computed: 0, unlocatable: 0 };
+        const result = input.enabled
+          ? await recomputeWheelDistances(input.id)
+          : { computed: 0, unlocatable: 0, matrixFailed: false };
         return { success: true, ...result };
       }),
 

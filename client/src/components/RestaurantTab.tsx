@@ -118,6 +118,15 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const recomputeDistances = trpc.wheels.recomputeDistances.useMutation({
     onSuccess: (res) => {
       invalidate();
+      // matrixFailed means the Distance Matrix API call itself errored (most
+      // often: Distance Matrix API isn't enabled on GOOGLE_MAPS_API_KEY — a
+      // separate toggle from the Places API that powers "Look up"/nearby
+      // search). Surface it clearly instead of a blanket success toast that
+      // would otherwise look identical to "nothing needed updating".
+      if (res.matrixFailed) {
+        toast.error("Couldn't reach the Distance Matrix service — check it's enabled on the server's Google Maps API key.");
+        return;
+      }
       toast.success(`Distances updated — ${res.computed} located${res.unlocatable ? `, ${res.unlocatable} skipped` : ""}`);
     },
     onError: (e) => toast.error(e.message),

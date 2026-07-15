@@ -2009,7 +2009,7 @@ async function activeOrigin(wheelId) {
 }
 async function recomputeWheelDistances(wheelId) {
   const origin = await activeOrigin(wheelId);
-  if (!origin) return { computed: 0, unlocatable: 0 };
+  if (!origin) return { computed: 0, unlocatable: 0, matrixFailed: false };
   const restaurants2 = await getRestaurantsByWheel(wheelId);
   const { ready, needsGeocode, unlocatable } = partitionForDistance(restaurants2);
   for (const r of needsGeocode) {
@@ -2021,7 +2021,8 @@ async function recomputeWheelDistances(wheelId) {
       } else {
         unlocatable.push(r.id);
       }
-    } catch {
+    } catch (error) {
+      console.error(`[distance] geocode failed for restaurant ${r.id}:`, error instanceof Error ? error.message : error);
       unlocatable.push(r.id);
     }
   }
@@ -2029,6 +2030,7 @@ async function recomputeWheelDistances(wheelId) {
     await setRestaurantWalkSeconds(id, null);
   }
   let computed = 0;
+  let matrixFailed = false;
   for (const batch of chunk(ready, MATRIX_CHUNK_SIZE)) {
     try {
       const elements = await walkingMatrix(origin, batch.map((r) => `${r.lat},${r.lng}`));
@@ -2037,10 +2039,12 @@ async function recomputeWheelDistances(wheelId) {
         await setRestaurantWalkSeconds(batch[i].id, seconds[i] ?? null);
         if (seconds[i] != null) computed++;
       }
-    } catch {
+    } catch (error) {
+      console.error(`[distance] walkingMatrix failed for wheel ${wheelId} (${batch.length} destinations):`, error instanceof Error ? error.message : error);
+      matrixFailed = true;
     }
   }
-  return { computed, unlocatable: unlocatable.length };
+  return { computed, unlocatable: unlocatable.length, matrixFailed };
 }
 async function maybeComputeOneDistance(wheelId, restaurantId) {
   const origin = await activeOrigin(wheelId);
@@ -2056,7 +2060,8 @@ async function maybeComputeOneDistance(wheelId, restaurantId) {
         await setRestaurantCoords(restaurantId, place.lat, place.lng, place.address);
         target = { id: restaurantId, lat: place.lat, lng: place.lng };
       }
-    } catch {
+    } catch (error) {
+      console.error(`[distance] geocode failed for restaurant ${restaurantId}:`, error instanceof Error ? error.message : error);
     }
   }
   if (!target) return;
@@ -2064,7 +2069,8 @@ async function maybeComputeOneDistance(wheelId, restaurantId) {
     const elements = await walkingMatrix(origin, [`${target.lat},${target.lng}`]);
     const [seconds] = extractWalkSeconds(elements);
     await setRestaurantWalkSeconds(restaurantId, seconds ?? null);
-  } catch {
+  } catch (error) {
+    console.error(`[distance] walkingMatrix failed for restaurant ${restaurantId}:`, error instanceof Error ? error.message : error);
   }
 }
 
@@ -2193,7 +2199,7 @@ var appRouter = router({
         originLng: lng,
         originLabel: input.originLabel ?? wheel.originLabel ?? "Office"
       });
-      const result = input.enabled ? await recomputeWheelDistances(input.id) : { computed: 0, unlocatable: 0 };
+      const result = input.enabled ? await recomputeWheelDistances(input.id) : { computed: 0, unlocatable: 0, matrixFailed: false };
       return { success: true, ...result };
     }),
     // Manual re-run for the "Recompute" button — same computation as saving a

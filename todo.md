@@ -343,3 +343,30 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        "match/total" count folding in both filter kinds, "Clear all" resets both.
        WheelApp.tsx and RestaurantTab.tsx each keep their own maxWalkMinutes state and
        compose filterRestaurantsByTags + filterRestaurantsByDistance independently.
+
+4. [~] "Recompute" button on the Restaurants tab's distance bar does nothing.
+       DIAGNOSED via live Vercel logs (not guessed): POST /api/trpc/wheels.recomputeDistances
+       returns 200 with zero console output around it — the request succeeds, meaning
+       it's not auth/routing/DB; recomputeWheelDistances is silently no-op'ing. Root
+       cause: server/distance.ts wrapped the walkingMatrix() call in a bare try/catch
+       with no logging at all — if the Distance Matrix API call itself throws (most
+       likely: "Distance Matrix API" isn't enabled on GOOGLE_MAPS_API_KEY — a SEPARATE
+       toggle in Google Cloud Console from "Places API", which powers Look-up/nearby
+       search and evidently IS working), the failure vanished with no trace anywhere,
+       client or server, and the mutation still returned {success:true, computed:0} —
+       indistinguishable from "nothing needed updating".
+       DONE (observability + honest client feedback, ships regardless of root cause):
+       - console.error added to every catch in server/distance.ts (geocode + matrix
+         failures), so a repeat attempt will actually show up in Vercel logs.
+       - recomputeWheelDistances/maybeComputeOneDistance return a new matrixFailed
+         flag distinguishing "tried, Distance Matrix errored" from "nothing to compute".
+       - Client (RestaurantTab's Recompute button + WheelSelector's Save Settings) now
+         shows an explicit error — "Couldn't reach the Distance Matrix service — check
+         it's enabled on the server's Google Maps API key" — instead of a blanket
+         success toast when matrixFailed is true.
+       ⚠ STILL OPEN — needs the user to check: enable "Distance Matrix API" on the
+       GOOGLE_MAPS_API_KEY project in Google Cloud Console (APIs & Services → Library),
+       the same key Places API already runs on. This is an account-level toggle I can't
+       flip myself. Also matches the DEPLOY-GATE note already on item 4 above — this is
+       likely that exact gap, now with an actual error message pointing at it instead of
+       silent failure.

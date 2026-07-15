@@ -360,11 +360,19 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
       utils.wheels.get.invalidate();
       utils.restaurants.list.invalidate();
       setEditWheel(null);
-      toast.success(
-        editWheel.distanceEnabled && (distanceRes.computed || distanceRes.unlocatable)
-          ? `Wheel settings saved — ${distanceRes.computed} located${distanceRes.unlocatable ? `, ${distanceRes.unlocatable} skipped` : ""}`
-          : "Wheel settings saved",
-      );
+      // The settings themselves saved fine even if the distance computation
+      // failed — that's a separate, retriable step (Restaurants tab's
+      // Recompute button), so still close the dialog, just warn instead of
+      // claiming success on the part that didn't work.
+      if (editWheel.distanceEnabled && distanceRes.matrixFailed) {
+        toast.error("Settings saved, but couldn't reach the Distance Matrix service — check it's enabled on the server's Google Maps API key.");
+      } else {
+        toast.success(
+          editWheel.distanceEnabled && (distanceRes.computed || distanceRes.unlocatable)
+            ? `Wheel settings saved — ${distanceRes.computed} located${distanceRes.unlocatable ? `, ${distanceRes.unlocatable} skipped` : ""}`
+            : "Wheel settings saved",
+        );
+      }
     } catch {
       // The failing mutation's own onError already set the inline message
       // (updateError or originError) — dialog stays open, nothing is lost.
