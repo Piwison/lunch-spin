@@ -370,3 +370,24 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        flip myself. Also matches the DEPLOY-GATE note already on item 4 above — this is
        likely that exact gap, now with an actual error message pointing at it instead of
        silent failure.
+       CONFIRMED (2026-07-15, screenshot): the ADD NEARBY list shows every result as
+       "~N min walk" — the "~" prefix is formatWalk(..., walkSource !== "route"), i.e.
+       ALL haversine estimates, zero routed times. searchNearby falls back to estimates
+       in its `catch` when walkingMatrix throws. So the nearby distances are NOT evidence
+       Distance Matrix works — they're the FALLBACK, and their being all-"~" is positive
+       confirmation Distance Matrix API is off. Places API (Look-up/nearby search itself)
+       is a different key toggle and clearly works. Fix remains: enable Distance Matrix API.
+
+5. [x] Office origin "doesn't show what I saved" on reopen (screenshot: green "Location
+       set — saved when you save settings below", empty link field, no address/title).
+       NOT a persistence bug — the green line only renders when originLat loaded from the
+       DB, so it WAS saving; the copy "saved when you save settings below" read as
+       pending, and nothing showed WHAT was stored. DONE (client-only, no schema change):
+       the status line now distinguishes an already-persisted origin ("<Label> location
+       saved", compared against the wheels-list row) from one set-this-session-but-unsaved
+       ("New location ready — press Save Settings to apply"), adds a "view on map" link
+       (opens the stored coords in Google Maps so the owner can verify the actual place),
+       and a "Paste a new link or use your location to change it" hint. NOTE: we store
+       originLat/originLng/originLabel but NOT the address/place name — showing the actual
+       pasted title/address would need an originAddress column (migration, apply-to-prod-
+       first given the Round-9 outage); offered as a follow-up, not done here.

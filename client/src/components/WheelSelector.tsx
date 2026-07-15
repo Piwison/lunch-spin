@@ -740,12 +740,41 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                     <Button type="button" variant="outline" onClick={locateOrigin} disabled={locatingOrigin} className="gap-2">
                       <Navigation size={14} /> {locatingOrigin ? "Locating…" : "Use my current location"}
                     </Button>
-                    <p className="text-xs flex items-center gap-1.5" style={{ color: editWheel.originLat != null ? "var(--ok)" : "var(--muted-foreground)" }}>
-                      <MapPin size={12} className="flex-shrink-0" />
-                      {editWheel.originLat != null && editWheel.originLng != null
-                        ? "Location set — saved when you save settings below"
-                        : "No location set yet — paste a link or use your location"}
-                    </p>
+                    {(() => {
+                      // Distinguish an origin already persisted in the DB (loaded
+                      // on open — reassures the owner it really did save last time)
+                      // from one just set this session and still pending Save. The
+                      // old copy said "saved when you save settings below" for both,
+                      // which read as "not saved yet" even for a stored origin.
+                      const saved = wheels?.find((w) => w.id === editWheel.id);
+                      const savedLat = saved?.originLat != null ? Number(saved.originLat) : null;
+                      const savedLng = saved?.originLng != null ? Number(saved.originLng) : null;
+                      const hasOrigin = editWheel.originLat != null && editWheel.originLng != null;
+                      if (!hasOrigin) {
+                        return (
+                          <p className="text-xs flex items-center gap-1.5 text-muted-foreground">
+                            <MapPin size={12} className="flex-shrink-0" />
+                            No location set yet — paste a link or use your location
+                          </p>
+                        );
+                      }
+                      const isPersisted = editWheel.originLat === savedLat && editWheel.originLng === savedLng;
+                      const mapHref = `https://www.google.com/maps/search/?api=1&query=${editWheel.originLat},${editWheel.originLng}`;
+                      return (
+                        <div className="flex flex-col gap-0.5">
+                          <p className="text-xs flex items-center flex-wrap gap-x-1.5 gap-y-0.5" style={{ color: "var(--ok)" }}>
+                            <MapPin size={12} className="flex-shrink-0" />
+                            {isPersisted
+                              ? `${editWheel.originLabel.trim() || "Office"} location saved`
+                              : "New location ready — press Save Settings to apply"}
+                            <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline" style={{ color: "var(--ok)" }}>
+                              view on map
+                            </a>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">Paste a new link or use your location to change it.</p>
+                        </div>
+                      );
+                    })()}
                   </>
                 )}
               </div>
