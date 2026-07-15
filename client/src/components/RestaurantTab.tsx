@@ -16,6 +16,29 @@ import NearbyDialog from "@/components/NearbyDialog";
 const looksLikeMapLink = (s: string) =>
   /(google\.[a-z.]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/)/i.test(s.trim());
 
+// The predefined catalog is large (15 cuisines, 16 food types) — the add form
+// shows only these curated 5 per category up front, with a "More" expander for
+// the rest, so it doesn't read as a wall of chips. Custom tags a wheel has
+// actually created stay uncapped (there are usually few).
+const CURATED_CUISINE = ["Japanese", "Chinese", "Italian", "Thai", "Korean"];
+const CURATED_FOOD_TYPE = ["Pizza", "Burgers", "Noodles", "Salad", "Sandwiches"];
+
+type TagCategory = "cuisine" | "food_type" | "custom";
+const TAG_CATEGORY_OPTIONS: { value: TagCategory; label: string }[] = [
+  { value: "cuisine", label: "Cuisine" },
+  { value: "food_type", label: "Food Type" },
+  { value: "custom", label: "Custom" },
+];
+
+/** Curated-first ordering: named presets in their given order, then whatever's left. */
+function splitCurated<T extends { name: string }>(items: T[], curatedNames: string[]) {
+  const byName = new Map(items.map((t) => [t.name, t]));
+  const curated = curatedNames.map((n) => byName.get(n)).filter((t): t is T => !!t);
+  const curatedIds = new Set(curated.map((t) => t.name));
+  const rest = items.filter((t) => !curatedIds.has(t.name));
+  return { curated, rest };
+}
+
 interface RestaurantTabProps {
   wheelId: number;
   isOwner: boolean;
@@ -36,7 +59,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<RestaurantForm>(EMPTY_FORM);
   const [newTagName, setNewTagName] = useState("");
+  const [newTagCategory, setNewTagCategory] = useState<TagCategory>("custom");
   const [showTagCreate, setShowTagCreate] = useState(false);
+  const [showAllCuisine, setShowAllCuisine] = useState(false);
+  const [showAllFoodType, setShowAllFoodType] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showNearby, setShowNearby] = useState(false);
   const [importText, setImportText] = useState("");
@@ -79,7 +105,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
     onError: (e) => toast.error(e.message),
   });
   const createTag = trpc.tags.createCustom.useMutation({
-    onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setShowTagCreate(false); setTagError(null); toast.success("Tag created!"); },
+    onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setNewTagCategory("custom"); setShowTagCreate(false); setTagError(null); toast.success("Tag created!"); },
     onError: (e) => setTagError(e.message),
   });
 
@@ -153,44 +179,71 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
     }
   };
 
-  const TagSelector = () => (
-    <div className="flex flex-col gap-2">
-      {[{ label: "Cuisine", items: cuisineTags }, { label: "Food Type", items: foodTypeTags }, { label: "Custom", items: customTags }].map(({ label, items }) =>
-        items.length > 0 ? (
-          <div key={label}>
-            <p className="text-xs text-muted-foreground mb-1.5 tracking-widest" style={{ fontFamily: "var(--font-display)" }}>{label.toUpperCase()}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {items.map((tag) => {
-                const isActive = form.tagIds.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleFormTag(tag.id)}
-                    className="px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150"
-                    style={{
-                      background: isActive ? tag.color + "33" : "var(--muted)",
-                      border: `1px solid ${isActive ? tag.color : "var(--border)"}`,
-                      color: isActive ? tag.color : "var(--muted-foreground)",
-                    }}
-                  >
-                    {tag.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : null
-      )}
+  const TagChip = ({ tag }: { tag: { id: number; name: string; color: string } }) => {
+    const isActive = form.tagIds.includes(tag.id);
+    return (
       <button
         type="button"
-        onClick={() => setShowTagCreate(true)}
-        className="self-start flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
+        onClick={() => toggleFormTag(tag.id)}
+        className="px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150"
+        style={{
+          background: isActive ? tag.color + "33" : "var(--muted)",
+          border: `1px solid ${isActive ? tag.color : "var(--border)"}`,
+          color: isActive ? tag.color : "var(--muted-foreground)",
+        }}
       >
-        <Plus size={12} /> Create custom tag
+        {tag.name}
       </button>
-    </div>
-  );
+    );
+  };
+
+  const TagSelector = () => {
+    const cuisineSplit = splitCurated(cuisineTags, CURATED_CUISINE);
+    const foodTypeSplit = splitCurated(foodTypeTags, CURATED_FOOD_TYPE);
+    const groups: {
+      label: string;
+      curated: typeof cuisineTags;
+      rest: typeof cuisineTags;
+      showAll: boolean;
+      setShowAll: (v: boolean) => void;
+    }[] = [
+      { label: "Cuisine", ...cuisineSplit, showAll: showAllCuisine, setShowAll: setShowAllCuisine },
+      { label: "Food Type", ...foodTypeSplit, showAll: showAllFoodType, setShowAll: setShowAllFoodType },
+      { label: "Custom", curated: customTags, rest: [], showAll: false, setShowAll: () => {} },
+    ];
+    return (
+      <div className="flex flex-col gap-2">
+        {groups.map(({ label, curated, rest, showAll, setShowAll }) =>
+          curated.length > 0 || rest.length > 0 ? (
+            <div key={label}>
+              <p className="text-xs text-muted-foreground mb-1.5 tracking-widest" style={{ fontFamily: "var(--font-display)" }}>{label.toUpperCase()}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {curated.map((tag) => <TagChip key={tag.id} tag={tag} />)}
+                {showAll && rest.map((tag) => <TagChip key={tag.id} tag={tag} />)}
+                {rest.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll(!showAll)}
+                    className="px-2.5 py-1 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground transition-colors duration-150"
+                    style={{ border: "1px dashed var(--border)" }}
+                  >
+                    {showAll ? "Show less" : `+${rest.length} more`}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null
+        )}
+        <button
+          type="button"
+          onClick={() => setShowTagCreate(true)}
+          className="self-start flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
+        >
+          <Plus size={12} /> Create tag
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="p-4 md:p-6 flex flex-col gap-4 max-w-2xl mx-auto w-full">
@@ -582,24 +635,40 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         onAdded={invalidate}
       />
 
-      {/* Custom tag creation dialog */}
+      {/* Tag creation dialog — user picks which category the new tag joins */}
       <Dialog open={showTagCreate} onOpenChange={setShowTagCreate}>
         <DialogContent className="glass border-border/50 max-w-sm">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>CREATE CUSTOM TAG</DialogTitle>
+            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>CREATE TAG</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 pt-2">
+            <div className="flex gap-1.5">
+              {TAG_CATEGORY_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setNewTagCategory(value)}
+                  className="flex-1 px-2 py-1.5 rounded-full text-xs font-medium transition-all duration-150"
+                  style={{
+                    background: newTagCategory === value ? "var(--brand)" : "var(--muted)",
+                    color: newTagCategory === value ? "white" : "var(--muted-foreground)",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2">
               <Input
                 placeholder="Tag name"
                 value={newTagName}
                 onChange={(e) => { setNewTagName(e.target.value); setTagError(null); }}
-                onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { setTagError(null); createTag.mutate({ name: newTagName.trim(), wheelId }); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { setTagError(null); createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); } }}
                 className="bg-secondary/50 border-border/50"
                 autoFocus
               />
               <Button
-                onClick={() => { setTagError(null); newTagName.trim() && createTag.mutate({ name: newTagName.trim(), wheelId }); }}
+                onClick={() => { setTagError(null); newTagName.trim() && createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); }}
                 disabled={!newTagName.trim() || createTag.isPending}
                 size="icon"
                 className="transition-all duration-200 active:scale-90 flex-shrink-0"

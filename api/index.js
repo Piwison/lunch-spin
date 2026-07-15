@@ -330,12 +330,12 @@ async function getTagsForWheel(wheelId) {
   if (!db) return [];
   return db.select().from(tags).where(or(isNull(tags.wheelId), eq(tags.wheelId, wheelId)));
 }
-async function createCustomTag(name, createdBy, wheelId) {
+async function createCustomTag(name, createdBy, wheelId, category = "custom") {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const colors = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const result = await db.insert(tags).values({ name, category: "custom", color, createdBy, wheelId });
+  const result = await db.insert(tags).values({ name, category, color, createdBy, wheelId });
   return result[0].insertId;
 }
 async function getRestaurantsByWheel(wheelId) {
@@ -2022,10 +2022,14 @@ var appRouter = router({
       if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
       return getTagsForWheel(input.wheelId);
     }),
-    createCustom: protectedProcedure.input(z3.object({ name: z3.string().min(1).max(64), wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+    createCustom: protectedProcedure.input(z3.object({
+      name: z3.string().min(1).max(64),
+      wheelId: z3.number(),
+      category: z3.enum(["cuisine", "food_type", "custom"]).default("custom")
+    })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const id = await createCustomTag(input.name, ctx.user.id, input.wheelId);
+      const id = await createCustomTag(input.name, ctx.user.id, input.wheelId, input.category);
       return { id };
     })
   }),

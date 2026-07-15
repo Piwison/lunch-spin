@@ -1,5 +1,4 @@
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
-import ThemeToggle from "@/components/ThemeToggle";
 import { getLoginUrl } from "@/const";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
@@ -322,13 +321,12 @@ export default function GuestWheel() {
   );
 }
 
-/** Page chrome: warm background, centered content, theme toggle. */
+/** Page chrome: warm background, centered content. Always light — see App.tsx's
+ *  route-locked ThemeProvider (a shared link should look the same for every
+ *  visitor, not follow their OS/localStorage preference). */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh flex items-center justify-center bg-background text-foreground">
-      <div className="fixed top-3 right-3 z-30">
-        <ThemeToggle />
-      </div>
       {children}
     </div>
   );

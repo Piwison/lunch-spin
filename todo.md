@@ -146,9 +146,11 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        persists on the live DB (known failure mode #2: migrations generated≠applied),
        and that both invitee AND owner rosters refresh (wheels.get isn't polled — likely
        a missing invalidate/refetch after join on both sides). Fix root cause, one guard.
-2. [ ] Shared/guest views default to LIGHT mode.
+2. [x] Shared/guest views default to LIGHT mode.
        DECISION: force light ONLY on /w/ (GuestWheel) and /join (JoinWheel) — ignore
        OS/localStorage on those routes. Logged-in app keeps light-default + working toggle.
+       DONE: App.tsx keys ThemeProvider on route (switchable=false, defaultTheme="light"
+       for /w/ and /join/); removed GuestWheel's ThemeToggle so there's no dark option there.
 3. [ ] Replace top-right SIGN OUT button with a profile AVATAR → dropdown.
        Where: WheelApp.tsx header (:357-381). Menu items (v1): name+email header,
        Default wheel (#5), Theme toggle (MOVED off header into menu), Sign out.
@@ -184,17 +186,24 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
        on each wheel row in WheelSelector to set it; profile menu shows current default.
        WheelApp auto-open (:118-124) uses defaultWheelId, falls back to wheels[0].
-6. [ ] Add-restaurant tags: fewer presets + user-extensible per category.
+6. [x] Add-restaurant tags: fewer presets + user-extensible per category.
        Where: RestaurantTab.tsx TagSelector (:156).
        DECISIONS: show a CURATED 5 presets per category (Cuisine + Food Type) with a
        "More" expander revealing the rest (nothing removed). "Create tag" flow lets the
        user pick the category (Cuisine / Food Type / Custom) — createCustom must accept a
        category param so the new tag lands under that heading.
-7. [ ] Notification chips too long → duration: 3000 on the Toaster in App.tsx
+       DONE: curated 5/5 (Japanese/Chinese/Italian/Thai/Korean,
+       Pizza/Burgers/Noodles/Salad/Sandwiches) + "+N more" toggle; create-tag dialog has a
+       Cuisine/Food Type/Custom picker; createCustomTag (db.ts) + tags.createCustom
+       (routers.ts) take a category param (default "custom").
+7. [x] Notification chips too long → duration: 3000 on the Toaster in App.tsx
        (ThemedToaster toastOptions). Applies to ALL toasts.
-8. [ ] Spin takes too long → users lose patience. Make it SNAPPIER, ~3s total,
+       DONE.
+8. [x] Spin takes too long → users lose patience. Make it SNAPPIER, ~3s total,
        still a smooth stop (no lurch — keep the velocity-matched hand-off).
        Where: SpinWheel.tsx — reduce MIN_LAND_ROTATIONS (4) and the derived landDuration
        so the deceleration is ~2s (total ~3s with typical server latency); keep the
        free-spin→land velocity match. (Free-spin can't be hard-capped without the winner,
        but the landing is the main lever.)
+       DONE: MIN_LAND_ROTATIONS 4→2 (landing now ~1.6-2.4s; velocity-match formula is
+       rotation-count-invariant so the no-lurch guarantee still holds).

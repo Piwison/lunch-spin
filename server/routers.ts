@@ -212,11 +212,15 @@ export const appRouter = router({
       }),
 
     createCustom: protectedProcedure
-      .input(z.object({ name: z.string().min(1).max(64), wheelId: z.number() }))
+      .input(z.object({
+        name: z.string().min(1).max(64),
+        wheelId: z.number(),
+        category: z.enum(["cuisine", "food_type", "custom"]).default("custom"),
+      }))
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const id = await createCustomTag(input.name, ctx.user.id, input.wheelId);
+        const id = await createCustomTag(input.name, ctx.user.id, input.wheelId, input.category);
         return { id };
       }),
   }),

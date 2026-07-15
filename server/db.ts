@@ -193,13 +193,18 @@ export async function getTagsForWheel(wheelId: number) {
     .where(or(isNull(tags.wheelId), eq(tags.wheelId, wheelId)));
 }
 
-export async function createCustomTag(name: string, createdBy: number, wheelId: number) {
+export async function createCustomTag(
+  name: string,
+  createdBy: number,
+  wheelId: number,
+  category: "cuisine" | "food_type" | "custom" = "custom",
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Assign a color from a palette based on name hash
   const colors = ["#f43f5e","#fb923c","#facc15","#4ade80","#22d3ee","#818cf8","#e879f9","#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const result = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy, wheelId });
+  const result = await db.insert(tags).values({ name, category, color: color!, createdBy, wheelId });
   return (result as any)[0].insertId as number;
 }
 
