@@ -35,7 +35,9 @@ var users = mysqlTable("users", {
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  // Wheel auto-opened on entry when set; null = fall back to the first wheel.
+  defaultWheelId: int("defaultWheelId")
 });
 var wheels = mysqlTable("wheels", {
   id: int("id").autoincrement().primaryKey(),
@@ -50,6 +52,13 @@ var wheels = mysqlTable("wheels", {
   fairnessMode: boolean("fairnessMode").default(false).notNull(),
   // Rotate cuisines: damp recently-picked cuisines, boost neglected ones.
   rotateCuisines: boolean("rotateCuisines").default(false).notNull(),
+  // Distance mode: one shared origin ("Office / meeting point" on shared
+  // wheels), off by default and fully optional. Walking time to each
+  // restaurant is computed from this point, not per-member.
+  distanceEnabled: boolean("distanceEnabled").default(false).notNull(),
+  originLat: decimal("originLat", { precision: 9, scale: 6 }),
+  originLng: decimal("originLng", { precision: 9, scale: 6 }),
+  originLabel: varchar("originLabel", { length: 64 }).default("Office"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 });
@@ -93,6 +102,11 @@ var restaurants = mysqlTable("restaurants", {
   openHours: json("openHours"),
   // raw provider hours; open-now is a hint, not a hard filter
   source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
+  // Walking seconds from the wheel's distance-mode origin (shared/wheelDistance.ts,
+  // server/distance.ts); null = distance mode is off, not yet computed, or this
+  // restaurant has no resolvable location. Same value for every member — the
+  // origin is per-wheel, not per-user.
+  walkSeconds: int("walkSeconds"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 });
@@ -255,6 +269,11 @@ async function getUserById(id) {
   const result = await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(eq(users.id, id)).limit(1);
   return result[0];
 }
+async function setUserDefaultWheel(userId, wheelId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ defaultWheelId: wheelId }).where(eq(users.id, userId));
+}
 async function createWheel(ownerId, name, isShared, isPublic, inviteToken, exclusionDays = DEFAULT_EXCLUSION_DAYS, fairnessMode = false, rotateCuisines = false) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -299,6 +318,16 @@ async function updateWheel(id, data) {
   if (!db) throw new Error("DB unavailable");
   await db.update(wheels).set(data).where(eq(wheels.id, id));
 }
+async function setWheelOrigin(id, data) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(wheels).set({
+    distanceEnabled: data.distanceEnabled,
+    originLat: data.originLat == null ? null : String(data.originLat),
+    originLng: data.originLng == null ? null : String(data.originLng),
+    originLabel: data.originLabel
+  }).where(eq(wheels.id, id));
+}
 async function deleteWheel(id) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -330,12 +359,12 @@ async function getTagsForWheel(wheelId) {
   if (!db) return [];
   return db.select().from(tags).where(or(isNull(tags.wheelId), eq(tags.wheelId, wheelId)));
 }
-async function createCustomTag(name, createdBy, wheelId) {
+async function createCustomTag(name, createdBy, wheelId, category = "custom") {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const colors = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const result = await db.insert(tags).values({ name, category: "custom", color, createdBy, wheelId });
+  const result = await db.insert(tags).values({ name, category, color, createdBy, wheelId });
   return result[0].insertId;
 }
 async function getRestaurantsByWheel(wheelId) {
@@ -409,6 +438,16 @@ async function deleteRestaurant(id) {
   if (!db) throw new Error("DB unavailable");
   await db.delete(restaurantTags).where(eq(restaurantTags.restaurantId, id));
   await db.delete(restaurants).where(eq(restaurants.id, id));
+}
+async function setRestaurantCoords(id, lat, lng, address) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(restaurants).set({ lat: String(lat), lng: String(lng), address: address ?? void 0 }).where(eq(restaurants.id, id));
+}
+async function setRestaurantWalkSeconds(id, walkSeconds) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(restaurants).set({ walkSeconds }).where(eq(restaurants.id, id));
 }
 var TAG_PALETTE = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
 async function importWheelData(ownerId, data) {
@@ -920,7 +959,16 @@ function mapGoogleClaims(claims, expectedAud, nowSeconds) {
 var SCOPES = ["openid", "profile", "email"];
 var STATE_COOKIE = "g_oauth_state";
 var VERIFIER_COOKIE = "g_oauth_verifier";
+var REDIRECT_COOKIE = "g_oauth_redirect";
 var TEMP_MAX_AGE_MS = 10 * 60 * 1e3;
+function safeRedirectPath(raw) {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\")) return raw;
+  return "/";
+}
+function getQueryParam2(req, key) {
+  const value = req.query[key];
+  return typeof value === "string" ? value : void 0;
+}
 var isConfigured = () => Boolean(ENV.googleClientId && ENV.googleClientSecret);
 function notReady(res) {
   if (!isConfigured()) {
@@ -953,12 +1001,16 @@ var googleClient = (req) => new Google(ENV.googleClientId, ENV.googleClientSecre
 function clearTempCookies(res) {
   res.clearCookie(STATE_COOKIE, { path: "/" });
   res.clearCookie(VERIFIER_COOKIE, { path: "/" });
+  res.clearCookie(REDIRECT_COOKIE, { path: "/" });
 }
 function registerGoogleAuthRoutes(app2) {
   app2.get("/api/auth/google/login", (req, res) => {
     if (notReady(res)) return;
+    const redirectTo = safeRedirectPath(getQueryParam2(req, "redirect"));
     if (ENV.appOrigin && requestOrigin(req) !== stripSlash(ENV.appOrigin)) {
-      res.redirect(302, `${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      const bounce = new URL(`${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      if (redirectTo !== "/") bounce.searchParams.set("redirect", redirectTo);
+      res.redirect(302, bounce.toString());
       return;
     }
     const state = generateState();
@@ -968,6 +1020,7 @@ function registerGoogleAuthRoutes(app2) {
     const tempOpts = { httpOnly: true, path: "/", maxAge: TEMP_MAX_AGE_MS, sameSite: "lax", secure };
     res.cookie(STATE_COOKIE, state, tempOpts);
     res.cookie(VERIFIER_COOKIE, codeVerifier, tempOpts);
+    if (redirectTo !== "/") res.cookie(REDIRECT_COOKIE, redirectTo, tempOpts);
     res.redirect(302, url.toString());
   });
   app2.get("/api/auth/google/callback", async (req, res) => {
@@ -977,6 +1030,7 @@ function registerGoogleAuthRoutes(app2) {
     const cookies = parseCookie(req.headers.cookie ?? "");
     const storedState = cookies[STATE_COOKIE];
     const codeVerifier = cookies[VERIFIER_COOKIE];
+    const redirectTo = safeRedirectPath(cookies[REDIRECT_COOKIE]);
     if (typeof code !== "string" || typeof stateParam !== "string" || !storedState || !codeVerifier || stateParam !== storedState) {
       console.error("[GoogleAuth] state check failed:", {
         hasCode: typeof code === "string",
@@ -1008,7 +1062,7 @@ function registerGoogleAuthRoutes(app2) {
       });
       clearTempCookies(res);
       res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
-      res.redirect(302, "/");
+      res.redirect(302, redirectTo);
     } catch (error) {
       clearTempCookies(res);
       console.error("[GoogleAuth] callback failed:", error instanceof Error ? error.message : "unknown error");
@@ -1911,6 +1965,109 @@ async function resolvePlaceLink(rawUrl) {
   return null;
 }
 
+// shared/wheelDistance.ts
+function toNum(v) {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+function partitionForDistance(restaurants2) {
+  const ready = [];
+  const needsGeocode = [];
+  const unlocatable = [];
+  for (const r of restaurants2) {
+    const lat = toNum(r.lat);
+    const lng = toNum(r.lng);
+    if (lat != null && lng != null) {
+      ready.push({ id: r.id, lat, lng });
+    } else if (r.mapUrl) {
+      needsGeocode.push({ id: r.id, mapUrl: r.mapUrl });
+    } else {
+      unlocatable.push(r.id);
+    }
+  }
+  return { ready, needsGeocode, unlocatable };
+}
+function chunk(items, size) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+function extractWalkSeconds(elements) {
+  return elements.map(
+    (el) => el?.status === "OK" && el.duration?.value != null ? el.duration.value : null
+  );
+}
+
+// server/distance.ts
+var MATRIX_CHUNK_SIZE = 25;
+async function activeOrigin(wheelId) {
+  const wheel = await getWheelById(wheelId);
+  if (!wheel || !wheel.distanceEnabled || wheel.originLat == null || wheel.originLng == null) return null;
+  if (!isPlacesConfigured()) return null;
+  return { lat: Number(wheel.originLat), lng: Number(wheel.originLng) };
+}
+async function recomputeWheelDistances(wheelId) {
+  const origin = await activeOrigin(wheelId);
+  if (!origin) return { computed: 0, unlocatable: 0 };
+  const restaurants2 = await getRestaurantsByWheel(wheelId);
+  const { ready, needsGeocode, unlocatable } = partitionForDistance(restaurants2);
+  for (const r of needsGeocode) {
+    try {
+      const place = await resolvePlaceLink(r.mapUrl);
+      if (place?.lat != null && place?.lng != null) {
+        await setRestaurantCoords(r.id, place.lat, place.lng, place.address);
+        ready.push({ id: r.id, lat: place.lat, lng: place.lng });
+      } else {
+        unlocatable.push(r.id);
+      }
+    } catch {
+      unlocatable.push(r.id);
+    }
+  }
+  for (const id of unlocatable) {
+    await setRestaurantWalkSeconds(id, null);
+  }
+  let computed = 0;
+  for (const batch of chunk(ready, MATRIX_CHUNK_SIZE)) {
+    try {
+      const elements = await walkingMatrix(origin, batch.map((r) => `${r.lat},${r.lng}`));
+      const seconds = extractWalkSeconds(elements);
+      for (let i = 0; i < batch.length; i++) {
+        await setRestaurantWalkSeconds(batch[i].id, seconds[i] ?? null);
+        if (seconds[i] != null) computed++;
+      }
+    } catch {
+    }
+  }
+  return { computed, unlocatable: unlocatable.length };
+}
+async function maybeComputeOneDistance(wheelId, restaurantId) {
+  const origin = await activeOrigin(wheelId);
+  if (!origin) return;
+  const restaurant = await getRestaurantById(restaurantId);
+  if (!restaurant) return;
+  const { ready, needsGeocode } = partitionForDistance([restaurant]);
+  let target = ready[0];
+  if (!target && needsGeocode[0]) {
+    try {
+      const place = await resolvePlaceLink(needsGeocode[0].mapUrl);
+      if (place?.lat != null && place?.lng != null) {
+        await setRestaurantCoords(restaurantId, place.lat, place.lng, place.address);
+        target = { id: restaurantId, lat: place.lat, lng: place.lng };
+      }
+    } catch {
+    }
+  }
+  if (!target) return;
+  try {
+    const elements = await walkingMatrix(origin, [`${target.lat},${target.lng}`]);
+    const [seconds] = extractWalkSeconds(elements);
+    await setRestaurantWalkSeconds(restaurantId, seconds ?? null);
+  } catch {
+  }
+}
+
 // server/routers.ts
 var PRESENCE_TTL_MS = 25e3;
 var appRouter = router({
@@ -1998,6 +2155,61 @@ var appRouter = router({
       await addWheelMember(wheel.id, ctx.user.id);
       return { wheelId: wheel.id, wheelName: wheel.name };
     }),
+    // Wheel auto-opened on entry. Pass null to unset (falls back to the first
+    // wheel again). Membership-gated so you can't default to a wheel you can't
+    // actually open.
+    setDefault: protectedProcedure.input(z3.object({ wheelId: z3.number().nullable() })).mutation(async ({ ctx, input }) => {
+      if (input.wheelId !== null) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      }
+      await setUserDefaultWheel(ctx.user.id, input.wheelId);
+      return { success: true };
+    }),
+    // Distance mode: one shared origin per wheel (owner-only — it's a wheel
+    // setting, same gate as `update`). Turning it on requires coordinates in
+    // this call or already stored on the wheel; the client resolves a pasted
+    // Maps link or geolocation into lat/lng before calling this. Saving a new
+    // origin recomputes every restaurant's walking time immediately so the
+    // owner sees results without a separate step.
+    setDistanceOrigin: protectedProcedure.input(z3.object({
+      id: z3.number(),
+      enabled: z3.boolean(),
+      originLat: z3.number().min(-90).max(90).nullable().optional(),
+      originLng: z3.number().min(-180).max(180).nullable().optional(),
+      originLabel: z3.string().min(1).max(64).optional()
+    })).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.id);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
+      const lat = input.originLat !== void 0 ? input.originLat : wheel.originLat != null ? Number(wheel.originLat) : null;
+      const lng = input.originLng !== void 0 ? input.originLng : wheel.originLng != null ? Number(wheel.originLng) : null;
+      if (input.enabled && (lat == null || lng == null)) {
+        throw new TRPCError3({ code: "BAD_REQUEST", message: "Set an origin location first." });
+      }
+      await setWheelOrigin(input.id, {
+        distanceEnabled: input.enabled,
+        originLat: lat,
+        originLng: lng,
+        originLabel: input.originLabel ?? wheel.originLabel ?? "Office"
+      });
+      const result = input.enabled ? await recomputeWheelDistances(input.id) : { computed: 0, unlocatable: 0 };
+      return { success: true, ...result };
+    }),
+    // Manual re-run for the "Recompute" button — same computation as saving a
+    // new origin, without changing it. Any member can trigger it (read-only
+    // with respect to wheel settings; it only refreshes restaurant rows).
+    recomputeDistances: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.id);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.id, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      if (!wheel.distanceEnabled) {
+        throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "Distance mode isn't on for this wheel." });
+      }
+      const result = await recomputeWheelDistances(input.id);
+      return { success: true, ...result };
+    }),
     // Portable JSON bundle of a wheel + its restaurants (no ids).
     export: protectedProcedure.input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
@@ -2022,10 +2234,14 @@ var appRouter = router({
       if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
       return getTagsForWheel(input.wheelId);
     }),
-    createCustom: protectedProcedure.input(z3.object({ name: z3.string().min(1).max(64), wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+    createCustom: protectedProcedure.input(z3.object({
+      name: z3.string().min(1).max(64),
+      wheelId: z3.number(),
+      category: z3.enum(["cuisine", "food_type", "custom"]).default("custom")
+    })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const id = await createCustomTag(input.name, ctx.user.id, input.wheelId);
+      const id = await createCustomTag(input.name, ctx.user.id, input.wheelId, input.category);
       return { id };
     })
   }),
@@ -2058,6 +2274,10 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
+      try {
+        await maybeComputeOneDistance(input.wheelId, id);
+      } catch {
+      }
       return { id };
     }),
     addBulk: protectedProcedure.input(z3.object({ wheelId: z3.number(), text: z3.string().max(1e4) })).mutation(async ({ ctx, input }) => {
@@ -2206,6 +2426,10 @@ var appRouter = router({
           cuisine: input.place.cuisine
         }
       );
+      try {
+        await maybeComputeOneDistance(input.wheelId, id);
+      } catch {
+      }
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
     }),
     // Resolve a pasted Google Maps link into a nameable place (Place Details /

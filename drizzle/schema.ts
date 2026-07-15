@@ -21,6 +21,8 @@ export const users = mysqlTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  // Wheel auto-opened on entry when set; null = fall back to the first wheel.
+  defaultWheelId: int("defaultWheelId"),
 });
 
 export type User = typeof users.$inferSelect;
@@ -41,6 +43,13 @@ export const wheels = mysqlTable("wheels", {
   fairnessMode: boolean("fairnessMode").default(false).notNull(),
   // Rotate cuisines: damp recently-picked cuisines, boost neglected ones.
   rotateCuisines: boolean("rotateCuisines").default(false).notNull(),
+  // Distance mode: one shared origin ("Office / meeting point" on shared
+  // wheels), off by default and fully optional. Walking time to each
+  // restaurant is computed from this point, not per-member.
+  distanceEnabled: boolean("distanceEnabled").default(false).notNull(),
+  originLat: decimal("originLat", { precision: 9, scale: 6 }),
+  originLng: decimal("originLng", { precision: 9, scale: 6 }),
+  originLabel: varchar("originLabel", { length: 64 }).default("Office"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -94,6 +103,11 @@ export const restaurants = mysqlTable("restaurants", {
   cuisine: varchar("cuisine", { length: 64 }),
   openHours: json("openHours"), // raw provider hours; open-now is a hint, not a hard filter
   source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
+  // Walking seconds from the wheel's distance-mode origin (shared/wheelDistance.ts,
+  // server/distance.ts); null = distance mode is off, not yet computed, or this
+  // restaurant has no resolvable location. Same value for every member — the
+  // origin is per-wheel, not per-user.
+  walkSeconds: int("walkSeconds"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

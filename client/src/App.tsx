@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense } from "react";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
@@ -51,6 +51,7 @@ function ThemedToaster() {
     <Toaster
       theme={theme}
       toastOptions={{
+        duration: 3000,
         style: {
           background: "var(--popover)",
           border: "1px solid var(--border)",
@@ -61,10 +62,21 @@ function ThemedToaster() {
   );
 }
 
+// Shared/guest links (a public wheel, a team invite) should render the same
+// for every visitor rather than following their OS/localStorage preference —
+// forced light, no toggle. Keying the provider on this switch (instead of
+// nesting a second one) means only one ThemeProvider ever touches the shared
+// <html> classList, so there's no race between an outer and inner instance.
+function isSharedRoute(path: string) {
+  return path.startsWith("/w/") || path.startsWith("/join/");
+}
+
 function App() {
+  const [location] = useLocation();
+  const locked = isSharedRoute(location);
   return (
     <ErrorBoundary>
-      <ThemeProvider>
+      <ThemeProvider key={locked ? "locked-light" : "normal"} defaultTheme="light" switchable={!locked}>
         <TooltipProvider>
           <ThemedToaster />
           <Router />

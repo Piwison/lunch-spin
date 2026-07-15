@@ -131,3 +131,136 @@
 - [x] HistoryTab: Smile/Meh/Frown control on own spins, read-only verdict on others'
 - [x] Verified: "never" rating → picked 0/90 in authoritative spin (bias real, not cosmetic)
 - [ ] DEPLOY-GATE: drizzle-kit migrate applies 0010 (nullable column, safe with old rows)
+
+## Round 9 — real-user testing (reported 2026-07-14; specs resolved via grill, NOT STARTED)
+
+Status: RECORDED + SPEC'D. Ready to implement; not yet started. Gate each with
+pnpm check && test && build, and rebuild api/index.js for any server/ or shared/ change.
+
+1. [x] Join broken — invitee opens the REAL invite link (/join/:token) but "joins,
+       nothing changes": not shown as a member / can't see the wheel.
+       THREE fixes shipped:
+       1. wheels.get (carries .members, read by WheelMembers/the owner's "Team" panel)
+          never refreshed after first load — someone joining wouldn't show up until a
+          manual page reload. Fixed: WheelApp.tsx now polls it every 3s once the wheel
+          is known shared (matches the existing session.state/spins.latest pattern).
+       2. JoinWheel.tsx's success handler never invalidated wheels.list — if the
+          invitee already had the app open earlier in the same browser session,
+          WheelSelector's sidebar would render its stale pre-join snapshot right after
+          the redirect. Fixed: invalidates wheels.list + wheels.get(id) on join success.
+       3. (Most likely THE real root cause) A NOT-yet-signed-in invitee clicking
+          "SIGN IN TO JOIN" would complete Google OAuth and land on "/" — never back on
+          /join/:token — so wheels.join was NEVER CALLED for a first-time invitee.
+          CORRECTION to the earlier note here: the culprit isn't server/_core/oauth.ts
+          (that route, /api/oauth/callback, is dead Manus-era code — getLoginUrl() never
+          points at it). The live handler is server/googleAuth.ts, which sits OUTSIDE
+          _core/ (same pattern as server/places.ts's own "deliberately lives outside the
+          guarded auth directory" comment) and is NOT one of AGENTS.md's Prohibited-#1
+          files — so this needed the user's go-ahead to fix (given), not a hard stop.
+          Fix: getLoginUrl(redirectTo?) now appends ?redirect=<path>; JoinWheel's sign-in
+          link passes `/join/:token`. googleAuth.ts carries it through the round-trip via
+          a new g_oauth_redirect cookie (same shape as the existing state/verifier temp
+          cookies) — preserved across the canonical-origin bounce too — and the callback
+          redirects there instead of a hardcoded "/". safeRedirectPath() (exported, unit
+          tested — server/googleAuth.test.ts, 9 cases) only allows a single-leading-slash
+          same-origin path, rejecting `//`, `/\`, and scheme-bearing values (open-redirect
+          guard) and defaulting to "/" on anything else. COOKIE_NAME / session-token
+          issuance / CSRF state-comparison logic untouched.
+       Still unresolved: whether the wheel_members row actually persists on the LIVE DB
+       (known failure mode #2 — migrations generated≠applied) can't be verified from this
+       sandbox (no DATABASE_URL). Live smoke-test both the already-signed-in and
+       not-yet-signed-in invitee paths after deploy.
+2. [x] Shared/guest views default to LIGHT mode.
+       DECISION: force light ONLY on /w/ (GuestWheel) and /join (JoinWheel) — ignore
+       OS/localStorage on those routes. Logged-in app keeps light-default + working toggle.
+       DONE: App.tsx keys ThemeProvider on route (switchable=false, defaultTheme="light"
+       for /w/ and /join/); removed GuestWheel's ThemeToggle so there's no dark option there.
+3. [x] Replace top-right SIGN OUT button with a profile AVATAR → dropdown.
+       Where: WheelApp.tsx header (:357-381). Menu items (v1): name+email header,
+       Default wheel (#5), Theme toggle (MOVED off header into menu), Sign out.
+       The standalone header ThemeToggle goes away. (Office is NOT here — #4 made it
+       a per-wheel setting, so there's no user-level office.)
+       DONE: avatar button (gradient initial, matches the old name-pill styling) opens
+       a DropdownMenu: name+email label, "Default wheel" (jumps to it, or a disabled
+       "star one in the sidebar" hint if unset), theme toggle, sign out (destructive
+       variant). Client-only — api/index.js unchanged.
+4. [x] Per-wheel DISTANCE MODE — walking time from the wheel's origin to each restaurant.
+       (Redesigned from "per-user office" after PM grill: home vs office, privacy,
+       and "not all wheels relate to the office" pushed it onto the wheel.)
+       DECISIONS:
+       - Lives as a toggle in WHEEL SETTINGS (owner-only; editWheel dialog in
+         WheelSelector). OFF by default; fully optional, nothing is gated on it.
+       - New wheel columns (migration — apply to live DB, deploy gate): distanceEnabled
+         (bool, default false), originLat, originLng, originLabel (default "Office",
+         editable — personal wheels may relabel e.g. "Home").
+       - Shared wheels: ONE shared origin, framed as "Office / meeting point", set by
+         the owner and team-visible (a workplace, so acceptable). Home is steered to
+         personal wheels only — we don't expose members' homes.
+       - Origin input (in wheel settings): paste a Google Maps link (reuse
+         resolvePlaceLink) OR "use my location" (geolocation). Owner-only.
+       - Metric: WALKING TIME via existing walkingMatrix() (Distance Matrix, mode=walking),
+         formatted with shared/walkTime.ts. Requires Distance Matrix API (deploy gate).
+       - Coverage: restaurants with coords or a saved Maps link (resolve + CACHE lat/lng
+         on the restaurant row — a restaurant is a public place). Name-only → "no
+         location", skipped.
+       - Compute: auto when the origin is saved (all located restaurants) + auto for each
+         newly-added restaurant; manual "Recompute" button too. Recompute all when the
+         origin changes. Because the origin is a single per-wheel value, walk-times are
+         the SAME for everyone → persist walkSeconds (nullable) on the restaurant row
+         (NOT per-user), members read it.
+       - Display: inline "~N min" on Restaurant-tab rows + optional "nearest first" sort
+         toggle; also show the winner's walk-time in the spin result modal.
+       DONE: migration 0012 (wheels.distanceEnabled/originLat/originLng/originLabel,
+       restaurants.walkSeconds). Pure seam shared/wheelDistance.ts (partitionForDistance/
+       chunk/extractWalkSeconds, 14 tests) + orchestration server/distance.ts
+       (recomputeWheelDistances, maybeComputeOneDistance — best-effort, never throws to
+       the caller; graceful-degradation tests). server: setWheelOrigin/setRestaurantCoords/
+       setRestaurantWalkSeconds (db.ts); wheels.setDistanceOrigin (owner-only, requires
+       coords to enable, recomputes on save) + wheels.recomputeDistances (member-gated
+       manual refresh) (routers.ts); restaurants.add + places.addNearby call
+       maybeComputeOneDistance best-effort. Client: WheelSelector's WHEEL SETTINGS dialog
+       gets a Distance mode section (toggle, label, Maps-link "Look up", "Use my current
+       location", separate "Save distance settings" button since it's its own async flow);
+       RestaurantTab shows a "Distances from {label}" bar (nearest-first sort toggle +
+       Recompute) when enabled, "~N min"/"no location" chip per row; WheelApp spin-result
+       modal shows the winner's walk time. Chunks Distance Matrix requests at 25
+       destinations/call.
+       DEPLOY-GATE: apply migration 0012 to the live DB. Needs Distance Matrix API enabled
+       on GOOGLE_MAPS_API_KEY (degrades to no-op — walkSeconds stays null — if missing,
+       same graceful-degradation contract as the located-wheel feature).
+5. [x] Default wheel (auto-opened on entry).
+       DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
+       on each wheel row in WheelSelector to set it; profile menu shows current default.
+       WheelApp auto-open (:118-124) uses defaultWheelId, falls back to wheels[0].
+       DONE: migration 0011_default_wheel.sql (users.defaultWheelId, nullable, no
+       default needed). server: setUserDefaultWheel (db.ts) + wheels.setDefault
+       (routers.ts, membership-gated, wheelId: number|null). Client: star toggle per
+       row in WheelSelector (WheelActionsMenu's sibling, not nested — avoids
+       button-in-button); WheelApp auto-open prefers user.defaultWheelId, falls back to
+       wheels[0]. auth.me already re-fetches the full DB user row per-request
+       (server/_core/sdk.ts authenticateRequest → db.getUserByOpenId), so
+       defaultWheelId flows through with no change to the prohibited session-contract
+       files (context.ts/sdk.ts/trpc.ts untouched).
+       DEPLOY-GATE: apply migration 0011 to the live DB (generated ≠ applied).
+       Profile-menu display of the current default is wired in #3, next.
+6. [x] Add-restaurant tags: fewer presets + user-extensible per category.
+       Where: RestaurantTab.tsx TagSelector (:156).
+       DECISIONS: show a CURATED 5 presets per category (Cuisine + Food Type) with a
+       "More" expander revealing the rest (nothing removed). "Create tag" flow lets the
+       user pick the category (Cuisine / Food Type / Custom) — createCustom must accept a
+       category param so the new tag lands under that heading.
+       DONE: curated 5/5 (Japanese/Chinese/Italian/Thai/Korean,
+       Pizza/Burgers/Noodles/Salad/Sandwiches) + "+N more" toggle; create-tag dialog has a
+       Cuisine/Food Type/Custom picker; createCustomTag (db.ts) + tags.createCustom
+       (routers.ts) take a category param (default "custom").
+7. [x] Notification chips too long → duration: 3000 on the Toaster in App.tsx
+       (ThemedToaster toastOptions). Applies to ALL toasts.
+       DONE.
+8. [x] Spin takes too long → users lose patience. Make it SNAPPIER, ~3s total,
+       still a smooth stop (no lurch — keep the velocity-matched hand-off).
+       Where: SpinWheel.tsx — reduce MIN_LAND_ROTATIONS (4) and the derived landDuration
+       so the deceleration is ~2s (total ~3s with typical server latency); keep the
+       free-spin→land velocity match. (Free-spin can't be hard-capped without the winner,
+       but the landing is the main lever.)
+       DONE: MIN_LAND_ROTATIONS 4→2 (landing now ~1.6-2.4s; velocity-match formula is
+       rotation-count-invariant so the no-lurch guarantee still holds).

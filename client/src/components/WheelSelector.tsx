@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown } from "lucide-react";
+import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown, Star, MapPin, Navigation } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -32,6 +32,10 @@ interface WheelSelectorProps {
    */
   registerCreateOpener?: (open: (withStarter: boolean) => void) => void;
 }
+
+/** Loose check: does this string look like a Google Maps link worth resolving? */
+const looksLikeMapLink = (s: string) =>
+  /(google\.[a-z.]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/)/i.test(s.trim());
 
 const EXCLUSION_OPTIONS = [
   { value: "0", label: "Off" },
@@ -129,7 +133,22 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const [rotateCuisines, setRotateCuisines] = useState(false);
   const [addStarterPack, setAddStarterPack] = useState(true);
   const [showInvite, setShowInvite] = useState<{ wheelId: number; token: string; name: string } | null>(null);
-  const [editWheel, setEditWheel] = useState<{ id: number; name: string; isShared: boolean; isPublic: boolean; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean } | null>(null);
+  const [editWheel, setEditWheel] = useState<{
+    id: number;
+    name: string;
+    isShared: boolean;
+    isPublic: boolean;
+    exclusionDays: number;
+    fairnessMode: boolean;
+    rotateCuisines: boolean;
+    distanceEnabled: boolean;
+    originLabel: string;
+    originLat: number | null;
+    originLng: number | null;
+  } | null>(null);
+  const [originLinkInput, setOriginLinkInput] = useState("");
+  const [locatingOrigin, setLocatingOrigin] = useState(false);
+  const [originError, setOriginError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -229,6 +248,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     },
     onError: (e) => toast.error(`Failed to delete wheel: ${e.message}`),
   });
+  const setDefaultWheel = trpc.wheels.setDefault.useMutation({
+    onSuccess: () => { utils.auth.me.invalidate(); },
+    onError: (e) => toast.error(`Failed to set default wheel: ${e.message}`),
+  });
   const regenInvite = trpc.wheels.regenerateInvite.useMutation({
     onSuccess: (data, vars) => {
       const w = wheels?.find(w => w.id === vars.id);
@@ -247,6 +270,57 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     },
     onError: (e) => { setUpdateError(e.message); },
   });
+  const resolveOriginLink = trpc.places.resolveLink.useMutation({
+    onSuccess: ({ place }) => {
+      setOriginError(null);
+      setOriginLinkInput("");
+      if (editWheel && place.lat != null && place.lng != null) {
+        setEditWheel({ ...editWheel, originLat: place.lat, originLng: place.lng });
+      }
+      toast.success(`Found: ${place.name}`);
+    },
+    onError: (e) => setOriginError(e.message),
+  });
+  const setDistanceOrigin = trpc.wheels.setDistanceOrigin.useMutation({
+    onSuccess: (res) => {
+      utils.wheels.list.invalidate();
+      utils.wheels.get.invalidate();
+      utils.restaurants.list.invalidate();
+      setEditWheel(null);
+      setOriginError(null);
+      toast.success(
+        res.computed || res.unlocatable
+          ? `Distance mode saved — ${res.computed} located${res.unlocatable ? `, ${res.unlocatable} skipped` : ""}`
+          : "Distance mode saved",
+      );
+    },
+    onError: (e) => setOriginError(e.message),
+  });
+
+  const locateOrigin = () => {
+    if (!editWheel) return;
+    setOriginError(null);
+    if (!("geolocation" in navigator)) {
+      setOriginError("This device can't share its location.");
+      return;
+    }
+    setLocatingOrigin(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocatingOrigin(false);
+        setEditWheel({ ...editWheel, originLat: pos.coords.latitude, originLng: pos.coords.longitude });
+      },
+      (err) => {
+        setLocatingOrigin(false);
+        setOriginError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission was denied."
+            : "Couldn't get your location. Try again.",
+        );
+      },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+    );
+  };
 
   const inviteUrl = showInvite ? `${window.location.origin}/join/${showInvite.token}` : "";
 
@@ -268,6 +342,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const renderRow = (wheel: NonNullable<typeof wheels>[number], variant: "rail" | "sheet") => {
     const isSelected = wheel.id === selectedWheelId;
     const isOwner = wheel.ownerId === user?.id;
+    const isDefault = wheel.id === user?.defaultWheelId;
     const inSheet = variant === "sheet";
     const select = () => {
       onSelect(wheel.id);
@@ -305,6 +380,15 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
           </span>
         </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setDefaultWheel.mutate({ wheelId: isDefault ? null : wheel.id }); }}
+          disabled={setDefaultWheel.isPending}
+          aria-label={isDefault ? "Unset default wheel" : "Set as default wheel"}
+          title={isDefault ? "Default wheel — opens automatically. Click to unset." : "Set as default wheel (opens automatically on entry)"}
+          className={`flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors ${inSheet ? "h-11 w-9" : "h-9 w-8"}`}
+        >
+          <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
+        </button>
         <div
           className={`flex-shrink-0 pr-1 ${
             inSheet ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
@@ -317,7 +401,23 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             onShare={() => regenInvite.mutate({ id: wheel.id })}
             onCopyPublic={() => copyPublicLink(wheel.id)}
             onExport={() => handleExport(wheel.id, wheel.name)}
-            onSettings={() => setEditWheel({ id: wheel.id, name: wheel.name, isShared: wheel.isShared, isPublic: wheel.isPublic, exclusionDays: wheel.exclusionDays, fairnessMode: wheel.fairnessMode, rotateCuisines: wheel.rotateCuisines })}
+            onSettings={() => {
+              setOriginLinkInput("");
+              setOriginError(null);
+              setEditWheel({
+                id: wheel.id,
+                name: wheel.name,
+                isShared: wheel.isShared,
+                isPublic: wheel.isPublic,
+                exclusionDays: wheel.exclusionDays,
+                fairnessMode: wheel.fairnessMode,
+                rotateCuisines: wheel.rotateCuisines,
+                distanceEnabled: wheel.distanceEnabled,
+                originLabel: wheel.originLabel ?? "Office",
+                originLat: wheel.originLat == null ? null : Number(wheel.originLat),
+                originLng: wheel.originLng == null ? null : Number(wheel.originLng),
+              });
+            }}
             onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
           />
         </div>
@@ -533,6 +633,80 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                   <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
                 ) : "Save Settings"}
               </Button>
+
+              {/* Distance mode — a separate save step since setting an origin is
+                  its own async flow (paste a link / geolocate), not a plain field. */}
+              <div className="flex flex-col gap-3 pt-3 border-t border-border/30">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm text-muted-foreground">Distance mode</Label>
+                  <Switch
+                    checked={editWheel.distanceEnabled}
+                    onCheckedChange={(v) => setEditWheel({ ...editWheel, distanceEnabled: v })}
+                  />
+                </div>
+                {editWheel.distanceEnabled && (
+                  <>
+                    <p className="-mt-1 text-xs text-muted-foreground">
+                      Shows walking time from one point to every restaurant.
+                      {editWheel.isShared ? " Shared wheels use a single office/meeting point, visible to the team." : ""}
+                    </p>
+                    <Input
+                      placeholder="Label (e.g. Office)"
+                      value={editWheel.originLabel}
+                      onChange={(e) => setEditWheel({ ...editWheel, originLabel: e.target.value })}
+                      className="bg-secondary/50 border-border/50"
+                    />
+                    <div className="flex gap-2">
+                      <Input
+                        type="url"
+                        inputMode="url"
+                        placeholder="Paste a Google Maps link"
+                        value={originLinkInput}
+                        onChange={(e) => setOriginLinkInput(e.target.value)}
+                        className="bg-secondary/50 border-border/50"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => { setOriginError(null); resolveOriginLink.mutate({ wheelId: editWheel.id, url: originLinkInput.trim() }); }}
+                        disabled={!looksLikeMapLink(originLinkInput) || resolveOriginLink.isPending}
+                        className="flex-shrink-0"
+                        style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+                      >
+                        {resolveOriginLink.isPending
+                          ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                          : "Look up"}
+                      </Button>
+                    </div>
+                    <Button type="button" variant="outline" onClick={locateOrigin} disabled={locatingOrigin} className="gap-2">
+                      <Navigation size={14} /> {locatingOrigin ? "Locating…" : "Use my current location"}
+                    </Button>
+                    <p className="text-xs flex items-center gap-1.5" style={{ color: editWheel.originLat != null ? "var(--ok)" : "var(--muted-foreground)" }}>
+                      <MapPin size={12} className="flex-shrink-0" />
+                      {editWheel.originLat != null && editWheel.originLng != null
+                        ? "Location set"
+                        : "No location set yet — paste a link or use your location"}
+                    </p>
+                  </>
+                )}
+                <ErrorChip error={originError} onDismiss={() => setOriginError(null)} />
+                <Button
+                  type="button"
+                  onClick={() => setDistanceOrigin.mutate({
+                    id: editWheel.id,
+                    enabled: editWheel.distanceEnabled,
+                    originLat: editWheel.originLat,
+                    originLng: editWheel.originLng,
+                    originLabel: editWheel.originLabel.trim() || "Office",
+                  })}
+                  disabled={setDistanceOrigin.isPending || (editWheel.distanceEnabled && (editWheel.originLat == null || editWheel.originLng == null))}
+                  variant="outline"
+                  className="transition-all duration-200 active:scale-[0.97]"
+                >
+                  {setDistanceOrigin.isPending ? (
+                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving...</span>
+                  ) : "Save distance settings"}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

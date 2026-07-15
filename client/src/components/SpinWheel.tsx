@@ -21,7 +21,11 @@ interface SpinWheelProps {
 // is no visible "lurch faster" when the winner arrives.
 const QUAD_OUT = (p: number) => p * (2 - p);
 const FREE_SPIN_SPEED = 0.016; // rad/ms constant free-spin (~2.5 turns/s)
-const MIN_LAND_ROTATIONS = 4; // full turns during the deceleration, min
+// Fewer rotations → shorter landDuration (it's derived from distance ÷ speed),
+// while the velocity-match formula below still guarantees no lurch at hand-off.
+// 2 turns lands in ~1.6-2.4s, keeping the whole spin around ~3s so it doesn't
+// outlast people's patience.
+const MIN_LAND_ROTATIONS = 2; // full turns during the deceleration, min
 
 // Perceived lightness of a #rrggbb segment color (sRGB luma, 0..1). Segment
 // fills span light amber to deep blue, so label ink must adapt per slice —

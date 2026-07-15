@@ -77,6 +77,12 @@ export async function getUserById(id: number) {
   return result[0];
 }
 
+export async function setUserDefaultWheel(userId: number, wheelId: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ defaultWheelId: wheelId }).where(eq(users.id, userId));
+}
+
 // ─── Wheels ───────────────────────────────────────────────────────────────────
 
 export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS, fairnessMode = false, rotateCuisines = false) {
@@ -147,6 +153,23 @@ export async function updateWheel(id: number, data: Partial<{ name: string; isPu
   await db.update(wheels).set(data).where(eq(wheels.id, id));
 }
 
+// Distance mode: kept separate from updateWheel because it needs the
+// decimal-column string conversion (see addRestaurant) and is driven by an
+// async place-resolution flow, not the plain settings form.
+export async function setWheelOrigin(
+  id: number,
+  data: { distanceEnabled: boolean; originLat: number | null; originLng: number | null; originLabel: string },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(wheels).set({
+    distanceEnabled: data.distanceEnabled,
+    originLat: data.originLat == null ? null : String(data.originLat),
+    originLng: data.originLng == null ? null : String(data.originLng),
+    originLabel: data.originLabel,
+  }).where(eq(wheels.id, id));
+}
+
 export async function deleteWheel(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -193,13 +216,18 @@ export async function getTagsForWheel(wheelId: number) {
     .where(or(isNull(tags.wheelId), eq(tags.wheelId, wheelId)));
 }
 
-export async function createCustomTag(name: string, createdBy: number, wheelId: number) {
+export async function createCustomTag(
+  name: string,
+  createdBy: number,
+  wheelId: number,
+  category: "cuisine" | "food_type" | "custom" = "custom",
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   // Assign a color from a palette based on name hash
   const colors = ["#f43f5e","#fb923c","#facc15","#4ade80","#22d3ee","#818cf8","#e879f9","#94a3b8"];
   const color = colors[name.charCodeAt(0) % colors.length];
-  const result = await db.insert(tags).values({ name, category: "custom", color: color!, createdBy, wheelId });
+  const result = await db.insert(tags).values({ name, category, color: color!, createdBy, wheelId });
   return (result as any)[0].insertId as number;
 }
 
@@ -315,6 +343,20 @@ export async function deleteRestaurant(id: number) {
   if (!db) throw new Error("DB unavailable");
   await db.delete(restaurantTags).where(eq(restaurantTags.restaurantId, id));
   await db.delete(restaurants).where(eq(restaurants.id, id));
+}
+
+// Caches coordinates resolved from a restaurant's saved Maps link (distance
+// mode only pays this cost once per restaurant, not on every recompute).
+export async function setRestaurantCoords(id: number, lat: number, lng: number, address: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(restaurants).set({ lat: String(lat), lng: String(lng), address: address ?? undefined }).where(eq(restaurants.id, id));
+}
+
+export async function setRestaurantWalkSeconds(id: number, walkSeconds: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(restaurants).set({ walkSeconds }).where(eq(restaurants.id, id));
 }
 
 const TAG_PALETTE = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];

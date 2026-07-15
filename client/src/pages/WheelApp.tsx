@@ -4,21 +4,30 @@ import { trpc } from "@/lib/trpc";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
-import ThemeToggle from "@/components/ThemeToggle";
 import RestaurantTab from "@/components/RestaurantTab";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
+import { formatWalk } from "@shared/nearby";
 import { ErrorChip } from "@/components/StatusChip";
+import { useTheme } from "@/contexts/ThemeContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Tab = "wheel" | "restaurants" | "history";
 
@@ -30,6 +39,7 @@ const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
 
 export default function WheelApp() {
   const { user, loading, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [, navigate] = useLocation();
   const params = useParams<{ wheelId?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("wheel");
@@ -89,6 +99,12 @@ export default function WheelApp() {
       enabled: !!selectedWheelId,
       retry: (count, err) =>
         err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
+      // Membership (.members) lives on this same query and previously never
+      // refreshed after the initial load — someone joining a shared wheel via
+      // an invite link wouldn't show up in the roster (or the owner's "Team"
+      // panel) until a manual page reload. Poll like the other shared-wheel
+      // realtime queries (session.state, spins.latest) once we know it's shared.
+      refetchInterval: (query) => (query.state.data?.isShared ? 3000 : false),
     }
   );
 
@@ -112,16 +128,17 @@ export default function WheelApp() {
   const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery();
   const firstRun = !wheelsLoading && isFirstRun(wheels?.length ?? 0);
 
-  // On arriving without a wheel in the URL, open the user's first wheel so a
-  // returning user lands straight on it instead of re-picking every visit.
-  // First-run users (zero wheels) still get the guided create card.
+  // On arriving without a wheel in the URL, open the user's chosen default wheel
+  // (set via the star toggle in WheelSelector) if they have one, else their first
+  // wheel — so a returning user lands straight on it instead of re-picking every
+  // visit. First-run users (zero wheels) still get the guided create card.
   useEffect(() => {
     if (params.wheelId || selectedWheelId) return;
     if (wheelsLoading || !wheels || wheels.length === 0) return;
-    const first = wheels[0]!;
-    setSelectedWheelId(first.id);
-    navigate(`/app/${first.id}`, { replace: true });
-  }, [params.wheelId, selectedWheelId, wheels, wheelsLoading, navigate]);
+    const preferred = wheels.find((w) => w.id === user?.defaultWheelId) ?? wheels[0]!;
+    setSelectedWheelId(preferred.id);
+    navigate(`/app/${preferred.id}`, { replace: true });
+  }, [params.wheelId, selectedWheelId, wheels, wheelsLoading, user?.defaultWheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
   // can launch it (sample vs blank). Ref keeps the callback identity stable.
@@ -330,6 +347,7 @@ export default function WheelApp() {
   if (!user) return null;
 
   const isOwner = wheelData?.ownerId === user.id;
+  const defaultWheel = wheels?.find((w) => w.id === user.defaultWheelId);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
@@ -355,29 +373,50 @@ export default function WheelApp() {
         </div>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
-          {user.name && (
-            <span
-              className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground px-3 py-1.5 rounded-full"
-              style={{ background: "var(--card)", border: "1px solid var(--border)" }}
-            >
-              <span
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="Account menu"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-transform active:scale-90 hover:brightness-110"
                 style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
-                {user.name.charAt(0).toUpperCase()}
-              </span>
-              {user.name}
-            </span>
-          )}
-          <button
-            onClick={() => logout().then(() => navigate("/"))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground transition-all duration-200 hover:bg-white/5 active:scale-95"
-            style={{ fontFamily: "var(--font-display)", letterSpacing: "0.05em" }}
-          >
-            <LogOut size={12} />
-            <span className="hidden sm:block">SIGN OUT</span>
-          </button>
+                {user.name?.charAt(0).toUpperCase() ?? "?"}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="glass border-border/50 w-56">
+              <DropdownMenuLabel className="flex flex-col gap-0.5">
+                <span className="text-sm font-semibold truncate">{user.name || "-"}</span>
+                <span className="text-xs text-muted-foreground font-normal truncate">{user.email || "-"}</span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {defaultWheel ? (
+                <DropdownMenuItem onClick={() => { setSelectedWheelId(defaultWheel.id); navigate(`/app/${defaultWheel.id}`); }} className="gap-2.5">
+                  <Star size={14} fill="var(--brand)" style={{ color: "var(--brand)" }} />
+                  <span className="flex flex-col">
+                    <span>Default wheel</span>
+                    <span className="text-xs text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
+                  </span>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem disabled className="gap-2.5">
+                  <Star size={14} />
+                  <span className="text-xs">No default wheel — star one in the sidebar</span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={toggleTheme} className="gap-2.5">
+                {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+                {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => logout().then(() => navigate("/"))}
+                variant="destructive"
+                className="gap-2.5"
+              >
+                <LogOut size={14} /> Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
@@ -889,6 +928,8 @@ export default function WheelApp() {
                     wheelId={selectedWheelId}
                     isOwner={isOwner}
                     onRestaurantsChange={refetchRestaurants}
+                    distanceEnabled={wheelData?.distanceEnabled}
+                    originLabel={wheelData?.originLabel}
                   />
                 )}
 
@@ -986,11 +1027,23 @@ export default function WheelApp() {
               {/* No text glow: cool-hued halos turn to mud on the warm card —
                   the segment color already speaks through border, dots, buttons. */}
               <h2
-                className="text-3xl font-black mb-8 leading-tight"
+                className="text-3xl font-black leading-tight"
                 style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
               >
                 {spinResult.label}
               </h2>
+              <div className="mb-8">
+                {wheelData?.distanceEnabled && (() => {
+                  const walkSeconds = restaurants?.find((r) => r.id === spinResult.id)?.walkSeconds;
+                  if (walkSeconds == null) return null;
+                  return (
+                    <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mt-2">
+                      <Footprints size={12} className="flex-shrink-0" />
+                      {formatWalk(walkSeconds / 60)} from {wheelData.originLabel || "Office"}
+                    </p>
+                  );
+                })()}
+              </div>
               <div className="flex flex-col gap-2.5">
                 <button
                   onClick={() => openDirections(spinResult)}
