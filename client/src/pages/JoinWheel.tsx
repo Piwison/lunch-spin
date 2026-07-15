@@ -11,10 +11,18 @@ export default function JoinWheel() {
   const [, navigate] = useLocation();
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const utils = trpc.useUtils();
 
   const joinWheel = trpc.wheels.join.useMutation({
     onSuccess: (data) => {
       setJoined(true);
+      // The invitee's own wheels.list may already be cached (e.g. they had the
+      // app open in this browser before receiving the invite) — without this,
+      // WheelSelector's sidebar would render that stale, pre-join snapshot
+      // right after the redirect below and the joined wheel would seem to have
+      // "not worked" even though membership was recorded successfully.
+      utils.wheels.list.invalidate();
+      utils.wheels.get.invalidate({ id: data.wheelId });
       setTimeout(() => navigate(`/app/${data.wheelId}`), 1500);
     },
     onError: (e) => setError(e.message),

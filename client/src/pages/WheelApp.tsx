@@ -99,6 +99,12 @@ export default function WheelApp() {
       enabled: !!selectedWheelId,
       retry: (count, err) =>
         err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
+      // Membership (.members) lives on this same query and previously never
+      // refreshed after the initial load — someone joining a shared wheel via
+      // an invite link wouldn't show up in the roster (or the owner's "Team"
+      // panel) until a manual page reload. Poll like the other shared-wheel
+      // realtime queries (session.state, spins.latest) once we know it's shared.
+      refetchInterval: (query) => (query.state.data?.isShared ? 3000 : false),
     }
   );
 
