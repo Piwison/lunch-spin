@@ -10,7 +10,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -150,6 +150,16 @@ export default function WheelApp() {
   const registerCreateOpener = useCallback(
     (open: (withStarter: boolean) => void) => {
       createOpenerRef.current = open;
+    },
+    [],
+  );
+
+  // Same imperative-opener pattern, for the Wheel tab's settings gear icon —
+  // reuses WheelSelector's settings dialog/state instead of a second copy.
+  const settingsOpenerRef = useRef<((wheelId: number) => void) | null>(null);
+  const registerSettingsOpener = useCallback(
+    (open: (wheelId: number) => void) => {
+      settingsOpenerRef.current = open;
     },
     [],
   );
@@ -426,6 +436,7 @@ export default function WheelApp() {
           selectedWheelId={selectedWheelId}
           onSelect={(id: number) => { setSelectedWheelId(id); navigate(`/app/${id}`); }}
           registerCreateOpener={registerCreateOpener}
+          registerSettingsOpener={registerSettingsOpener}
         />
 
         {/* ── MAIN CONTENT ── */}
@@ -552,6 +563,22 @@ export default function WheelApp() {
                 {/* ══ TAB 1: WHEEL ══ */}
                 {activeTab === "wheel" && (
                   <div className="flex flex-col items-center gap-4 px-4 py-4 pb-8 max-w-2xl mx-auto">
+
+                    {/* Settings shortcut — same dialog as the sidebar's kebab menu
+                        (registerSettingsOpener), just faster once you're already
+                        on the wheel. Owner-only, same gate as that menu item. */}
+                    {isOwner && selectedWheelId && (
+                      <div className="w-full flex justify-end -mb-2">
+                        <button
+                          onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
+                          aria-label="Wheel settings"
+                          title="Wheel settings"
+                          className="flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors active:scale-90"
+                        >
+                          <Settings size={16} />
+                        </button>
+                      </div>
+                    )}
 
                     {/* Team roster */}
                     {isShared && wheelData && (

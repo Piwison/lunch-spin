@@ -228,6 +228,38 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        DEPLOY-GATE: apply migration 0012 to the live DB. Needs Distance Matrix API enabled
        on GOOGLE_MAPS_API_KEY (degrades to no-op — walkSeconds stays null — if missing,
        same graceful-degradation contract as the located-wheel feature).
+
+       POST-MERGE INCIDENT (2026-07-15): migrations 0011/0012 were merged to main but not
+       applied to the live DB (exactly the deploy-gate above) — broke EVERY sign-in
+       (upsertUser's INSERT now lists defaultWheelId, which didn't exist yet) plus
+       wheels.list/restaurants.list for anyone already signed in. Root cause confirmed via
+       live Vercel runtime logs, not guesswork. Fixed by the user running
+       `DATABASE_URL='<prod>' pnpm exec drizzle-kit migrate` directly — no code change
+       needed, the code was correct, the live schema just hadn't caught up. Lesson: a
+       DEPLOY-GATE checklist item in a PR description is not enough by itself — it needs to
+       actually block or be verified before/immediately after merge, since "merged" reads
+       as "done" under time pressure.
+
+       BUG FIX (2026-07-15): pasting a Maps link and looking up an origin, then clicking
+       the (first, more prominent) "Save Settings" button instead of the separate "Save
+       distance settings" button below it, silently discarded the resolved location — it
+       only ever lived in local form state; "Save Settings" only called wheels.update, never
+       setDistanceOrigin. Root-caused (not patched): the two-independent-save-buttons
+       design was itself the bug. Fixed by unifying into ONE save action — the single "Save
+       Settings" button now calls both wheels.update and wheels.setDistanceOrigin together
+       (Promise.all), closes the dialog and shows one toast only if both succeed, and keeps
+       the dialog open with the specific inline error if either fails, so a distance-mode
+       edit can never be silently lost again.
+
+       UX FOLLOW-UP (2026-07-15): wheel settings were only reachable via the sidebar's
+       kebab (⋮) menu — reported as inconvenient. Grilled and resolved: added a second
+       entry point, a gear icon pinned top-right of the Wheel tab's content (owner-only,
+       works for personal AND shared wheels — unlike the Team panel, which only renders on
+       shared wheels). The kebab menu's Settings item stays too (useful without opening the
+       wheel first). Implementation reuses the existing registerCreateOpener imperative-
+       opener pattern (WheelSelector already does this for the create-wheel dialog) as
+       registerSettingsOpener, so the dialog/state/mutations aren't duplicated — the gear
+       icon just calls into WheelSelector's existing settings dialog for the selected wheel.
 5. [x] Default wheel (auto-opened on entry).
        DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
        on each wheel row in WheelSelector to set it; profile menu shows current default.
