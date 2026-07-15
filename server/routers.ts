@@ -20,6 +20,7 @@ import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
 import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, walkingMatrix } from "./places";
+import { maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -57,6 +58,7 @@ import {
   recordSpin,
   reenableRestaurant,
   setUserDefaultWheel,
+  setWheelOrigin,
   updateRestaurant,
   updateWheel,
 } from "./db";
@@ -192,6 +194,59 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // Distance mode: one shared origin per wheel (owner-only — it's a wheel
+    // setting, same gate as `update`). Turning it on requires coordinates in
+    // this call or already stored on the wheel; the client resolves a pasted
+    // Maps link or geolocation into lat/lng before calling this. Saving a new
+    // origin recomputes every restaurant's walking time immediately so the
+    // owner sees results without a separate step.
+    setDistanceOrigin: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        enabled: z.boolean(),
+        originLat: z.number().min(-90).max(90).nullable().optional(),
+        originLng: z.number().min(-180).max(180).nullable().optional(),
+        originLabel: z.string().min(1).max(64).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+
+        const lat = input.originLat !== undefined ? input.originLat : wheel.originLat != null ? Number(wheel.originLat) : null;
+        const lng = input.originLng !== undefined ? input.originLng : wheel.originLng != null ? Number(wheel.originLng) : null;
+        if (input.enabled && (lat == null || lng == null)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Set an origin location first." });
+        }
+
+        await setWheelOrigin(input.id, {
+          distanceEnabled: input.enabled,
+          originLat: lat,
+          originLng: lng,
+          originLabel: input.originLabel ?? wheel.originLabel ?? "Office",
+        });
+
+        const result = input.enabled ? await recomputeWheelDistances(input.id) : { computed: 0, unlocatable: 0 };
+        return { success: true, ...result };
+      }),
+
+    // Manual re-run for the "Recompute" button — same computation as saving a
+    // new origin, without changing it. Any member can trigger it (read-only
+    // with respect to wheel settings; it only refreshes restaurant rows).
+    recomputeDistances: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.id, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!wheel.distanceEnabled) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Distance mode isn't on for this wheel." });
+        }
+        const result = await recomputeWheelDistances(input.id);
+        return { success: true, ...result };
+      }),
+
     // Portable JSON bundle of a wheel + its restaurants (no ids).
     export: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -278,6 +333,13 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
+        // Best-effort: distance mode auto-computes a walk time for anything
+        // it can locate. No-ops immediately if the wheel doesn't have it on.
+        try {
+          await maybeComputeOneDistance(input.wheelId, id);
+        } catch {
+          // adding the restaurant still succeeded; distance is a courtesy
+        }
         return { id };
       }),
 
@@ -456,6 +518,14 @@ export const appRouter = router({
             cuisine: input.place.cuisine,
           },
         );
+        // Best-effort: this restaurant already has provider coordinates, so
+        // this is a cheap "ready" lookup when distance mode is on; a no-op
+        // otherwise.
+        try {
+          await maybeComputeOneDistance(input.wheelId, id);
+        } catch {
+          // adding the restaurant still succeeded; distance is a courtesy
+        }
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
       }),
 

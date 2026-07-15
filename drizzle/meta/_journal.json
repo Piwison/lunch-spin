@@ -85,6 +85,13 @@
       "when": 1784081190570,
       "tag": "0011_default_wheel",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1784081799439,
+      "tag": "0012_distance_mode",
+      "breakpoints": true
     }
   ]
 }

@@ -10,13 +10,14 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints } from "lucide-react";
 import { filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
+import { formatWalk } from "@shared/nearby";
 import { ErrorChip } from "@/components/StatusChip";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
@@ -921,6 +922,8 @@ export default function WheelApp() {
                     wheelId={selectedWheelId}
                     isOwner={isOwner}
                     onRestaurantsChange={refetchRestaurants}
+                    distanceEnabled={wheelData?.distanceEnabled}
+                    originLabel={wheelData?.originLabel}
                   />
                 )}
 
@@ -1018,11 +1021,23 @@ export default function WheelApp() {
               {/* No text glow: cool-hued halos turn to mud on the warm card —
                   the segment color already speaks through border, dots, buttons. */}
               <h2
-                className="text-3xl font-black mb-8 leading-tight"
+                className="text-3xl font-black leading-tight"
                 style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
               >
                 {spinResult.label}
               </h2>
+              <div className="mb-8">
+                {wheelData?.distanceEnabled && (() => {
+                  const walkSeconds = restaurants?.find((r) => r.id === spinResult.id)?.walkSeconds;
+                  if (walkSeconds == null) return null;
+                  return (
+                    <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mt-2">
+                      <Footprints size={12} className="flex-shrink-0" />
+                      {formatWalk(walkSeconds / 60)} from {wheelData.originLabel || "Office"}
+                    </p>
+                  );
+                })()}
+              </div>
               <div className="flex flex-col gap-2.5">
                 <button
                   onClick={() => openDirections(spinResult)}

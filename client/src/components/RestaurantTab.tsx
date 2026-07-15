@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, MapPin, SlidersHorizontal, ChevronDown, AlertTriangle, Navigation } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Check, Tag, ClipboardList, MapPin, SlidersHorizontal, ChevronDown, AlertTriangle, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { matchCuisineTag } from "@shared/cuisineTag";
+import { formatWalk } from "@shared/nearby";
 import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
 import NearbyDialog from "@/components/NearbyDialog";
@@ -43,6 +44,8 @@ interface RestaurantTabProps {
   wheelId: number;
   isOwner: boolean;
   onRestaurantsChange: () => void;
+  distanceEnabled?: boolean;
+  originLabel?: string | null;
 }
 
 interface RestaurantForm {
@@ -54,7 +57,7 @@ interface RestaurantForm {
 
 const EMPTY_FORM: RestaurantForm = { name: "", notes: "", tagIds: [], mapUrl: "" };
 
-export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }: RestaurantTabProps) {
+export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, distanceEnabled, originLabel }: RestaurantTabProps) {
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<RestaurantForm>(EMPTY_FORM);
@@ -70,6 +73,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const [tagError, setTagError] = useState<string | null>(null);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [sortNearest, setSortNearest] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
@@ -107,6 +111,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   const createTag = trpc.tags.createCustom.useMutation({
     onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setNewTagCategory("custom"); setShowTagCreate(false); setTagError(null); toast.success("Tag created!"); },
     onError: (e) => setTagError(e.message),
+  });
+  const recomputeDistances = trpc.wheels.recomputeDistances.useMutation({
+    onSuccess: (res) => {
+      invalidate();
+      toast.success(`Distances updated — ${res.computed} located${res.unlocatable ? `, ${res.unlocatable} skipped` : ""}`);
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   // Paste a Google Maps link → look the place up → prefill the name (and a
@@ -151,11 +162,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
   // AND-logic tag intersection — but, unlike the wheel, keep excluded
   // restaurants visible (they're shown with an "excluded" badge here).
   const visibleRestaurants = useMemo(() => {
-    if (selectedTagIds.length === 0) return restaurants ?? [];
-    return (restaurants ?? []).filter((r) =>
-      selectedTagIds.every((id) => r.tags.some((t) => t.id === id))
-    );
-  }, [restaurants, selectedTagIds]);
+    const filtered = selectedTagIds.length === 0
+      ? (restaurants ?? [])
+      : (restaurants ?? []).filter((r) => selectedTagIds.every((id) => r.tags.some((t) => t.id === id)));
+    if (!distanceEnabled || !sortNearest) return filtered;
+    // Located restaurants first (nearest first), unlocated ones after, name-stable.
+    return [...filtered].sort((a, b) => {
+      if (a.walkSeconds == null && b.walkSeconds == null) return a.name.localeCompare(b.name);
+      if (a.walkSeconds == null) return 1;
+      if (b.walkSeconds == null) return -1;
+      return a.walkSeconds - b.walkSeconds;
+    });
+  }, [restaurants, selectedTagIds, distanceEnabled, sortNearest]);
 
   const toggleFormTag = (tagId: number) => {
     setForm((f) => ({
@@ -313,6 +331,41 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
         >
           <Tag size={12} className="flex-shrink-0" />
           You can add restaurants. Only the wheel creator can edit or delete.
+        </div>
+      )}
+
+      {/* Distance mode — walking time from the wheel's single origin */}
+      {distanceEnabled && (restaurants?.length ?? 0) > 0 && (
+        <div
+          className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-xs"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Footprints size={13} className="flex-shrink-0" />
+            Distances from <strong className="text-foreground">{originLabel || "Office"}</strong>
+          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={() => setSortNearest((s) => !s)}
+              title="Sort nearest first"
+              aria-pressed={sortNearest}
+              className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
+              style={{
+                background: sortNearest ? "oklch(from var(--brand) l c h / 0.15)" : "transparent",
+                color: sortNearest ? "var(--brand)" : "var(--muted-foreground)",
+              }}
+            >
+              <ArrowDownWideNarrow size={14} />
+            </button>
+            <button
+              onClick={() => recomputeDistances.mutate({ id: wheelId })}
+              disabled={recomputeDistances.isPending}
+              title="Recompute distances"
+              className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={recomputeDistances.isPending ? "animate-spin" : ""} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -482,6 +535,12 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange }:
                       }}
                     >
                       excluded
+                    </span>
+                  )}
+                  {distanceEnabled && (
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium text-muted-foreground" style={{ background: "var(--muted)" }}>
+                      <Footprints size={10} className="flex-shrink-0" />
+                      {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : "no location"}
                     </span>
                   )}
                 </div>

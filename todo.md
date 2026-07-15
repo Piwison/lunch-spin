@@ -160,7 +160,7 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        a DropdownMenu: name+email label, "Default wheel" (jumps to it, or a disabled
        "star one in the sidebar" hint if unset), theme toggle, sign out (destructive
        variant). Client-only — api/index.js unchanged.
-4. [ ] Per-wheel DISTANCE MODE — walking time from the wheel's origin to each restaurant.
+4. [x] Per-wheel DISTANCE MODE — walking time from the wheel's origin to each restaurant.
        (Redesigned from "per-user office" after PM grill: home vs office, privacy,
        and "not all wheels relate to the office" pushed it onto the wheel.)
        DECISIONS:
@@ -186,6 +186,24 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
          (NOT per-user), members read it.
        - Display: inline "~N min" on Restaurant-tab rows + optional "nearest first" sort
          toggle; also show the winner's walk-time in the spin result modal.
+       DONE: migration 0012 (wheels.distanceEnabled/originLat/originLng/originLabel,
+       restaurants.walkSeconds). Pure seam shared/wheelDistance.ts (partitionForDistance/
+       chunk/extractWalkSeconds, 14 tests) + orchestration server/distance.ts
+       (recomputeWheelDistances, maybeComputeOneDistance — best-effort, never throws to
+       the caller; graceful-degradation tests). server: setWheelOrigin/setRestaurantCoords/
+       setRestaurantWalkSeconds (db.ts); wheels.setDistanceOrigin (owner-only, requires
+       coords to enable, recomputes on save) + wheels.recomputeDistances (member-gated
+       manual refresh) (routers.ts); restaurants.add + places.addNearby call
+       maybeComputeOneDistance best-effort. Client: WheelSelector's WHEEL SETTINGS dialog
+       gets a Distance mode section (toggle, label, Maps-link "Look up", "Use my current
+       location", separate "Save distance settings" button since it's its own async flow);
+       RestaurantTab shows a "Distances from {label}" bar (nearest-first sort toggle +
+       Recompute) when enabled, "~N min"/"no location" chip per row; WheelApp spin-result
+       modal shows the winner's walk time. Chunks Distance Matrix requests at 25
+       destinations/call.
+       DEPLOY-GATE: apply migration 0012 to the live DB. Needs Distance Matrix API enabled
+       on GOOGLE_MAPS_API_KEY (degrades to no-op — walkSeconds stays null — if missing,
+       same graceful-degradation contract as the located-wheel feature).
 5. [x] Default wheel (auto-opened on entry).
        DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
        on each wheel row in WheelSelector to set it; profile menu shows current default.
