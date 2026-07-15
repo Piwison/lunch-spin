@@ -296,3 +296,50 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        but the landing is the main lever.)
        DONE: MIN_LAND_ROTATIONS 4→2 (landing now ~1.6-2.4s; velocity-match formula is
        rotation-count-invariant so the no-lurch guarantee still holds).
+
+## Round 10 — real-user testing after Round 9 merge (2026-07-15)
+
+1. [x] Gear icon takes a whole empty row on mobile (screenshot: settings gear
+       floating alone above TEAM). Grilled: move into the mobile wheel-picker pill's
+       row (next to the chevron) — desktop unchanged, it already has room.
+       DONE: WheelSelector.tsx's mobile pill row now also renders the gear (owner-only,
+       calls openSettingsFor(selectedWheel) directly); WheelApp.tsx's original
+       top-of-Wheel-tab gear is now `hidden md:flex` (desktop only, was unconditional).
+2. [x] Pasting the office Maps link + Save appeared to do nothing — origin missing on
+       reopen, distances never computed even though the restaurant had a Maps link.
+       ROOT CAUSE (confirmed via grill, not guessed): "Look up" showed "Found: <name>"
+       even when Google's response had no geometry (place found, coordinates missing) —
+       resolveOriginLink only wrote origin state inside an `if (lat/lng != null)` guard,
+       but the success toast fired unconditionally outside it. Save Settings correctly
+       rejected the still-null origin ("Set an origin location first"), so nothing was
+       ever lost — it was never captured in the first place, just reported as if it had
+       been. Not a two-part bug: the earlier "unify the two save buttons" fix (Round 9
+       follow-up) was already correct and is unrelated.
+       DONE: resolveOriginLink's onSuccess now branches on lat/lng presence — missing
+       coords shows an inline error ("Found "X" but couldn't get its exact location...
+       try 'Use my current location' instead") instead of a misleading success toast.
+3. [x] PRD + build: distance filter (once distance mode is on).
+       Grilled to a full spec before writing code:
+       - Single-handle slider, 3–20 min range, 1-min step (not a min–max range).
+       - OFF by default / opt-in — matches how the tag filter already behaves (empty
+         selection = no filtering); turning on distance mode never silently hides
+         restaurants nobody asked to filter.
+       - When active: restaurants with unknown walkSeconds are HIDDEN (can't verify
+         they qualify), same logic as an unmet tag filter; restaurants beyond the
+         selected N minutes are HIDDEN.
+       - Scope: both Wheel tab and Restaurants tab, matching tags' scope — but as
+         INDEPENDENT per-tab state, matching how tags ACTUALLY behave today (verified:
+         selectedTagIds is two separate useState instances, not shared, despite reading
+         as if it should be — corrected my own initial recommendation on this point).
+       - Only rendered when the wheel's distanceEnabled is true.
+       - Structural: extracted a shared FilterBar component (client/src/components/
+         FilterBar.tsx) — the collapsible tag-filter bar was already duplicated
+         near-verbatim between WheelApp.tsx and RestaurantTab.tsx; adding a stateful
+         slider to both was the point to stop duplicating it a third time.
+       DONE: shared/filter.ts gains filterRestaurantsByDistance (pure, tested) —
+       maxWalkMinutes: null = off, else excludes null-walkSeconds and over-threshold
+       rows. FilterBar.tsx renders tag chips (cuisine/food type/custom) + a distance
+       section (Slider from ui/slider.tsx) when distanceEnabled, "N active" pill and
+       "match/total" count folding in both filter kinds, "Clear all" resets both.
+       WheelApp.tsx and RestaurantTab.tsx each keep their own maxWalkMinutes state and
+       compose filterRestaurantsByTags + filterRestaurantsByDistance independently.

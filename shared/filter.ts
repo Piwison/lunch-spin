@@ -20,3 +20,23 @@ export function filterRestaurantsByTags<T extends TaggedRestaurant>(
   }
   return filtered;
 }
+
+export interface WalkTimedRestaurant {
+  walkSeconds: number | null;
+}
+
+/**
+ * `maxMinutes: null` means the distance filter is off (opt-in, matches the tag
+ * filter's "empty selection = show everything" default) — everything passes
+ * unchanged. Once set, a restaurant with no computed walk time can't be
+ * verified to qualify, so it's excluded rather than given the benefit of the
+ * doubt (same rule an unmet tag filter already applies).
+ */
+export function filterRestaurantsByDistance<T extends WalkTimedRestaurant>(
+  restaurants: T[],
+  maxMinutes: number | null,
+): T[] {
+  if (maxMinutes == null) return restaurants;
+  const maxSeconds = maxMinutes * 60;
+  return restaurants.filter((r) => r.walkSeconds != null && r.walkSeconds <= maxSeconds);
+}
