@@ -31,6 +31,12 @@ interface WheelSelectorProps {
    * sample" (adds STARTER_RESTAURANTS), `false` = blank wheel.
    */
   registerCreateOpener?: (open: (withStarter: boolean) => void) => void;
+  /**
+   * Lets a parent (the Wheel tab's gear icon) open the settings dialog for a
+   * given wheel without duplicating its form state/mutations — same pattern
+   * as registerCreateOpener above.
+   */
+  registerSettingsOpener?: (open: (wheelId: number) => void) => void;
 }
 
 /** Loose check: does this string look like a Google Maps link worth resolving? */
@@ -122,7 +128,7 @@ function WheelActionsMenu({
   );
 }
 
-export default function WheelSelector({ selectedWheelId, onSelect, registerCreateOpener }: WheelSelectorProps) {
+export default function WheelSelector({ selectedWheelId, onSelect, registerCreateOpener, registerSettingsOpener }: WheelSelectorProps) {
   const { user } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -218,6 +224,37 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     });
   }, [registerCreateOpener]);
 
+  // Shared by the kebab menu's "Settings" item and the Wheel tab's gear icon
+  // (registerSettingsOpener below) so both entry points seed the exact same
+  // form state — no duplicated logic to drift out of sync.
+  const openSettingsFor = (wheel: NonNullable<typeof wheels>[number]) => {
+    setOriginLinkInput("");
+    setOriginError(null);
+    setEditWheel({
+      id: wheel.id,
+      name: wheel.name,
+      isShared: wheel.isShared,
+      isPublic: wheel.isPublic,
+      exclusionDays: wheel.exclusionDays,
+      fairnessMode: wheel.fairnessMode,
+      rotateCuisines: wheel.rotateCuisines,
+      distanceEnabled: wheel.distanceEnabled,
+      originLabel: wheel.originLabel ?? "Office",
+      originLat: wheel.originLat == null ? null : Number(wheel.originLat),
+      originLng: wheel.originLng == null ? null : Number(wheel.originLng),
+    });
+  };
+
+  // Expose an imperative opener so the Wheel tab's gear icon can launch
+  // settings for the currently-selected wheel without duplicating its state.
+  useEffect(() => {
+    registerSettingsOpener?.((wheelId: number) => {
+      const wheel = wheels?.find((w) => w.id === wheelId);
+      if (wheel) openSettingsFor(wheel);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerSettingsOpener, wheels]);
+
   const importStarterPack = trpc.restaurants.addBulk.useMutation();
   const createWheel = trpc.wheels.create.useMutation({
     onSuccess: (data) => {
@@ -259,15 +296,13 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     },
     onError: (e) => toast.error(`Failed to regenerate invite: ${e.message}`),
   });
+  // Settings + distance mode used to be two independent save buttons in one
+  // dialog. That was a trap: "Save Settings" (the first, more prominent
+  // button) closed the dialog and reported success without ever sending the
+  // just-looked-up origin to the server — it only ever lived in local form
+  // state, so it silently vanished the next time settings were reopened.
+  // Fixed by unifying into one save action (below) that submits both.
   const updateWheel = trpc.wheels.update.useMutation({
-    onSuccess: () => {
-      utils.wheels.list.invalidate();
-      utils.wheels.get.invalidate();
-      utils.restaurants.list.invalidate();
-      setEditWheel(null);
-      setUpdateError(null);
-      toast.success("Wheel settings saved");
-    },
     onError: (e) => { setUpdateError(e.message); },
   });
   const resolveOriginLink = trpc.places.resolveLink.useMutation({
@@ -282,20 +317,50 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     onError: (e) => setOriginError(e.message),
   });
   const setDistanceOrigin = trpc.wheels.setDistanceOrigin.useMutation({
-    onSuccess: (res) => {
+    onError: (e) => setOriginError(e.message),
+  });
+  const savingWheelSettings = updateWheel.isPending || setDistanceOrigin.isPending;
+
+  const saveWheelSettings = async () => {
+    if (!editWheel || !editWheel.name.trim()) return;
+    setUpdateError(null);
+    setOriginError(null);
+    if (editWheel.distanceEnabled && (editWheel.originLat == null || editWheel.originLng == null)) {
+      setOriginError("Set an origin location first.");
+      return;
+    }
+    try {
+      const [, distanceRes] = await Promise.all([
+        updateWheel.mutateAsync({
+          id: editWheel.id,
+          name: editWheel.name.trim(),
+          isPublic: editWheel.isPublic,
+          exclusionDays: editWheel.exclusionDays,
+          fairnessMode: editWheel.fairnessMode,
+          rotateCuisines: editWheel.rotateCuisines,
+        }),
+        setDistanceOrigin.mutateAsync({
+          id: editWheel.id,
+          enabled: editWheel.distanceEnabled,
+          originLat: editWheel.originLat,
+          originLng: editWheel.originLng,
+          originLabel: editWheel.originLabel.trim() || "Office",
+        }),
+      ]);
       utils.wheels.list.invalidate();
       utils.wheels.get.invalidate();
       utils.restaurants.list.invalidate();
       setEditWheel(null);
-      setOriginError(null);
       toast.success(
-        res.computed || res.unlocatable
-          ? `Distance mode saved — ${res.computed} located${res.unlocatable ? `, ${res.unlocatable} skipped` : ""}`
-          : "Distance mode saved",
+        editWheel.distanceEnabled && (distanceRes.computed || distanceRes.unlocatable)
+          ? `Wheel settings saved — ${distanceRes.computed} located${distanceRes.unlocatable ? `, ${distanceRes.unlocatable} skipped` : ""}`
+          : "Wheel settings saved",
       );
-    },
-    onError: (e) => setOriginError(e.message),
-  });
+    } catch {
+      // The failing mutation's own onError already set the inline message
+      // (updateError or originError) — dialog stays open, nothing is lost.
+    }
+  };
 
   const locateOrigin = () => {
     if (!editWheel) return;
@@ -401,23 +466,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             onShare={() => regenInvite.mutate({ id: wheel.id })}
             onCopyPublic={() => copyPublicLink(wheel.id)}
             onExport={() => handleExport(wheel.id, wheel.name)}
-            onSettings={() => {
-              setOriginLinkInput("");
-              setOriginError(null);
-              setEditWheel({
-                id: wheel.id,
-                name: wheel.name,
-                isShared: wheel.isShared,
-                isPublic: wheel.isPublic,
-                exclusionDays: wheel.exclusionDays,
-                fairnessMode: wheel.fairnessMode,
-                rotateCuisines: wheel.rotateCuisines,
-                distanceEnabled: wheel.distanceEnabled,
-                originLabel: wheel.originLabel ?? "Office",
-                originLat: wheel.originLat == null ? null : Number(wheel.originLat),
-                originLng: wheel.originLng == null ? null : Number(wheel.originLng),
-              });
-            }}
+            onSettings={() => openSettingsFor(wheel)}
             onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
           />
         </div>
@@ -615,27 +664,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 <Label className="text-sm text-muted-foreground">Rotate cuisines</Label>
                 <Switch checked={editWheel.rotateCuisines} onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })} />
               </div>
-              <ErrorChip error={updateError} onDismiss={() => setUpdateError(null)} />
-              <Button
-                onClick={() => { setUpdateError(null); editWheel.name.trim() && updateWheel.mutate({
-                  id: editWheel.id,
-                  name: editWheel.name.trim(),
-                  isPublic: editWheel.isPublic,
-                  exclusionDays: editWheel.exclusionDays,
-                  fairnessMode: editWheel.fairnessMode,
-                  rotateCuisines: editWheel.rotateCuisines,
-                }); }}
-                disabled={!editWheel.name.trim() || updateWheel.isPending}
-                className="transition-all duration-200 active:scale-[0.97]"
-                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
-              >
-                {updateWheel.isPending ? (
-                  <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
-                ) : "Save Settings"}
-              </Button>
 
-              {/* Distance mode — a separate save step since setting an origin is
-                  its own async flow (paste a link / geolocate), not a plain field. */}
+              {/* Distance mode — its origin (paste a link / geolocate) is resolved
+                  into local state here and only actually persisted by the single
+                  save button below, together with everything else in this dialog. */}
               <div className="flex flex-col gap-3 pt-3 border-t border-border/30">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">Distance mode</Label>
@@ -683,30 +715,25 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                     <p className="text-xs flex items-center gap-1.5" style={{ color: editWheel.originLat != null ? "var(--ok)" : "var(--muted-foreground)" }}>
                       <MapPin size={12} className="flex-shrink-0" />
                       {editWheel.originLat != null && editWheel.originLng != null
-                        ? "Location set"
+                        ? "Location set — saved when you save settings below"
                         : "No location set yet — paste a link or use your location"}
                     </p>
                   </>
                 )}
-                <ErrorChip error={originError} onDismiss={() => setOriginError(null)} />
-                <Button
-                  type="button"
-                  onClick={() => setDistanceOrigin.mutate({
-                    id: editWheel.id,
-                    enabled: editWheel.distanceEnabled,
-                    originLat: editWheel.originLat,
-                    originLng: editWheel.originLng,
-                    originLabel: editWheel.originLabel.trim() || "Office",
-                  })}
-                  disabled={setDistanceOrigin.isPending || (editWheel.distanceEnabled && (editWheel.originLat == null || editWheel.originLng == null))}
-                  variant="outline"
-                  className="transition-all duration-200 active:scale-[0.97]"
-                >
-                  {setDistanceOrigin.isPending ? (
-                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving...</span>
-                  ) : "Save distance settings"}
-                </Button>
               </div>
+
+              <ErrorChip error={updateError} onDismiss={() => setUpdateError(null)} />
+              <ErrorChip error={originError} onDismiss={() => setOriginError(null)} />
+              <Button
+                onClick={saveWheelSettings}
+                disabled={!editWheel.name.trim() || savingWheelSettings}
+                className="transition-all duration-200 active:scale-[0.97]"
+                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+              >
+                {savingWheelSettings ? (
+                  <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
+                ) : "Save Settings"}
+              </Button>
             </div>
           )}
         </DialogContent>
