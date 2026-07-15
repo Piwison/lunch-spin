@@ -35,7 +35,9 @@ var users = mysqlTable("users", {
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  // Wheel auto-opened on entry when set; null = fall back to the first wheel.
+  defaultWheelId: int("defaultWheelId")
 });
 var wheels = mysqlTable("wheels", {
   id: int("id").autoincrement().primaryKey(),
@@ -254,6 +256,11 @@ async function getUserById(id) {
   if (!db) return void 0;
   const result = await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(eq(users.id, id)).limit(1);
   return result[0];
+}
+async function setUserDefaultWheel(userId, wheelId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ defaultWheelId: wheelId }).where(eq(users.id, userId));
 }
 async function createWheel(ownerId, name, isShared, isPublic, inviteToken, exclusionDays = DEFAULT_EXCLUSION_DAYS, fairnessMode = false, rotateCuisines = false) {
   const db = await getDb();
@@ -1997,6 +2004,17 @@ var appRouter = router({
       if (!wheel.isShared) throw new TRPCError3({ code: "FORBIDDEN", message: "This wheel is not shared" });
       await addWheelMember(wheel.id, ctx.user.id);
       return { wheelId: wheel.id, wheelName: wheel.name };
+    }),
+    // Wheel auto-opened on entry. Pass null to unset (falls back to the first
+    // wheel again). Membership-gated so you can't default to a wheel you can't
+    // actually open.
+    setDefault: protectedProcedure.input(z3.object({ wheelId: z3.number().nullable() })).mutation(async ({ ctx, input }) => {
+      if (input.wheelId !== null) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      }
+      await setUserDefaultWheel(ctx.user.id, input.wheelId);
+      return { success: true };
     }),
     // Portable JSON bundle of a wheel + its restaurants (no ids).
     export: protectedProcedure.input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => {

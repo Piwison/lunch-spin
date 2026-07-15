@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown } from "lucide-react";
+import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -229,6 +229,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     },
     onError: (e) => toast.error(`Failed to delete wheel: ${e.message}`),
   });
+  const setDefaultWheel = trpc.wheels.setDefault.useMutation({
+    onSuccess: () => { utils.auth.me.invalidate(); },
+    onError: (e) => toast.error(`Failed to set default wheel: ${e.message}`),
+  });
   const regenInvite = trpc.wheels.regenerateInvite.useMutation({
     onSuccess: (data, vars) => {
       const w = wheels?.find(w => w.id === vars.id);
@@ -268,6 +272,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const renderRow = (wheel: NonNullable<typeof wheels>[number], variant: "rail" | "sheet") => {
     const isSelected = wheel.id === selectedWheelId;
     const isOwner = wheel.ownerId === user?.id;
+    const isDefault = wheel.id === user?.defaultWheelId;
     const inSheet = variant === "sheet";
     const select = () => {
       onSelect(wheel.id);
@@ -304,6 +309,15 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
           >
             {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
           </span>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setDefaultWheel.mutate({ wheelId: isDefault ? null : wheel.id }); }}
+          disabled={setDefaultWheel.isPending}
+          aria-label={isDefault ? "Unset default wheel" : "Set as default wheel"}
+          title={isDefault ? "Default wheel — opens automatically. Click to unset." : "Set as default wheel (opens automatically on entry)"}
+          className={`flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors ${inSheet ? "h-11 w-9" : "h-9 w-8"}`}
+        >
+          <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
         </button>
         <div
           className={`flex-shrink-0 pr-1 ${

@@ -77,6 +77,12 @@ export async function getUserById(id: number) {
   return result[0];
 }
 
+export async function setUserDefaultWheel(userId: number, wheelId: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ defaultWheelId: wheelId }).where(eq(users.id, userId));
+}
+
 // ─── Wheels ───────────────────────────────────────────────────────────────────
 
 export async function createWheel(ownerId: number, name: string, isShared: boolean, isPublic: boolean, inviteToken?: string, exclusionDays: number = DEFAULT_EXCLUSION_DAYS, fairnessMode = false, rotateCuisines = false) {

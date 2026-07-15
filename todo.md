@@ -182,10 +182,21 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
          (NOT per-user), members read it.
        - Display: inline "~N min" on Restaurant-tab rows + optional "nearest first" sort
          toggle; also show the winner's walk-time in the spin result modal.
-5. [ ] Default wheel (auto-opened on entry).
+5. [x] Default wheel (auto-opened on entry).
        DECISIONS: users.defaultWheelId column (migration, deploy gate). Star/pin toggle
        on each wheel row in WheelSelector to set it; profile menu shows current default.
        WheelApp auto-open (:118-124) uses defaultWheelId, falls back to wheels[0].
+       DONE: migration 0011_default_wheel.sql (users.defaultWheelId, nullable, no
+       default needed). server: setUserDefaultWheel (db.ts) + wheels.setDefault
+       (routers.ts, membership-gated, wheelId: number|null). Client: star toggle per
+       row in WheelSelector (WheelActionsMenu's sibling, not nested — avoids
+       button-in-button); WheelApp auto-open prefers user.defaultWheelId, falls back to
+       wheels[0]. auth.me already re-fetches the full DB user row per-request
+       (server/_core/sdk.ts authenticateRequest → db.getUserByOpenId), so
+       defaultWheelId flows through with no change to the prohibited session-contract
+       files (context.ts/sdk.ts/trpc.ts untouched).
+       DEPLOY-GATE: apply migration 0011 to the live DB (generated ≠ applied).
+       Profile-menu display of the current default is wired in #3, next.
 6. [x] Add-restaurant tags: fewer presets + user-extensible per category.
        Where: RestaurantTab.tsx TagSelector (:156).
        DECISIONS: show a CURATED 5 presets per category (Cuisine + Food Type) with a

@@ -56,6 +56,7 @@ import {
   isWheelMember,
   recordSpin,
   reenableRestaurant,
+  setUserDefaultWheel,
   updateRestaurant,
   updateWheel,
 } from "./db";
@@ -175,6 +176,20 @@ export const appRouter = router({
         if (!wheel.isShared) throw new TRPCError({ code: "FORBIDDEN", message: "This wheel is not shared" });
         await addWheelMember(wheel.id, ctx.user.id);
         return { wheelId: wheel.id, wheelName: wheel.name };
+      }),
+
+    // Wheel auto-opened on entry. Pass null to unset (falls back to the first
+    // wheel again). Membership-gated so you can't default to a wheel you can't
+    // actually open.
+    setDefault: protectedProcedure
+      .input(z.object({ wheelId: z.number().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.wheelId !== null) {
+          const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+          if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        await setUserDefaultWheel(ctx.user.id, input.wheelId);
+        return { success: true };
       }),
 
     // Portable JSON bundle of a wheel + its restaurants (no ids).

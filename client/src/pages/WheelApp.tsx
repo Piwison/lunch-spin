@@ -112,16 +112,17 @@ export default function WheelApp() {
   const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery();
   const firstRun = !wheelsLoading && isFirstRun(wheels?.length ?? 0);
 
-  // On arriving without a wheel in the URL, open the user's first wheel so a
-  // returning user lands straight on it instead of re-picking every visit.
-  // First-run users (zero wheels) still get the guided create card.
+  // On arriving without a wheel in the URL, open the user's chosen default wheel
+  // (set via the star toggle in WheelSelector) if they have one, else their first
+  // wheel — so a returning user lands straight on it instead of re-picking every
+  // visit. First-run users (zero wheels) still get the guided create card.
   useEffect(() => {
     if (params.wheelId || selectedWheelId) return;
     if (wheelsLoading || !wheels || wheels.length === 0) return;
-    const first = wheels[0]!;
-    setSelectedWheelId(first.id);
-    navigate(`/app/${first.id}`, { replace: true });
-  }, [params.wheelId, selectedWheelId, wheels, wheelsLoading, navigate]);
+    const preferred = wheels.find((w) => w.id === user?.defaultWheelId) ?? wheels[0]!;
+    setSelectedWheelId(preferred.id);
+    navigate(`/app/${preferred.id}`, { replace: true });
+  }, [params.wheelId, selectedWheelId, wheels, wheelsLoading, user?.defaultWheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
   // can launch it (sample vs blank). Ref keeps the callback identity stable.
