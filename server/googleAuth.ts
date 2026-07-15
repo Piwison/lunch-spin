@@ -17,7 +17,27 @@ import * as db from "./db";
 const SCOPES = ["openid", "profile", "email"];
 const STATE_COOKIE = "g_oauth_state";
 const VERIFIER_COOKIE = "g_oauth_verifier";
+const REDIRECT_COOKIE = "g_oauth_redirect";
 const TEMP_MAX_AGE_MS = 10 * 60 * 1000; // 10 min to complete the round-trip
+
+// Carries the caller's intended post-login destination (e.g. "/join/abc123")
+// through the OAuth round-trip via a cookie, same as state/verifier. Without
+// this every sign-in landed on "/" regardless of where it started, so a
+// not-yet-signed-in invitee clicking "Sign in to join" from /join/:token would
+// complete Google auth and never return to accept the invite.
+//
+// Only ever redirects same-origin: must be a single leading "/" and not "//"
+// or "/\" (both of which browsers/some proxies can resolve as protocol-relative
+// absolute URLs — the standard open-redirect vector for a "return path" param).
+export function safeRedirectPath(raw: string | undefined): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\")) return raw;
+  return "/";
+}
+
+function getQueryParam(req: Request, key: string): string | undefined {
+  const value = req.query[key];
+  return typeof value === "string" ? value : undefined;
+}
 
 const isConfigured = () => Boolean(ENV.googleClientId && ENV.googleClientSecret);
 
@@ -66,6 +86,7 @@ const googleClient = (req: Request) =>
 function clearTempCookies(res: Response) {
   res.clearCookie(STATE_COOKIE, { path: "/" });
   res.clearCookie(VERIFIER_COOKIE, { path: "/" });
+  res.clearCookie(REDIRECT_COOKIE, { path: "/" });
 }
 
 export function registerGoogleAuthRoutes(app: Express) {
@@ -73,13 +94,18 @@ export function registerGoogleAuthRoutes(app: Express) {
   app.get("/api/auth/google/login", (req: Request, res: Response) => {
     if (notReady(res)) return;
 
+    const redirectTo = safeRedirectPath(getQueryParam(req, "redirect"));
+
     // Cookies are host-scoped. If sign-in starts on a host other than the
     // canonical APP_ORIGIN (e.g. the *.vercel.app default URL vs a custom
     // domain, or www vs apex), the state cookie would be set here but never
     // returned to ${APP_ORIGIN}/callback → "Invalid OAuth state". Bounce to the
     // canonical origin first so the cookie and the callback share a host.
+    // Carry `redirect` through this hop too, or it's lost before it's ever stored.
     if (ENV.appOrigin && requestOrigin(req) !== stripSlash(ENV.appOrigin)) {
-      res.redirect(302, `${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      const bounce = new URL(`${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      if (redirectTo !== "/") bounce.searchParams.set("redirect", redirectTo);
+      res.redirect(302, bounce.toString());
       return;
     }
 
@@ -91,6 +117,7 @@ export function registerGoogleAuthRoutes(app: Express) {
     const tempOpts = { httpOnly: true, path: "/", maxAge: TEMP_MAX_AGE_MS, sameSite: "lax" as const, secure };
     res.cookie(STATE_COOKIE, state, tempOpts);
     res.cookie(VERIFIER_COOKIE, codeVerifier, tempOpts);
+    if (redirectTo !== "/") res.cookie(REDIRECT_COOKIE, redirectTo, tempOpts);
     res.redirect(302, url.toString());
   });
 
@@ -102,6 +129,7 @@ export function registerGoogleAuthRoutes(app: Express) {
     const cookies = parseCookie(req.headers.cookie ?? "");
     const storedState = cookies[STATE_COOKIE];
     const codeVerifier = cookies[VERIFIER_COOKIE];
+    const redirectTo = safeRedirectPath(cookies[REDIRECT_COOKIE]);
 
     // CSRF: the returned state must match the one we set on this browser.
     if (
@@ -147,7 +175,7 @@ export function registerGoogleAuthRoutes(app: Express) {
 
       clearTempCookies(res);
       res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
-      res.redirect(302, "/");
+      res.redirect(302, redirectTo);
     } catch (error) {
       clearTempCookies(res);
       console.error("[GoogleAuth] callback failed:", error instanceof Error ? error.message : "unknown error");

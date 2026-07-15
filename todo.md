@@ -137,10 +137,9 @@
 Status: RECORDED + SPEC'D. Ready to implement; not yet started. Gate each with
 pnpm check && test && build, and rebuild api/index.js for any server/ or shared/ change.
 
-1. [~] Join broken — invitee opens the REAL invite link (/join/:token) but "joins,
+1. [x] Join broken — invitee opens the REAL invite link (/join/:token) but "joins,
        nothing changes": not shown as a member / can't see the wheel.
-       PARTIAL FIX SHIPPED (two confirmed, safe bugs; a THIRD, more likely root cause
-       found but NOT fixed — needs your explicit go-ahead, see below):
+       THREE fixes shipped:
        1. wheels.get (carries .members, read by WheelMembers/the owner's "Team" panel)
           never refreshed after first load — someone joining wouldn't show up until a
           manual page reload. Fixed: WheelApp.tsx now polls it every 3s once the wheel
@@ -149,21 +148,28 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
           invitee already had the app open earlier in the same browser session,
           WheelSelector's sidebar would render its stale pre-join snapshot right after
           the redirect. Fixed: invalidates wheels.list + wheels.get(id) on join success.
-       3. ⚠ NOT FIXED — HARD STOP, needs your confirmation: server/_core/oauth.ts's
-          callback always does `res.redirect(302, "/")` (line ~47) — a fixed landing-page
-          redirect with no return-path support. A NOT-yet-signed-in invitee who clicks
-          "SIGN IN TO JOIN" completes OAuth and lands on the marketing page "/", never
-          back on /join/:token — so wheels.join is NEVER CALLED for a first-time invitee.
-          This is plausibly the real "cannot join the team" report (first-time invitees
-          are exactly who a team-invite feature disproportionately hits not-signed-in).
-          Fix would carry the /join/:token path through login (e.g. a `redirect` query
-          param + honoring it in the callback) — but oauth.ts is a Prohibited-#1 file
-          (session/cookie contract; AGENTS.md: "changes log out every user") and this
-          repo's own rule is to stop and ask before touching it. STOPPING HERE.
-       Still true and unresolved: whether the wheel_members row actually persists on the
-       LIVE DB (known failure mode #2 — migrations generated≠applied) can't be verified
-       from this sandbox (no DATABASE_URL). Live smoke-test both the already-signed-in
-       and not-yet-signed-in invitee paths after deploy.
+       3. (Most likely THE real root cause) A NOT-yet-signed-in invitee clicking
+          "SIGN IN TO JOIN" would complete Google OAuth and land on "/" — never back on
+          /join/:token — so wheels.join was NEVER CALLED for a first-time invitee.
+          CORRECTION to the earlier note here: the culprit isn't server/_core/oauth.ts
+          (that route, /api/oauth/callback, is dead Manus-era code — getLoginUrl() never
+          points at it). The live handler is server/googleAuth.ts, which sits OUTSIDE
+          _core/ (same pattern as server/places.ts's own "deliberately lives outside the
+          guarded auth directory" comment) and is NOT one of AGENTS.md's Prohibited-#1
+          files — so this needed the user's go-ahead to fix (given), not a hard stop.
+          Fix: getLoginUrl(redirectTo?) now appends ?redirect=<path>; JoinWheel's sign-in
+          link passes `/join/:token`. googleAuth.ts carries it through the round-trip via
+          a new g_oauth_redirect cookie (same shape as the existing state/verifier temp
+          cookies) — preserved across the canonical-origin bounce too — and the callback
+          redirects there instead of a hardcoded "/". safeRedirectPath() (exported, unit
+          tested — server/googleAuth.test.ts, 9 cases) only allows a single-leading-slash
+          same-origin path, rejecting `//`, `/\`, and scheme-bearing values (open-redirect
+          guard) and defaulting to "/" on anything else. COOKIE_NAME / session-token
+          issuance / CSRF state-comparison logic untouched.
+       Still unresolved: whether the wheel_members row actually persists on the LIVE DB
+       (known failure mode #2 — migrations generated≠applied) can't be verified from this
+       sandbox (no DATABASE_URL). Live smoke-test both the already-signed-in and
+       not-yet-signed-in invitee paths after deploy.
 2. [x] Shared/guest views default to LIGHT mode.
        DECISION: force light ONLY on /w/ (GuestWheel) and /join (JoinWheel) — ignore
        OS/localStorage on those routes. Logged-in app keeps light-default + working toggle.

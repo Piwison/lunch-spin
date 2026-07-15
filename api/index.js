@@ -959,7 +959,16 @@ function mapGoogleClaims(claims, expectedAud, nowSeconds) {
 var SCOPES = ["openid", "profile", "email"];
 var STATE_COOKIE = "g_oauth_state";
 var VERIFIER_COOKIE = "g_oauth_verifier";
+var REDIRECT_COOKIE = "g_oauth_redirect";
 var TEMP_MAX_AGE_MS = 10 * 60 * 1e3;
+function safeRedirectPath(raw) {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\")) return raw;
+  return "/";
+}
+function getQueryParam2(req, key) {
+  const value = req.query[key];
+  return typeof value === "string" ? value : void 0;
+}
 var isConfigured = () => Boolean(ENV.googleClientId && ENV.googleClientSecret);
 function notReady(res) {
   if (!isConfigured()) {
@@ -992,12 +1001,16 @@ var googleClient = (req) => new Google(ENV.googleClientId, ENV.googleClientSecre
 function clearTempCookies(res) {
   res.clearCookie(STATE_COOKIE, { path: "/" });
   res.clearCookie(VERIFIER_COOKIE, { path: "/" });
+  res.clearCookie(REDIRECT_COOKIE, { path: "/" });
 }
 function registerGoogleAuthRoutes(app2) {
   app2.get("/api/auth/google/login", (req, res) => {
     if (notReady(res)) return;
+    const redirectTo = safeRedirectPath(getQueryParam2(req, "redirect"));
     if (ENV.appOrigin && requestOrigin(req) !== stripSlash(ENV.appOrigin)) {
-      res.redirect(302, `${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      const bounce = new URL(`${stripSlash(ENV.appOrigin)}/api/auth/google/login`);
+      if (redirectTo !== "/") bounce.searchParams.set("redirect", redirectTo);
+      res.redirect(302, bounce.toString());
       return;
     }
     const state = generateState();
@@ -1007,6 +1020,7 @@ function registerGoogleAuthRoutes(app2) {
     const tempOpts = { httpOnly: true, path: "/", maxAge: TEMP_MAX_AGE_MS, sameSite: "lax", secure };
     res.cookie(STATE_COOKIE, state, tempOpts);
     res.cookie(VERIFIER_COOKIE, codeVerifier, tempOpts);
+    if (redirectTo !== "/") res.cookie(REDIRECT_COOKIE, redirectTo, tempOpts);
     res.redirect(302, url.toString());
   });
   app2.get("/api/auth/google/callback", async (req, res) => {
@@ -1016,6 +1030,7 @@ function registerGoogleAuthRoutes(app2) {
     const cookies = parseCookie(req.headers.cookie ?? "");
     const storedState = cookies[STATE_COOKIE];
     const codeVerifier = cookies[VERIFIER_COOKIE];
+    const redirectTo = safeRedirectPath(cookies[REDIRECT_COOKIE]);
     if (typeof code !== "string" || typeof stateParam !== "string" || !storedState || !codeVerifier || stateParam !== storedState) {
       console.error("[GoogleAuth] state check failed:", {
         hasCode: typeof code === "string",
@@ -1047,7 +1062,7 @@ function registerGoogleAuthRoutes(app2) {
       });
       clearTempCookies(res);
       res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
-      res.redirect(302, "/");
+      res.redirect(302, redirectTo);
     } catch (error) {
       clearTempCookies(res);
       console.error("[GoogleAuth] callback failed:", error instanceof Error ? error.message : "unknown error");

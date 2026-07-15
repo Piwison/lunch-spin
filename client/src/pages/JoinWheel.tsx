@@ -54,7 +54,7 @@ export default function JoinWheel() {
           <p className="text-muted-foreground">Sign in to join this lunch wheel</p>
         </div>
         <a
-          href={getLoginUrl()}
+          href={getLoginUrl(`/join/${params.token}`)}
           className="px-8 py-3 rounded-full font-semibold text-sm"
           style={{
             background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
