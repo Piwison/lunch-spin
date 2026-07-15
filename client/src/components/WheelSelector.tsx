@@ -307,11 +307,20 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   });
   const resolveOriginLink = trpc.places.resolveLink.useMutation({
     onSuccess: ({ place }) => {
+      // Unlike a restaurant's "Look up" (name-only, coordinates optional), the
+      // origin is USELESS without coordinates — Google's response can carry a
+      // name with no geometry (e.g. some establishment results). Reporting
+      // success here when there's nothing to save is exactly what produced the
+      // "I saved it but it's gone" confusion: the origin was never captured, so
+      // the later Save Settings step correctly rejected it, but by then the
+      // misleading toast had already made it look like this step had worked.
+      if (place.lat == null || place.lng == null) {
+        setOriginError(`Found "${place.name}" but couldn't get its exact location. Try "Use my current location" instead, or a more specific Maps link.`);
+        return;
+      }
       setOriginError(null);
       setOriginLinkInput("");
-      if (editWheel && place.lat != null && place.lng != null) {
-        setEditWheel({ ...editWheel, originLat: place.lat, originLng: place.lng });
-      }
+      if (editWheel) setEditWheel({ ...editWheel, originLat: place.lat, originLng: place.lng });
       toast.success(`Found: ${place.name}`);
     },
     onError: (e) => setOriginError(e.message),
@@ -400,6 +409,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   };
 
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
+  const isSelectedWheelOwner = selectedWheel?.ownerId === user?.id;
 
   /** One row, shared between the desktop rail and the mobile sheet. The select
    *  target and the kebab are siblings (not nested), so a tap can only ever do
@@ -496,10 +506,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
       </aside>
 
       {/* ── MOBILE — wheel-picker pill + bottom sheet ── */}
-      <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0">
+      <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0 flex items-center gap-2">
         <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
           <SheetTrigger asChild>
-            <button className="w-full flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
+            <button className="flex-1 min-w-0 flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
               <span
                 className={`w-7 h-7 rounded-full flex-shrink-0 ${selectedWheel ? "orb-wheel" : ""}`}
                 style={selectedWheel ? undefined : { background: "var(--border)" }}
@@ -531,6 +541,16 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             </div>
           </SheetContent>
         </Sheet>
+        {isSelectedWheelOwner && selectedWheel && (
+          <button
+            onClick={() => openSettingsFor(selectedWheel)}
+            aria-label="Wheel settings"
+            title="Wheel settings"
+            className="flex-shrink-0 flex items-center justify-center h-14 w-14 rounded-2xl glass-nav text-muted-foreground hover:text-foreground transition-transform active:scale-95"
+          >
+            <Settings size={18} />
+          </button>
+        )}
       </div>
 
       {/* Create wheel dialog */}

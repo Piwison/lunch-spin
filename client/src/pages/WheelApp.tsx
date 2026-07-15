@@ -5,13 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import RestaurantTab from "@/components/RestaurantTab";
+import FilterBar from "@/components/FilterBar";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, SlidersHorizontal, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings } from "lucide-react";
-import { filterRestaurantsByTags } from "@shared/filter";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings } from "lucide-react";
+import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
@@ -47,6 +48,7 @@ export default function WheelApp() {
     params.wheelId ? parseInt(params.wheelId) : null
   );
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [maxWalkMinutes, setMaxWalkMinutes] = useState<number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -245,8 +247,8 @@ export default function WheelApp() {
   });
 
   const roundCandidates = useMemo(
-    () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
-    [restaurants, selectedTagIds]
+    () => filterRestaurantsByDistance(filterRestaurantsByTags(restaurants ?? [], selectedTagIds), maxWalkMinutes),
+    [restaurants, selectedTagIds, maxWalkMinutes]
   );
 
   const filteredRestaurants = useMemo(() => {
@@ -566,9 +568,12 @@ export default function WheelApp() {
 
                     {/* Settings shortcut — same dialog as the sidebar's kebab menu
                         (registerSettingsOpener), just faster once you're already
-                        on the wheel. Owner-only, same gate as that menu item. */}
+                        on the wheel. Owner-only, same gate as that menu item.
+                        Desktop only: on mobile this would sit in its own empty
+                        row above Team/Round, so the gear lives in the
+                        wheel-picker pill row instead (WheelSelector.tsx). */}
                     {isOwner && selectedWheelId && (
-                      <div className="w-full flex justify-end -mb-2">
+                      <div className="hidden md:flex w-full justify-end -mb-2">
                         <button
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
                           aria-label="Wheel settings"
@@ -611,167 +616,24 @@ export default function WheelApp() {
                       </div>
                     )}
 
-                    {/* ── FILTER BAR (compact, collapsible) — only when there are
-                          actually tags in use to filter by ── */}
-                    {(restaurants?.length ?? 0) > 0 && usedTagIds.size > 0 && (
-                      <div
-                        className="w-full rounded-xl overflow-hidden transition-all duration-300"
-                        style={{
-                          background: "oklch(from var(--card) l c h / 0.6)",
-                          border: `1px solid ${selectedTagIds.length > 0 ? "oklch(from var(--brand-2) l c h / 0.4)" : "var(--border)"}`,
-                          backdropFilter: "blur(12px)",
-                        }}
-                      >
-                        {/* Filter header */}
-                        <button
-                          onClick={() => setShowFilters((s) => !s)}
-                          className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/3"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <SlidersHorizontal
-                              size={14}
-                              style={{ color: selectedTagIds.length > 0 ? "var(--brand)" : "var(--muted-foreground)" }}
-                            />
-                            <span
-                              className="text-xs font-semibold tracking-widest"
-                              style={{
-                                fontFamily: "var(--font-display)",
-                                color: selectedTagIds.length > 0 ? "var(--foreground)" : "var(--muted-foreground)",
-                              }}
-                            >
-                              FILTER BY TAGS
-                            </span>
-                            {selectedTagIds.length > 0 && (
-                              <span
-                                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                                style={{
-                                  background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                                  color: "white",
-                                }}
-                              >
-                                {selectedTagIds.length} active
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3">
-                            {selectedTagIds.length > 0 && (
-                              <span className="text-xs text-muted-foreground tabular-nums">
-                                {filteredRestaurants.length}/{restaurants?.length ?? 0}
-                              </span>
-                            )}
-                            <ChevronDown
-                              size={14}
-                              className="text-muted-foreground transition-transform duration-200"
-                              style={{ transform: showFilters ? "rotate(180deg)" : "none" }}
-                            />
-                          </div>
-                        </button>
-
-                        {/* Filter tags */}
-                        {showFilters && (
-                          <div className="px-4 pb-4 border-t border-border/30">
-                            {cuisineTags.length > 0 && (
-                              <div className="mt-3">
-                                <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>CUISINE</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {cuisineTags.map((tag) => {
-                                    const isActive = selectedTagIds.includes(tag.id);
-                                    return (
-                                      <button
-                                        key={tag.id}
-                                        onClick={() => toggleTag(tag.id)}
-                                        className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
-                                        style={{
-                                          background: isActive ? tag.color + "25" : "var(--muted)",
-                                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
-                                          color: isActive ? tag.color : "var(--muted-foreground)",
-                                          boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
-                                        }}
-                                      >
-                                        {tag.name}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                            {foodTypeTags.length > 0 && (
-                              <div className="mt-3">
-                                <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>FOOD TYPE</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {foodTypeTags.map((tag) => {
-                                    const isActive = selectedTagIds.includes(tag.id);
-                                    return (
-                                      <button
-                                        key={tag.id}
-                                        onClick={() => toggleTag(tag.id)}
-                                        className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
-                                        style={{
-                                          background: isActive ? tag.color + "25" : "var(--muted)",
-                                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
-                                          color: isActive ? tag.color : "var(--muted-foreground)",
-                                          boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
-                                        }}
-                                      >
-                                        {tag.name}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                            {customTags.length > 0 && (
-                              <div className="mt-3">
-                                <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>CUSTOM</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {customTags.map((tag) => {
-                                    const isActive = selectedTagIds.includes(tag.id);
-                                    return (
-                                      <button
-                                        key={tag.id}
-                                        onClick={() => toggleTag(tag.id)}
-                                        className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
-                                        style={{
-                                          background: isActive ? tag.color + "25" : "var(--muted)",
-                                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
-                                          color: isActive ? tag.color : "var(--muted-foreground)",
-                                          boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
-                                        }}
-                                      >
-                                        {tag.name}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                            {selectedTagIds.length > 0 && (
-                              <button
-                                onClick={() => setSelectedTagIds([])}
-                                className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                              >
-                                <X size={11} /> Clear all filters
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Empty filter warning */}
-                        {selectedTagIds.length > 0 && filteredRestaurants.length === 0 && (
-                          <div
-                            className="mx-4 mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs"
-                            style={{
-                              background: "oklch(from var(--destructive) l c h / 0.12)",
-                              border: "1px solid oklch(from var(--destructive) l c h / 0.35)",
-                              color: "var(--brand)",
-                            }}
-                          >
-                            <AlertTriangle size={13} className="flex-shrink-0" />
-                            No restaurants match all selected tags. Try removing some filters.
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {/* ── FILTER BAR (compact, collapsible) — tags + distance ── */}
+                    <FilterBar
+                      open={showFilters}
+                      onOpenChange={setShowFilters}
+                      tagGroups={[
+                        { label: "CUISINE", items: cuisineTags },
+                        { label: "FOOD TYPE", items: foodTypeTags },
+                        { label: "CUSTOM", items: customTags },
+                      ]}
+                      selectedTagIds={selectedTagIds}
+                      onToggleTag={toggleTag}
+                      distanceEnabled={!!wheelData?.distanceEnabled}
+                      maxWalkMinutes={maxWalkMinutes}
+                      onChangeMaxWalkMinutes={setMaxWalkMinutes}
+                      matchCount={filteredRestaurants.length}
+                      totalCount={restaurants?.length ?? 0}
+                      emptyMessage="No restaurants match your filters. Try removing some."
+                    />
 
                     {/* ── WHEEL + SPIN CTA ── */}
                     {restaurantsLoading ? (
