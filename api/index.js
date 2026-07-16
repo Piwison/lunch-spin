@@ -2159,6 +2159,7 @@ var appRouter = router({
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND", message: "Invalid invite link" });
       if (!wheel.isShared) throw new TRPCError3({ code: "FORBIDDEN", message: "This wheel is not shared" });
       await addWheelMember(wheel.id, ctx.user.id);
+      console.log(`[join] user ${ctx.user.id} joined wheel ${wheel.id} ("${wheel.name}"), owner=${wheel.ownerId}, self=${wheel.ownerId === ctx.user.id}`);
       return { wheelId: wheel.id, wheelName: wheel.name };
     }),
     // Wheel auto-opened on entry. Pass null to unset (falls back to the first

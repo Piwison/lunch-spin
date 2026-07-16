@@ -391,3 +391,32 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        originLat/originLng/originLabel but NOT the address/place name — showing the actual
        pasted title/address would need an originAddress column (migration, apply-to-prod-
        first given the Round-9 outage); offered as a follow-up, not done here.
+
+## Round 11 — post-join UX + loading polish (2026-07-15)
+
+1. [~] Join → "JOINED! Redirecting…" then lands on the user's OWN/default wheel,
+       not the joined one. Server logs show NO 4xx over the join window → wheels.get
+       returns 200, i.e. the join succeeds and the wheel loads fine when requested;
+       so the redirect is NOT landing on /app/:joinedId (WheelApp's auto-open then
+       falls back to defaultWheelId). Two most likely mechanisms: (a) the join was
+       tested with the OWNER's own account (self-join is a no-op → "my own wheel"), or
+       (b) a malformed/empty wheelId in the redirect URL. INSTRUMENTED to decide:
+       - server wheels.join now logs userId, wheelId, wheelName, owner, self=owner==user.
+       - JoinWheel guards data.wheelId (finite number → /app/:id, else /app), redirects
+         with replace, and console.logs the target.
+       Still needs a re-test to read the logs; fix precisely once the mechanism is known.
+2. [x] JoinWheel screen was top-aligned, not centered. ROOT CAUSE: index.css line 153
+       `.flex { min-height: 0 }` is UNLAYERED, so it beats Tailwind's layered
+       min-h-screen on any element that's also `flex` — collapsing the full-height
+       container so justify-center had no room. (WheelApp's loaders escape this by using
+       `fixed inset-0`.) DONE: JoinWheel now centers via a grid Shell (min-h-dvh grid
+       place-items-center — grid isn't `.flex`, so the reset can't touch it), and the
+       screen was redesigned (brand orb / float confetti, wheel name on JOINED, bolder
+       CTA). Left the global .flex rule alone (risky to change app-wide).
+3. [x] First-load felt janky: three DIFFERENT loaders swapped in sequence (gradient
+       circle for the route chunk → 8-slice wheel orb for auth → flat gray circle for
+       restaurants) and animate-orb-spin runs at 28s so it looked frozen. DONE: one
+       shared <BrandLoader/> (the wheel orb spun at 1.4s + label) now covers route-chunk,
+       auth, and wheel-picking phases; the restaurant/wheel skeleton shows the same
+       spinning orb where the wheel will land instead of a gray blob. Reduced-motion
+       still zeroes the spin (label carries the meaning).
