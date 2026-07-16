@@ -343,3 +343,80 @@ pnpm check && test && build, and rebuild api/index.js for any server/ or shared/
        "match/total" count folding in both filter kinds, "Clear all" resets both.
        WheelApp.tsx and RestaurantTab.tsx each keep their own maxWalkMinutes state and
        compose filterRestaurantsByTags + filterRestaurantsByDistance independently.
+
+4. [~] "Recompute" button on the Restaurants tab's distance bar does nothing.
+       DIAGNOSED via live Vercel logs (not guessed): POST /api/trpc/wheels.recomputeDistances
+       returns 200 with zero console output around it — the request succeeds, meaning
+       it's not auth/routing/DB; recomputeWheelDistances is silently no-op'ing. Root
+       cause: server/distance.ts wrapped the walkingMatrix() call in a bare try/catch
+       with no logging at all — if the Distance Matrix API call itself throws (most
+       likely: "Distance Matrix API" isn't enabled on GOOGLE_MAPS_API_KEY — a SEPARATE
+       toggle in Google Cloud Console from "Places API", which powers Look-up/nearby
+       search and evidently IS working), the failure vanished with no trace anywhere,
+       client or server, and the mutation still returned {success:true, computed:0} —
+       indistinguishable from "nothing needed updating".
+       DONE (observability + honest client feedback, ships regardless of root cause):
+       - console.error added to every catch in server/distance.ts (geocode + matrix
+         failures), so a repeat attempt will actually show up in Vercel logs.
+       - recomputeWheelDistances/maybeComputeOneDistance return a new matrixFailed
+         flag distinguishing "tried, Distance Matrix errored" from "nothing to compute".
+       - Client (RestaurantTab's Recompute button + WheelSelector's Save Settings) now
+         shows an explicit error — "Couldn't reach the Distance Matrix service — check
+         it's enabled on the server's Google Maps API key" — instead of a blanket
+         success toast when matrixFailed is true.
+       ⚠ STILL OPEN — needs the user to check: enable "Distance Matrix API" on the
+       GOOGLE_MAPS_API_KEY project in Google Cloud Console (APIs & Services → Library),
+       the same key Places API already runs on. This is an account-level toggle I can't
+       flip myself. Also matches the DEPLOY-GATE note already on item 4 above — this is
+       likely that exact gap, now with an actual error message pointing at it instead of
+       silent failure.
+       CONFIRMED (2026-07-15, screenshot): the ADD NEARBY list shows every result as
+       "~N min walk" — the "~" prefix is formatWalk(..., walkSource !== "route"), i.e.
+       ALL haversine estimates, zero routed times. searchNearby falls back to estimates
+       in its `catch` when walkingMatrix throws. So the nearby distances are NOT evidence
+       Distance Matrix works — they're the FALLBACK, and their being all-"~" is positive
+       confirmation Distance Matrix API is off. Places API (Look-up/nearby search itself)
+       is a different key toggle and clearly works. Fix remains: enable Distance Matrix API.
+
+5. [x] Office origin "doesn't show what I saved" on reopen (screenshot: green "Location
+       set — saved when you save settings below", empty link field, no address/title).
+       NOT a persistence bug — the green line only renders when originLat loaded from the
+       DB, so it WAS saving; the copy "saved when you save settings below" read as
+       pending, and nothing showed WHAT was stored. DONE (client-only, no schema change):
+       the status line now distinguishes an already-persisted origin ("<Label> location
+       saved", compared against the wheels-list row) from one set-this-session-but-unsaved
+       ("New location ready — press Save Settings to apply"), adds a "view on map" link
+       (opens the stored coords in Google Maps so the owner can verify the actual place),
+       and a "Paste a new link or use your location to change it" hint. NOTE: we store
+       originLat/originLng/originLabel but NOT the address/place name — showing the actual
+       pasted title/address would need an originAddress column (migration, apply-to-prod-
+       first given the Round-9 outage); offered as a follow-up, not done here.
+
+## Round 11 — post-join UX + loading polish (2026-07-15)
+
+1. [~] Join → "JOINED! Redirecting…" then lands on the user's OWN/default wheel,
+       not the joined one. Server logs show NO 4xx over the join window → wheels.get
+       returns 200, i.e. the join succeeds and the wheel loads fine when requested;
+       so the redirect is NOT landing on /app/:joinedId (WheelApp's auto-open then
+       falls back to defaultWheelId). Two most likely mechanisms: (a) the join was
+       tested with the OWNER's own account (self-join is a no-op → "my own wheel"), or
+       (b) a malformed/empty wheelId in the redirect URL. INSTRUMENTED to decide:
+       - server wheels.join now logs userId, wheelId, wheelName, owner, self=owner==user.
+       - JoinWheel guards data.wheelId (finite number → /app/:id, else /app), redirects
+         with replace, and console.logs the target.
+       Still needs a re-test to read the logs; fix precisely once the mechanism is known.
+2. [x] JoinWheel screen was top-aligned, not centered. ROOT CAUSE: index.css line 153
+       `.flex { min-height: 0 }` is UNLAYERED, so it beats Tailwind's layered
+       min-h-screen on any element that's also `flex` — collapsing the full-height
+       container so justify-center had no room. (WheelApp's loaders escape this by using
+       `fixed inset-0`.) DONE: JoinWheel now centers via a grid Shell (min-h-dvh grid
+       place-items-center — grid isn't `.flex`, so the reset can't touch it), and the
+       screen was redesigned (brand orb / float confetti, wheel name on JOINED, bolder
+       CTA). Left the global .flex rule alone (risky to change app-wide).
+3. [x] First-load felt janky: three DIFFERENT loaders swapped in sequence (gradient
+       circle for the route chunk → 8-slice wheel orb for auth → flat gray circle for
+       restaurants) and animate-orb-spin runs at 28s so it looked frozen. DONE: one
+       shared <BrandLoader/> (the wheel orb spun at 1.4s + label) now covers route-chunk,
+       auth, and wheel-picking phases; the restaurant/wheel skeleton shows the same
+       spinning orb where the wheel will land instead of a gray blob. Reduced-motion
+       still zeroes the spin (label carries the meaning).

@@ -177,6 +177,11 @@ export const appRouter = router({
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND", message: "Invalid invite link" });
         if (!wheel.isShared) throw new TRPCError({ code: "FORBIDDEN", message: "This wheel is not shared" });
         await addWheelMember(wheel.id, ctx.user.id);
+        // Diagnostic for the "joined but I land on my own wheel" report: shows
+        // the exact wheel the token resolved to and whether the joiner is in
+        // fact the owner (in which case "join" is a no-op — a common
+        // testing-with-one-account artifact).
+        console.log(`[join] user ${ctx.user.id} joined wheel ${wheel.id} ("${wheel.name}"), owner=${wheel.ownerId}, self=${wheel.ownerId === ctx.user.id}`);
         return { wheelId: wheel.id, wheelName: wheel.name };
       }),
 
@@ -226,7 +231,9 @@ export const appRouter = router({
           originLabel: input.originLabel ?? wheel.originLabel ?? "Office",
         });
 
-        const result = input.enabled ? await recomputeWheelDistances(input.id) : { computed: 0, unlocatable: 0 };
+        const result = input.enabled
+          ? await recomputeWheelDistances(input.id)
+          : { computed: 0, unlocatable: 0, matrixFailed: false };
         return { success: true, ...result };
       }),
 

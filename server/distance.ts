@@ -33,10 +33,17 @@ async function activeOrigin(wheelId: number): Promise<{ lat: number; lng: number
 
 /** Recompute every restaurant on a wheel against its current origin. No-op
  *  (returns zeros) when distance mode is off, has no origin, or the place
- *  provider isn't configured — callers don't need to check first. */
-export async function recomputeWheelDistances(wheelId: number): Promise<{ computed: number; unlocatable: number }> {
+ *  provider isn't configured — callers don't need to check first.
+ *  `matrixFailed` distinguishes "nothing to compute" (e.g. every restaurant
+ *  is unlocatable) from "tried, but the Distance Matrix call itself errored"
+ *  (commonly: Distance Matrix API not enabled on GOOGLE_MAPS_API_KEY, a
+ *  separate toggle from the Places API that powers "Look up"/nearby search)
+ *  — both used to look identical to the caller as computed:0. */
+export async function recomputeWheelDistances(
+  wheelId: number,
+): Promise<{ computed: number; unlocatable: number; matrixFailed: boolean }> {
   const origin = await activeOrigin(wheelId);
-  if (!origin) return { computed: 0, unlocatable: 0 };
+  if (!origin) return { computed: 0, unlocatable: 0, matrixFailed: false };
 
   const restaurants = await getRestaurantsByWheel(wheelId);
   const { ready, needsGeocode, unlocatable } = partitionForDistance(restaurants);
@@ -50,7 +57,8 @@ export async function recomputeWheelDistances(wheelId: number): Promise<{ comput
       } else {
         unlocatable.push(r.id);
       }
-    } catch {
+    } catch (error) {
+      console.error(`[distance] geocode failed for restaurant ${r.id}:`, error instanceof Error ? error.message : error);
       unlocatable.push(r.id);
     }
   }
@@ -60,6 +68,7 @@ export async function recomputeWheelDistances(wheelId: number): Promise<{ comput
   }
 
   let computed = 0;
+  let matrixFailed = false;
   for (const batch of chunk(ready, MATRIX_CHUNK_SIZE)) {
     try {
       const elements = await walkingMatrix(origin, batch.map((r) => `${r.lat},${r.lng}`));
@@ -68,12 +77,15 @@ export async function recomputeWheelDistances(wheelId: number): Promise<{ comput
         await setRestaurantWalkSeconds(batch[i]!.id, seconds[i] ?? null);
         if (seconds[i] != null) computed++;
       }
-    } catch {
-      // This batch's walkSeconds stay whatever they were — stale, not wrong.
+    } catch (error) {
+      // This batch's walkSeconds stay whatever they were — stale, not wrong —
+      // but the caller needs to know it wasn't just "nothing to compute".
+      console.error(`[distance] walkingMatrix failed for wheel ${wheelId} (${batch.length} destinations):`, error instanceof Error ? error.message : error);
+      matrixFailed = true;
     }
   }
 
-  return { computed, unlocatable: unlocatable.length };
+  return { computed, unlocatable: unlocatable.length, matrixFailed };
 }
 
 /** Compute (or refresh) walking time for a single restaurant — the "auto for
@@ -94,8 +106,8 @@ export async function maybeComputeOneDistance(wheelId: number, restaurantId: num
         await setRestaurantCoords(restaurantId, place.lat, place.lng, place.address);
         target = { id: restaurantId, lat: place.lat, lng: place.lng };
       }
-    } catch {
-      // stays unlocatable
+    } catch (error) {
+      console.error(`[distance] geocode failed for restaurant ${restaurantId}:`, error instanceof Error ? error.message : error);
     }
   }
   if (!target) return;
@@ -104,7 +116,7 @@ export async function maybeComputeOneDistance(wheelId: number, restaurantId: num
     const elements = await walkingMatrix(origin, [`${target.lat},${target.lng}`]);
     const [seconds] = extractWalkSeconds(elements);
     await setRestaurantWalkSeconds(restaurantId, seconds ?? null);
-  } catch {
-    // leave walkSeconds as-is
+  } catch (error) {
+    console.error(`[distance] walkingMatrix failed for restaurant ${restaurantId}:`, error instanceof Error ? error.message : error);
   }
 }

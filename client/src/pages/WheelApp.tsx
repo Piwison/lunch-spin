@@ -6,6 +6,7 @@ import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
+import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
@@ -341,19 +342,7 @@ export default function WheelApp() {
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
 
   if (loading) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--background)" }}>
-        <div className="flex flex-col items-center gap-4">
-          <div
-            className="w-12 h-12 orb-wheel animate-orb-spin"
-            style={{ boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)" }}
-          />
-          <p className="text-sm text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-            LOADING...
-          </p>
-        </div>
-      </div>
-    );
+    return <BrandLoader fullscreen />;
   }
 
   if (!user) return null;
@@ -502,8 +491,8 @@ export default function WheelApp() {
               wheelsLoading ? (
                 /* Hold a neutral state until we know if this is a first run —
                    avoids flashing "no wheel selected" at a brand-new user. */
-                <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-                  <div className="w-16 h-16 orb-wheel animate-orb-spin opacity-60" />
+                <div className="flex items-center justify-center h-full p-8">
+                  <BrandLoader label="" size={64} />
                 </div>
               ) : firstRun ? (
                 /* First-run — the user has no wheels yet. Guide them in (decision 2b). */
@@ -637,8 +626,14 @@ export default function WheelApp() {
 
                     {/* ── WHEEL + SPIN CTA ── */}
                     {restaurantsLoading ? (
+                      /* A spinning brand orb sits where the wheel will land, so the
+                         wait reads as "the wheel is coming" rather than a gray blob;
+                         the pill below stands in for the SPIN button. */
                       <div className="flex flex-col items-center gap-6 py-8 w-full">
-                        <div className="w-72 h-72 rounded-full bg-white/5 animate-pulse" />
+                        <div
+                          className="orb-wheel animate-orb-spin"
+                          style={{ width: "min(72vw, 18rem)", height: "min(72vw, 18rem)", animationDuration: "1.4s", boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.35)" }}
+                        />
                         <div className="h-14 w-48 rounded-full bg-white/5 animate-pulse" />
                       </div>
                     ) : restaurantsError ? (
