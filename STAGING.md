@@ -9,6 +9,42 @@ almost every feature lives — could only be verified *after* merging to
 for real and click through everything on your phone before it ever touches
 production.
 
+> **What we actually built (July 2026): branch-scoped Preview, not a second
+> project.** The recipe below (§1–§6) documents the original separate-project
+> plan. In practice we landed on a simpler equivalent that reuses the existing
+> `lunch-spin` Vercel project — see **"Branch-scoped staging (the live
+> setup)"** immediately below. The isolation guarantees are the same; the only
+> difference is that a per-branch `APP_ORIGIN` (set via branch-scoped Preview
+> env vars) is what keeps OAuth from bouncing to prod, instead of a whole
+> second project.
+
+## Branch-scoped staging (the live setup)
+
+- **Staging URL:** `https://lunch-spin-git-staging-egg0322-gmailcoms-projects.vercel.app`
+  — the automatic Preview deployment of the long-lived `staging` branch. Free,
+  stable (tracks the branch head), no custom domain needed.
+- **Isolation** comes from **branch-scoped `Preview (staging)` environment
+  variables** on the existing project: a separate `DATABASE_URL` (staging TiDB
+  cluster), a fresh `JWT_SECRET`, and an `APP_ORIGIN` set to the staging URL
+  above. Production's own vars are untouched — they stay scoped to
+  `Production`. Verify the split any time with `vercel env ls` (staging rows
+  read `Preview (staging)`; prod rows read `Production, Preview`).
+- **Set/refresh a staging var:** `vercel env add <NAME> preview staging`
+  (run each one individually — the CLI prompts for the value; pasting several
+  `add` commands at once feeds later commands in as the answer to the first).
+- **Deploying staging:** `git push origin staging` → the branch Preview
+  rebuilds automatically and picks up the current `Preview (staging)` vars.
+  Env vars are snapshotted at build time, so **after adding/changing a staging
+  var, push a commit** (or redeploy from the dashboard) so the new value is
+  baked in.
+- **OAuth:** the staging URL's callback
+  (`…vercel.app/api/auth/google/callback`) must be in the OAuth client's
+  Authorized redirect URIs, and staging `APP_ORIGIN` must equal the staging
+  URL — otherwise sign-in bounces.
+- **⚠️ Never `vercel --prod` from a clone linked to `lunch-spin`** — that
+  deploys to *production*, not staging. Staging ships only via
+  `git push origin staging`.
+
 Mirrors PRODUCTION.md's recipe exactly, just a second copy of each piece so
 nothing here can touch live data or the real Google OAuth consent screen.
 
