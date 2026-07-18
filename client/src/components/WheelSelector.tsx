@@ -416,6 +416,23 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     toast.success("Public link copied!");
   };
 
+  // Native share sheet on devices that support it (a phone's real "Share to…"),
+  // falling back to a plain copy on desktop. A cancelled share throws, so we
+  // swallow it rather than treating it as a failure to copy.
+  const sharePublicLink = async (wheelId: number, wheelName: string) => {
+    const url = `${window.location.origin}/w/${wheelId}`;
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: wheelName, text: `Spin the wheel: ${wheelName}`, url });
+      } catch {
+        /* user dismissed the share sheet — nothing to do */
+      }
+      return;
+    }
+    navigator.clipboard.writeText(url);
+    toast.success("Public link copied!");
+  };
+
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
   const isSelectedWheelOwner = selectedWheel?.ownerId === user?.id;
 
@@ -671,6 +688,34 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
                 <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
               </div>
+              {editWheel.isPublic && (() => {
+                // The link is live only once isPublic is persisted; if it was just
+                // toggled on this session, say so instead of implying it already works.
+                const live = wheels?.find((w) => w.id === editWheel.id)?.isPublic === true;
+                const publicUrl = `${window.location.origin}/w/${editWheel.id}`;
+                return (
+                  <div className="-mt-1 flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/30 p-3">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={publicUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="h-9 bg-background/60 border-border/50 text-xs font-mono"
+                      />
+                      <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Copy link" onClick={() => copyPublicLink(editWheel.id)}>
+                        <Copy size={14} />
+                      </Button>
+                      <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Share" onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
+                        <Share2 size={14} />
+                      </Button>
+                    </div>
+                    <p className={`text-[11px] flex items-center gap-1.5 ${live ? "" : "text-muted-foreground"}`} style={live ? { color: "var(--ok)" } : undefined}>
+                      <Globe size={12} className="flex-shrink-0" />
+                      {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save Settings."}
+                    </p>
+                  </div>
+                );
+              })()}
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
                 <Select value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
