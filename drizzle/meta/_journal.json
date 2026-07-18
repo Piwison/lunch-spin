@@ -92,6 +92,13 @@
       "when": 1784081799439,
       "tag": "0012_distance_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1784395730998,
+      "tag": "0013_acoustic_manta",
+      "breakpoints": true
     }
   ]
 }

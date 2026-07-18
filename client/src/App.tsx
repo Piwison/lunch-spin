@@ -42,6 +42,7 @@ function ThemedToaster() {
   return (
     <Toaster
       theme={theme}
+      closeButton
       toastOptions={{
         duration: 3000,
         style: {

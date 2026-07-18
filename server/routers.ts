@@ -37,14 +37,17 @@ import {
   createCustomTag,
   createWheel,
   deleteRestaurant,
+  acceptSpin,
   deleteWheel,
   getExclusions,
+  getNotificationsForUser,
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
   getLatestRatings,
   getRestaurantStats,
   getSpinHistory,
+  markNotificationsRead,
   rateSpin,
   getTagsForWheel,
   getUserById,
@@ -684,6 +687,19 @@ export const appRouter = router({
         return getSpinHistory(input.wheelId);
       }),
 
+    // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
+    // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
+    // acceptSpin no-ops (and creates no duplicate notification) if it's already
+    // accepted or isn't the caller's own spin.
+    accept: protectedProcedure
+      .input(z.object({ wheelId: z.number(), spinId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
+        return { success: result != null };
+      }),
+
     reenable: protectedProcedure
       .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
       .mutation(async ({ ctx, input }) => {
@@ -710,6 +726,22 @@ export const appRouter = router({
         }
         return { success: true, restaurantId };
       }),
+  }),
+
+  // ─── Notifications ─────────────────────────────────────────────────────────────
+  // Team accept-notifications, aggregated across all the caller's shared wheels
+  // (excluding their own accepts). Clients poll `list` for the red dot + panel
+  // and call `markRead` when the panel is opened.
+
+  notifications: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getNotificationsForUser(ctx.user.id);
+    }),
+
+    markRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await markNotificationsRead(ctx.user.id);
+      return { success: true };
+    }),
   }),
 
   // ─── Presence ────────────────────────────────────────────────────────────────
