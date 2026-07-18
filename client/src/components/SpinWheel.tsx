@@ -20,11 +20,11 @@ interface SpinWheelProps {
 // use to velocity-match the hand-off from the constant-speed free-spin so there
 // is no visible "lurch faster" when the winner arrives.
 const QUAD_OUT = (p: number) => p * (2 - p);
-const FREE_SPIN_SPEED = 0.016; // rad/ms constant free-spin (~2.5 turns/s)
-// Fewer rotations → shorter landDuration (it's derived from distance ÷ speed),
-// while the velocity-match formula below still guarantees no lurch at hand-off.
-// 1 turn lands in ~0.8-1.6s, keeping the whole spin around ~2s so it stays
-// snappy without outlasting people's patience.
+const FREE_SPIN_SPEED = 0.026; // rad/ms constant free-spin (~4 turns/s)
+// landDuration is derived from distance ÷ speed, so a faster free-spin also
+// shortens the landing proportionally — the velocity-match formula below still
+// guarantees no lurch at hand-off. At this speed 1 turn lands in ~0.5-1s,
+// keeping the whole spin around ~1s so it feels instant without snapping.
 const MIN_LAND_ROTATIONS = 1; // full turns during the deceleration, min
 
 // Perceived lightness of a #rrggbb segment color (sRGB luma, 0..1). Segment
