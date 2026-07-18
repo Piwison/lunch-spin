@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown, Star, MapPin, Navigation } from "lucide-react";
+import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown, Star, MapPin, Navigation, Users } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -292,6 +292,9 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const regenInvite = trpc.wheels.regenerateInvite.useMutation({
     onSuccess: (data, vars) => {
       const w = wheels?.find(w => w.id === vars.id);
+      // Refresh the list so the new token flows back into the settings dialog's
+      // in-place invite link (it reads wheel.inviteToken from this query).
+      utils.wheels.list.invalidate();
       setShowInvite({ wheelId: vars.id, token: data.inviteToken, name: w?.name ?? "" });
     },
     onError: (e) => toast.error(`Failed to regenerate invite: ${e.message}`),
@@ -411,27 +414,33 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     toast.success("Invite link copied!");
   };
 
-  const copyPublicLink = (wheelId: number) => {
-    navigator.clipboard.writeText(`${window.location.origin}/w/${wheelId}`);
-    toast.success("Public link copied!");
+  const publicLinkFor = (wheelId: number) => `${window.location.origin}/w/${wheelId}`;
+  const inviteLinkFor = (token: string) => `${window.location.origin}/join/${token}`;
+
+  const copyLink = (url: string, copiedMsg: string) => {
+    navigator.clipboard.writeText(url);
+    toast.success(copiedMsg);
   };
+  const copyPublicLink = (wheelId: number) => copyLink(publicLinkFor(wheelId), "Public link copied!");
 
   // Native share sheet on devices that support it (a phone's real "Share to…"),
   // falling back to a plain copy on desktop. A cancelled share throws, so we
   // swallow it rather than treating it as a failure to copy.
-  const sharePublicLink = async (wheelId: number, wheelName: string) => {
-    const url = `${window.location.origin}/w/${wheelId}`;
+  const shareLink = async (url: string, title: string, text: string, copiedMsg: string) => {
     if (typeof navigator.share === "function") {
       try {
-        await navigator.share({ title: wheelName, text: `Spin the wheel: ${wheelName}`, url });
+        await navigator.share({ title, text, url });
       } catch {
         /* user dismissed the share sheet — nothing to do */
       }
       return;
     }
-    navigator.clipboard.writeText(url);
-    toast.success("Public link copied!");
+    copyLink(url, copiedMsg);
   };
+  const sharePublicLink = (wheelId: number, wheelName: string) =>
+    shareLink(publicLinkFor(wheelId), wheelName, `Spin the wheel: ${wheelName}`, "Public link copied!");
+  const shareInviteLink = (token: string, wheelName: string) =>
+    shareLink(inviteLinkFor(token), wheelName, `Join the lunch wheel: ${wheelName}`, "Invite link copied!");
 
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
   const isSelectedWheelOwner = selectedWheel?.ownerId === user?.id;
@@ -713,6 +722,46 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                       <Globe size={12} className="flex-shrink-0" />
                       {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save Settings."}
                     </p>
+                  </div>
+                );
+              })()}
+              {editWheel.isShared && (() => {
+                // Team invite link for members to join. Only shared wheels carry a
+                // token; regenerating opens the invite dialog with the fresh link
+                // (we close settings first so the two dialogs don't stack).
+                const token = wheels?.find((w) => w.id === editWheel.id)?.inviteToken ?? null;
+                const regenerate = () => { const id = editWheel.id; setEditWheel(null); regenInvite.mutate({ id }); };
+                return (
+                  <div className="-mt-1 flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/30 p-3">
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Users size={14} className="flex-shrink-0" /> Team invite
+                    </div>
+                    {token ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            readOnly
+                            value={inviteLinkFor(token)}
+                            onFocus={(e) => e.currentTarget.select()}
+                            className="h-9 bg-background/60 border-border/50 text-xs font-mono"
+                          />
+                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Copy invite link" onClick={() => copyLink(inviteLinkFor(token), "Invite link copied!")}>
+                            <Copy size={14} />
+                          </Button>
+                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Share invite" onClick={() => shareInviteLink(token, editWheel.name)}>
+                            <Share2 size={14} />
+                          </Button>
+                        </div>
+                        <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                          Regenerate link (invalidates the old one)
+                        </button>
+                      </>
+                    ) : (
+                      <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
+                        <Share2 size={14} /> Generate invite link
+                      </Button>
+                    )}
+                    <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                   </div>
                 );
               })()}
