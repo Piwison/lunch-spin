@@ -148,7 +148,7 @@ export async function getUserWheels(userId: number) {
   return [...owned, ...joined];
 }
 
-export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; inviteToken: string | null; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean }>) {
+export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; isShared: boolean; inviteToken: string | null; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean }>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(wheels).set(data).where(eq(wheels.id, id));
