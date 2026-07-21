@@ -12,7 +12,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -32,6 +32,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 type Tab = "wheel" | "restaurants" | "history";
+
+// Compact relative time for notification rows ("just now", "3m ago", "2d ago").
+function formatTimeAgo(d: Date): string {
+  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
   { id: "wheel", label: "Wheel", icon: RotateCw },
@@ -55,7 +66,9 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
@@ -124,7 +137,54 @@ export default function WheelApp() {
   }, [wheelError]);
 
   const createSpin = trpc.spins.create.useMutation();
+  const acceptSpin = trpc.spins.accept.useMutation({
+    onSuccess: () => {
+      // Accepting flips this spin to the full-window exclusion tier, so the wheel
+      // and history both need to refetch to drop the now-eaten restaurant.
+      refetchRestaurants();
+      utils.spins.history.invalidate();
+    },
+  });
   const isShared = !!wheelData?.isShared;
+
+  // ── Notifications (team accepts, aggregated across all shared wheels) ──────
+  // Polled for the header bell's red dot + panel. Opening the panel marks read.
+  const notificationsQuery = trpc.notifications.list.useQuery(undefined, {
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  const notifications = useMemo(() => notificationsQuery.data ?? [], [notificationsQuery.data]);
+  const unreadCount = notifications.filter((n) => n.unread).length;
+  const markNotificationsRead = trpc.notifications.markRead.useMutation({
+    onSuccess: () => notificationsQuery.refetch(),
+  });
+
+  // Open a notification's restaurant in Google Maps — mirrors the result modal's
+  // DIRECTIONS: saved mapUrl if present, else a name search.
+  const openNotificationMap = (n: { mapUrl: string | null; restaurantName: string }) => {
+    const url = n.mapUrl?.trim() || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(n.restaurantName)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  // On app entry, surface the single newest unread notification as a toast —
+  // once per mount, and never re-toast the same one across reloads (localStorage
+  // high-water mark). While the app stays open, new accepts only light the red
+  // dot; they don't interrupt with a toast.
+  const toastedNotifRef = useRef(false);
+  useEffect(() => {
+    if (toastedNotifRef.current || notifications.length === 0) return;
+    toastedNotifRef.current = true;
+    const latest = notifications[0]!; // newest first
+    if (!latest.unread) return;
+    const KEY = "lw:lastToastedNotifId";
+    if (latest.id <= Number(localStorage.getItem(KEY) || 0)) return;
+    localStorage.setItem(KEY, String(latest.id));
+    toast(`${latest.actorName || "Someone"} chose ${latest.restaurantName}`, {
+      description: `${latest.wheelName} · tap the bell to see more`,
+      action: { label: "Directions", onClick: () => openNotificationMap(latest) },
+    });
+     
+  }, [notifications]);
 
   // Wheel count drives the first-run experience. Same query key as WheelSelector's
   // list, so React Query dedupes it — no extra request.
@@ -283,6 +343,7 @@ export default function WheelApp() {
     if (!selectedWheelId || createSpin.isPending || isSpinning) return;
     setShowResult(false);
     setSpinResult(null);
+    setSpinId(null);
     setSpinError(null);
     // Start the wheel spinning immediately for instant feedback; it free-spins
     // while the server picks the winner, then decelerates onto it. This hides
@@ -290,10 +351,11 @@ export default function WheelApp() {
     setTargetId(null);
     setIsSpinning(true);
     try {
-      const { restaurantId } = await createSpin.mutateAsync({
+      const { id, restaurantId } = await createSpin.mutateAsync({
         wheelId: selectedWheelId,
         candidateIds: wheelSegments.map((s) => s.id),
       });
+      setSpinId(id);
       setTargetId(restaurantId);
     } catch (e) {
       setIsSpinning(false);
@@ -305,7 +367,19 @@ export default function WheelApp() {
   const handleReSpin = () => {
     setShowResult(false);
     setSpinResult(null);
+    setSpinId(null);
     requestAnimationFrame(() => handleSpin());
+  };
+
+  // ACCEPT — "we're eating here". Records the accept (full-window exclusion +
+  // team notification on shared wheels) then closes. [x] / backdrop / Esc skip
+  // this: the spin was already recorded as a rejected (today-only) result, so
+  // closing without accepting is the "skip this one today" path.
+  const handleAccept = () => {
+    if (selectedWheelId && spinId != null) {
+      acceptSpin.mutate({ wheelId: selectedWheelId, spinId });
+    }
+    setShowResult(false);
   };
 
   const openDirections = (segment: WheelSegment) => {
@@ -374,6 +448,63 @@ export default function WheelApp() {
         </div>
 
         <div className="flex items-center gap-2">
+          <DropdownMenu
+            open={notifOpen}
+            onOpenChange={(open) => {
+              setNotifOpen(open);
+              // Opening the panel is "seen" — advance the read marker so the red
+              // dot clears (only when there's something unread to mark).
+              if (open && unreadCount > 0) markNotificationsRead.mutate();
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
+                className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors flex-shrink-0"
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
+                    style={{ background: "#ef4444", boxShadow: "0 0 0 2px var(--background)" }}
+                  />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="glass border-border/50 w-80 p-0">
+              <DropdownMenuLabel className="px-3 py-2.5 text-sm">Notifications</DropdownMenuLabel>
+              <DropdownMenuSeparator className="my-0" />
+              <div className="max-h-[60vh] overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    No notifications yet — a teammate's accepted pick shows up here.
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => openNotificationMap(n)}
+                      className="w-full text-left px-3 py-2.5 hover:bg-white/5 transition-colors flex flex-col gap-0.5 border-b border-border/20 last:border-0"
+                    >
+                      <span className="text-sm leading-snug">
+                        {n.unread && (
+                          <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: "var(--brand)" }} />
+                        )}
+                        <strong className="font-semibold">{n.actorName || "Someone"}</strong> accepted{" "}
+                        <strong className="font-semibold">{n.restaurantName}</strong>
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {n.wheelName} · {formatTimeAgo(new Date(n.createdAt))}
+                      </span>
+                      <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--brand)" }}>
+                        <MapPin size={11} /> Open in Google Maps
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -890,6 +1021,16 @@ export default function WheelApp() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Close [x] — a third choice beyond RE-SPIN / ACCEPT: dismiss this
+                result. The spin is already recorded as rejected (excluded only
+                for the rest of today), so closing = "skip this one today". */}
+            <button
+              onClick={() => setShowResult(false)}
+              aria-label="Close"
+              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+            >
+              <X size={16} />
+            </button>
             {/* Background glow blob — kept faint: heavy per-glyph shadows on the
                 title used to stack into a muddy smear behind the winner name. */}
             <div
@@ -959,7 +1100,7 @@ export default function WheelApp() {
                   </button>
                   <button
                     autoFocus
-                    onClick={() => setShowResult(false)}
+                    onClick={handleAccept}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
                     style={{
                       background: "oklch(from var(--ok) l c h / 0.15)",

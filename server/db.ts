@@ -4,6 +4,7 @@ import {
   InsertUser,
   Restaurant,
   Tag,
+  notifications,
   restaurantTags,
   restaurants,
   roundMarks,
@@ -482,6 +483,7 @@ export async function getExclusions(wheelId: number, windowDays: number): Promis
       restaurantId: spinHistory.restaurantId,
       spunAt: spinHistory.spunAt,
       manuallyReenabled: spinHistory.manuallyReenabled,
+      accepted: spinHistory.accepted,
     })
     .from(spinHistory)
     .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
@@ -497,6 +499,82 @@ export async function reenableRestaurant(wheelId: number, restaurantId: number, 
     .update(spinHistory)
     .set({ manuallyReenabled: true })
     .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
+}
+
+// ─── Accept + notifications ───────────────────────────────────────────────────
+
+// Mark a spin as ACCEPTED ("we're eating here"): flips it to the full-window
+// exclusion tier and, for shared wheels, fans a notification out to the team.
+// Scoped to the spin's own author so only the person who spun can accept it.
+// Returns the accepted spin's details, or null if it didn't match / was already
+// accepted (idempotent — a double-tap won't create duplicate notifications).
+export async function acceptSpin(
+  spinId: number,
+  wheelId: number,
+  actorUserId: number,
+): Promise<{ restaurantId: number; isShared: boolean } | null> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rows = await db
+    .select({ restaurantId: spinHistory.restaurantId, accepted: spinHistory.accepted })
+    .from(spinHistory)
+    .where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, actorUserId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.accepted) return null;
+
+  await db.update(spinHistory).set({ accepted: true }).where(eq(spinHistory.id, spinId));
+
+  const wheel = await getWheelById(wheelId);
+  const isShared = wheel?.isShared ?? false;
+  if (isShared) {
+    await db.insert(notifications).values({ wheelId, spinId, restaurantId: row.restaurantId, actorUserId });
+  }
+  return { restaurantId: row.restaurantId, isShared };
+}
+
+// Recent notifications for wheels this user belongs to, excluding ones they
+// triggered themselves. `unread` is computed against the user's read high-water
+// mark. Newest first, capped so the bell panel stays a short list.
+export async function getNotificationsForUser(userId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  const wheelIds = (await getUserWheels(userId)).map((w) => w.id);
+  if (wheelIds.length === 0) return [];
+
+  const meRows = await db
+    .select({ readAt: users.lastReadNotificationAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const readAt = meRows[0]?.readAt ?? null;
+
+  const rows = await db
+    .select({
+      id: notifications.id,
+      wheelId: notifications.wheelId,
+      wheelName: wheels.name,
+      restaurantId: notifications.restaurantId,
+      restaurantName: restaurants.name,
+      mapUrl: restaurants.mapUrl,
+      actorName: users.name,
+      createdAt: notifications.createdAt,
+    })
+    .from(notifications)
+    .innerJoin(wheels, eq(notifications.wheelId, wheels.id))
+    .innerJoin(restaurants, eq(notifications.restaurantId, restaurants.id))
+    .innerJoin(users, eq(notifications.actorUserId, users.id))
+    .where(and(inArray(notifications.wheelId, wheelIds), sql`${notifications.actorUserId} <> ${userId}`))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
+
+  return rows.map((r) => ({ ...r, unread: readAt == null || r.createdAt > readAt }));
+}
+
+export async function markNotificationsRead(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ lastReadNotificationAt: new Date() }).where(eq(users.id, userId));
 }
 
 

@@ -9,10 +9,30 @@
 
 export const DEFAULT_EXCLUSION_DAYS = 3;
 
+// The team's calendar day is anchored to Taipei (UTC+8, no DST) so "won't be
+// re-picked today" has a stable, timezone-correct meaning regardless of the
+// server's UTC clock. A rejected result stops excluding once Taipei crosses
+// midnight; an accepted result excludes for the full multi-day window.
+const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Which Taipei calendar day a timestamp falls on (integer day number). */
+function taipeiDayIndex(t: Date): number {
+  return Math.floor((t.getTime() + TAIPEI_OFFSET_MS) / DAY_MS);
+}
+
+/** The UTC instant of the next Taipei midnight after `t` (when its day ends). */
+function endOfTaipeiDay(t: Date): Date {
+  return new Date((taipeiDayIndex(t) + 1) * DAY_MS - TAIPEI_OFFSET_MS);
+}
+
 export interface SpinRecord {
   restaurantId: number;
   spunAt: Date;
   manuallyReenabled: boolean;
+  // True once someone pressed ACCEPT on this spin ("we're eating here"). Drives
+  // the two-tier exclusion: accepted → full window; rejected → today only.
+  accepted: boolean;
 }
 
 export interface Exclusion {
@@ -24,8 +44,12 @@ export interface Exclusion {
  * Restaurants that should be hidden from the wheel right now, along with the
  * timestamp at which each one becomes available again.
  *
- * For each restaurant only its most recent spin inside the window matters: if
- * that spin was manually re-enabled the restaurant stays available.
+ * For each restaurant only its most recent spin inside the window matters:
+ *  - manually re-enabled → available now;
+ *  - accepted → excluded until `spunAt + windowDays`;
+ *  - rejected (not accepted) → excluded only until the end of the Taipei day it
+ *    was spun on, so tomorrow it's fair game again;
+ *  - rejected on an earlier Taipei day → already available.
  */
 export function computeExclusions(
   spins: SpinRecord[],
@@ -33,8 +57,10 @@ export function computeExclusions(
 ): Exclusion[] {
   const now = opts.now ?? new Date();
   const windowDays = opts.windowDays ?? DEFAULT_EXCLUSION_DAYS;
-  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  if (windowDays <= 0) return [];
+  const windowMs = windowDays * DAY_MS;
   const cutoff = new Date(now.getTime() - windowMs);
+  const nowDay = taipeiDayIndex(now);
 
   const recent = spins
     .filter((s) => s.spunAt > cutoff)
@@ -45,9 +71,13 @@ export function computeExclusions(
   for (const row of recent) {
     if (seen.has(row.restaurantId)) continue;
     seen.add(row.restaurantId);
-    if (!row.manuallyReenabled) {
+    if (row.manuallyReenabled) continue; // explicitly re-enabled → available
+    if (row.accepted) {
       exclusions.push({ restaurantId: row.restaurantId, excludedUntil: new Date(row.spunAt.getTime() + windowMs) });
+    } else if (taipeiDayIndex(row.spunAt) === nowDay) {
+      exclusions.push({ restaurantId: row.restaurantId, excludedUntil: endOfTaipeiDay(row.spunAt) });
     }
+    // rejected on an earlier Taipei day → not excluded
   }
   return exclusions;
 }

@@ -15,17 +15,18 @@ interface SpinWheelProps {
   targetId?: number | null;
 }
 
-// Ease-out where velocity falls linearly to 0 (constant deceleration, like a
-// real wheel slowing under friction). Its initial slope is exactly 2, which we
-// use to velocity-match the hand-off from the constant-speed free-spin so there
-// is no visible "lurch faster" when the winner arrives.
-const QUAD_OUT = (p: number) => p * (2 - p);
+// Deceleration easing: ease-out-quart. Velocity drops fast at first then creeps
+// to a stop over a long tail — the dramatic "almost there…" landing. Its initial
+// slope is LAND_EASE_SLOPE (=4), which the landDuration formula below uses to
+// velocity-match the hand-off from the constant-speed free-spin, so there is no
+// visible "lurch faster" when the winner arrives.
+const EASE_OUT_QUART = (p: number) => 1 - Math.pow(1 - p, 4);
+const LAND_EASE_SLOPE = 4; // EASE_OUT_QUART'(0) — keep in sync with the curve above
 const FREE_SPIN_SPEED = 0.026; // rad/ms constant free-spin (~4 turns/s)
-// landDuration is derived from distance ÷ speed, so a faster free-spin also
-// shortens the landing proportionally — the velocity-match formula below still
-// guarantees no lurch at hand-off. At this speed 1 turn lands in ~0.5-1s,
-// keeping the whole spin around ~1s so it feels instant without snapping.
-const MIN_LAND_ROTATIONS = 1; // full turns during the deceleration, min
+// More turns during the deceleration → a longer, more graceful slow-down (the
+// duration is derived from distance ÷ speed, then stretched by the easing's
+// initial slope). ~2 turns + the quart tail lands in ~2–2.5s.
+const MIN_LAND_ROTATIONS = 2; // full turns during the deceleration, min
 
 // Perceived lightness of a #rrggbb segment color (sRGB luma, 0..1). Segment
 // fills span light amber to deep blue, so label ink must adapt per slice —
@@ -382,10 +383,10 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
         (((targetCenter - cur) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
       landFrom = cur;
       landTo = cur + dist;
-      // Duration chosen so QUAD_OUT's initial velocity (2·dist/duration) equals
-      // the free-spin speed → the deceleration begins at exactly the speed the
-      // wheel was already turning, so there's no jump. Then it eases to a stop.
-      landDuration = (2 * dist) / FREE_SPIN_SPEED;
+      // Duration chosen so the easing's initial velocity (slope·dist/duration)
+      // equals the free-spin speed → the deceleration begins at exactly the speed
+      // the wheel was already turning, so there's no jump. Then it eases to a stop.
+      landDuration = (LAND_EASE_SLOPE * dist) / FREE_SPIN_SPEED;
       landStart = now;
       landing = true;
     };
@@ -399,7 +400,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, onSpinStart
         rafRef.current = requestAnimationFrame(frame);
       } else {
         const progress = Math.min((now - landStart) / landDuration, 1);
-        currentAngleRef.current = landFrom + (landTo - landFrom) * QUAD_OUT(progress);
+        currentAngleRef.current = landFrom + (landTo - landFrom) * EASE_OUT_QUART(progress);
         setDisplayAngle(currentAngleRef.current);
         if (progress < 1) {
           rafRef.current = requestAnimationFrame(frame);

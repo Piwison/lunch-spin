@@ -23,6 +23,9 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   // Wheel auto-opened on entry when set; null = fall back to the first wheel.
   defaultWheelId: int("defaultWheelId"),
+  // High-water mark for the notification bell: notifications created after this
+  // are "unread" (light the red dot). Opening the panel advances it to now.
+  lastReadNotificationAt: timestamp("lastReadNotificationAt"),
 });
 
 export type User = typeof users.$inferSelect;
@@ -135,6 +138,10 @@ export const spinHistory = mysqlTable("spin_history", {
   spunAt: timestamp("spunAt").defaultNow().notNull(),
   // If true, user manually re-enabled this restaurant before 3-day window expires
   manuallyReenabled: boolean("manuallyReenabled").default(false).notNull(),
+  // True once someone pressed ACCEPT ("we're eating here"). Only accepted spins
+  // exclude for the full window + notify the team; a rejected spin (re-spin / [x])
+  // excludes only for the rest of the Taipei day (shared/exclusion.ts).
+  accepted: boolean("accepted").default(false).notNull(),
   // Post-spin "how was it?" verdict; null = unrated. The latest rating per
   // restaurant biases future spins (shared/rating.ts).
   rating: mysqlEnum("rating", ["loved", "ok", "never"]),
@@ -142,6 +149,23 @@ export const spinHistory = mysqlTable("spin_history", {
 
 export type SpinHistory = typeof spinHistory.$inferSelect;
 export type InsertSpinHistory = typeof spinHistory.$inferInsert;
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+// One row per ACCEPT on a shared wheel, fanned out to the whole team via the
+// bell. The actor (who accepted) is recorded so we never notify them of their
+// own choice; read/unread is per-user via users.lastReadNotificationAt.
+
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  wheelId: int("wheelId").notNull(),
+  spinId: int("spinId").notNull(),
+  restaurantId: int("restaurantId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
 
 // ─── Serverless realtime (polling-backed) ────────────────────────────────────
 // Presence: a heartbeat row per (wheel, user); "online" = recent lastSeen.
