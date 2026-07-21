@@ -37,14 +37,17 @@ import {
   createCustomTag,
   createWheel,
   deleteRestaurant,
+  acceptSpin,
   deleteWheel,
   getExclusions,
+  getNotificationsForUser,
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
   getLatestRatings,
   getRestaurantStats,
   getSpinHistory,
+  markNotificationsRead,
   rateSpin,
   getTagsForWheel,
   getUserById,
@@ -137,6 +140,7 @@ export const appRouter = router({
         id: z.number(),
         name: z.string().min(1).max(128).optional(),
         isPublic: z.boolean().optional(),
+        isShared: z.boolean().optional(),
         exclusionDays: z.number().int().min(0).max(30).optional(),
         fairnessMode: z.boolean().optional(),
         rotateCuisines: z.boolean().optional(),
@@ -145,8 +149,24 @@ export const appRouter = router({
         const wheel = await getWheelById(input.id);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode, rotateCuisines: input.rotateCuisines });
-        return { success: true };
+        // Turning sharing on for the first time needs an invite token, same as at
+        // creation — generate one now so the client can offer it immediately
+        // (an INVITE LINK dialog right after save) with no separate "Generate"
+        // click or refetch round-trip required.
+        const newInviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : undefined;
+        await updateWheel(input.id, {
+          name: input.name,
+          isPublic: input.isPublic,
+          isShared: input.isShared,
+          inviteToken: newInviteToken,
+          exclusionDays: input.exclusionDays,
+          fairnessMode: input.fairnessMode,
+          rotateCuisines: input.rotateCuisines,
+        });
+        // Resolved token after this update: freshly generated, or whatever the
+        // wheel already had (covers re-enabling sharing that still has an old
+        // link). Null if this wheel isn't shared.
+        return { success: true, inviteToken: newInviteToken ?? wheel.inviteToken ?? null };
       }),
 
     delete: protectedProcedure
@@ -684,6 +704,19 @@ export const appRouter = router({
         return getSpinHistory(input.wheelId);
       }),
 
+    // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
+    // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
+    // acceptSpin no-ops (and creates no duplicate notification) if it's already
+    // accepted or isn't the caller's own spin.
+    accept: protectedProcedure
+      .input(z.object({ wheelId: z.number(), spinId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
+        return { success: result != null };
+      }),
+
     reenable: protectedProcedure
       .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
       .mutation(async ({ ctx, input }) => {
@@ -710,6 +743,22 @@ export const appRouter = router({
         }
         return { success: true, restaurantId };
       }),
+  }),
+
+  // ─── Notifications ─────────────────────────────────────────────────────────────
+  // Team accept-notifications, aggregated across all the caller's shared wheels
+  // (excluding their own accepts). Clients poll `list` for the red dot + panel
+  // and call `markRead` when the panel is opened.
+
+  notifications: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getNotificationsForUser(ctx.user.id);
+    }),
+
+    markRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await markNotificationsRead(ctx.user.id);
+      return { success: true };
+    }),
   }),
 
   // ─── Presence ────────────────────────────────────────────────────────────────

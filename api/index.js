@@ -37,7 +37,10 @@ var users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
   // Wheel auto-opened on entry when set; null = fall back to the first wheel.
-  defaultWheelId: int("defaultWheelId")
+  defaultWheelId: int("defaultWheelId"),
+  // High-water mark for the notification bell: notifications created after this
+  // are "unread" (light the red dot). Opening the panel advances it to now.
+  lastReadNotificationAt: timestamp("lastReadNotificationAt")
 });
 var wheels = mysqlTable("wheels", {
   id: int("id").autoincrement().primaryKey(),
@@ -123,9 +126,21 @@ var spinHistory = mysqlTable("spin_history", {
   spunAt: timestamp("spunAt").defaultNow().notNull(),
   // If true, user manually re-enabled this restaurant before 3-day window expires
   manuallyReenabled: boolean("manuallyReenabled").default(false).notNull(),
+  // True once someone pressed ACCEPT ("we're eating here"). Only accepted spins
+  // exclude for the full window + notify the team; a rejected spin (re-spin / [x])
+  // excludes only for the rest of the Taipei day (shared/exclusion.ts).
+  accepted: boolean("accepted").default(false).notNull(),
   // Post-spin "how was it?" verdict; null = unrated. The latest rating per
   // restaurant biases future spins (shared/rating.ts).
   rating: mysqlEnum("rating", ["loved", "ok", "never"])
+});
+var notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  wheelId: int("wheelId").notNull(),
+  spinId: int("spinId").notNull(),
+  restaurantId: int("restaurantId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
 });
 var wheelPresence = mysqlTable("wheel_presence", {
   wheelId: int("wheelId").notNull(),
@@ -158,19 +173,32 @@ var ENV = {
 
 // shared/exclusion.ts
 var DEFAULT_EXCLUSION_DAYS = 3;
+var TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1e3;
+var DAY_MS = 24 * 60 * 60 * 1e3;
+function taipeiDayIndex(t2) {
+  return Math.floor((t2.getTime() + TAIPEI_OFFSET_MS) / DAY_MS);
+}
+function endOfTaipeiDay(t2) {
+  return new Date((taipeiDayIndex(t2) + 1) * DAY_MS - TAIPEI_OFFSET_MS);
+}
 function computeExclusions(spins, opts = {}) {
   const now = opts.now ?? /* @__PURE__ */ new Date();
   const windowDays = opts.windowDays ?? DEFAULT_EXCLUSION_DAYS;
-  const windowMs = windowDays * 24 * 60 * 60 * 1e3;
+  if (windowDays <= 0) return [];
+  const windowMs = windowDays * DAY_MS;
   const cutoff = new Date(now.getTime() - windowMs);
+  const nowDay = taipeiDayIndex(now);
   const recent = spins.filter((s) => s.spunAt > cutoff).sort((a, b) => b.spunAt.getTime() - a.spunAt.getTime());
   const seen = /* @__PURE__ */ new Set();
   const exclusions = [];
   for (const row of recent) {
     if (seen.has(row.restaurantId)) continue;
     seen.add(row.restaurantId);
-    if (!row.manuallyReenabled) {
+    if (row.manuallyReenabled) continue;
+    if (row.accepted) {
       exclusions.push({ restaurantId: row.restaurantId, excludedUntil: new Date(row.spunAt.getTime() + windowMs) });
+    } else if (taipeiDayIndex(row.spunAt) === nowDay) {
+      exclusions.push({ restaurantId: row.restaurantId, excludedUntil: endOfTaipeiDay(row.spunAt) });
     }
   }
   return exclusions;
@@ -529,7 +557,8 @@ async function getExclusions(wheelId, windowDays) {
   const recent = await db.select({
     restaurantId: spinHistory.restaurantId,
     spunAt: spinHistory.spunAt,
-    manuallyReenabled: spinHistory.manuallyReenabled
+    manuallyReenabled: spinHistory.manuallyReenabled,
+    accepted: spinHistory.accepted
   }).from(spinHistory).where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
   const exclusions = computeExclusions(recent, { windowDays });
   return new Map(exclusions.map((e) => [e.restaurantId, e.excludedUntil]));
@@ -539,6 +568,44 @@ async function reenableRestaurant(wheelId, restaurantId, windowDays) {
   if (!db) throw new Error("DB unavailable");
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1e3);
   await db.update(spinHistory).set({ manuallyReenabled: true }).where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
+}
+async function acceptSpin(spinId, wheelId, actorUserId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rows = await db.select({ restaurantId: spinHistory.restaurantId, accepted: spinHistory.accepted }).from(spinHistory).where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, actorUserId))).limit(1);
+  const row = rows[0];
+  if (!row || row.accepted) return null;
+  await db.update(spinHistory).set({ accepted: true }).where(eq(spinHistory.id, spinId));
+  const wheel = await getWheelById(wheelId);
+  const isShared = wheel?.isShared ?? false;
+  if (isShared) {
+    await db.insert(notifications).values({ wheelId, spinId, restaurantId: row.restaurantId, actorUserId });
+  }
+  return { restaurantId: row.restaurantId, isShared };
+}
+async function getNotificationsForUser(userId, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  const wheelIds = (await getUserWheels(userId)).map((w) => w.id);
+  if (wheelIds.length === 0) return [];
+  const meRows = await db.select({ readAt: users.lastReadNotificationAt }).from(users).where(eq(users.id, userId)).limit(1);
+  const readAt = meRows[0]?.readAt ?? null;
+  const rows = await db.select({
+    id: notifications.id,
+    wheelId: notifications.wheelId,
+    wheelName: wheels.name,
+    restaurantId: notifications.restaurantId,
+    restaurantName: restaurants.name,
+    mapUrl: restaurants.mapUrl,
+    actorName: users.name,
+    createdAt: notifications.createdAt
+  }).from(notifications).innerJoin(wheels, eq(notifications.wheelId, wheels.id)).innerJoin(restaurants, eq(notifications.restaurantId, restaurants.id)).innerJoin(users, eq(notifications.actorUserId, users.id)).where(and(inArray(notifications.wheelId, wheelIds), sql`${notifications.actorUserId} <> ${userId}`)).orderBy(desc(notifications.createdAt)).limit(limit);
+  return rows.map((r) => ({ ...r, unread: readAt == null || r.createdAt > readAt }));
+}
+async function markNotificationsRead(userId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(users).set({ lastReadNotificationAt: /* @__PURE__ */ new Date() }).where(eq(users.id, userId));
 }
 async function getRestaurantStats(wheelId) {
   const db = await getDb();
@@ -2129,6 +2196,7 @@ var appRouter = router({
       id: z3.number(),
       name: z3.string().min(1).max(128).optional(),
       isPublic: z3.boolean().optional(),
+      isShared: z3.boolean().optional(),
       exclusionDays: z3.number().int().min(0).max(30).optional(),
       fairnessMode: z3.boolean().optional(),
       rotateCuisines: z3.boolean().optional()
@@ -2136,8 +2204,17 @@ var appRouter = router({
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
-      await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode, rotateCuisines: input.rotateCuisines });
-      return { success: true };
+      const newInviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : void 0;
+      await updateWheel(input.id, {
+        name: input.name,
+        isPublic: input.isPublic,
+        isShared: input.isShared,
+        inviteToken: newInviteToken,
+        exclusionDays: input.exclusionDays,
+        fairnessMode: input.fairnessMode,
+        rotateCuisines: input.rotateCuisines
+      });
+      return { success: true, inviteToken: newInviteToken ?? wheel.inviteToken ?? null };
     }),
     delete: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
@@ -2555,6 +2632,16 @@ var appRouter = router({
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getSpinHistory(input.wheelId);
     }),
+    // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
+    // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
+    // acceptSpin no-ops (and creates no duplicate notification) if it's already
+    // accepted or isn't the caller's own spin.
+    accept: protectedProcedure.input(z3.object({ wheelId: z3.number(), spinId: z3.number() })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
+      return { success: result != null };
+    }),
     reenable: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
@@ -2575,6 +2662,19 @@ var appRouter = router({
         throw new TRPCError3({ code: "NOT_FOUND", message: "Spin not found or not yours to rate" });
       }
       return { success: true, restaurantId };
+    })
+  }),
+  // ─── Notifications ─────────────────────────────────────────────────────────────
+  // Team accept-notifications, aggregated across all the caller's shared wheels
+  // (excluding their own accepts). Clients poll `list` for the red dot + panel
+  // and call `markRead` when the panel is opened.
+  notifications: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getNotificationsForUser(ctx.user.id);
+    }),
+    markRead: protectedProcedure.mutation(async ({ ctx }) => {
+      await markNotificationsRead(ctx.user.id);
+      return { success: true };
     })
   }),
   // ─── Presence ────────────────────────────────────────────────────────────────

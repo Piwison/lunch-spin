@@ -341,12 +341,18 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
       setOriginError("Set an origin location first.");
       return;
     }
+    // Sharing was OFF before this save — if this save turns it on, the response
+    // tells us to pop the INVITE LINK dialog right away instead of leaving the
+    // link buried in Settings for the owner to dig up on a second visit.
+    const wasSharedBefore = wheels?.find((w) => w.id === editWheel.id)?.isShared === true;
+    const turningSharingOn = editWheel.isShared && !wasSharedBefore;
     try {
-      const [, distanceRes] = await Promise.all([
+      const [updateRes, distanceRes] = await Promise.all([
         updateWheel.mutateAsync({
           id: editWheel.id,
           name: editWheel.name.trim(),
           isPublic: editWheel.isPublic,
+          isShared: editWheel.isShared,
           exclusionDays: editWheel.exclusionDays,
           fairnessMode: editWheel.fairnessMode,
           rotateCuisines: editWheel.rotateCuisines,
@@ -362,7 +368,12 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
       utils.wheels.list.invalidate();
       utils.wheels.get.invalidate();
       utils.restaurants.list.invalidate();
+      const savedName = editWheel.name.trim();
+      const savedId = editWheel.id;
       setEditWheel(null);
+      if (turningSharingOn && updateRes.inviteToken) {
+        setShowInvite({ wheelId: savedId, token: updateRes.inviteToken, name: savedName });
+      }
       // The settings themselves saved fine even if the distance computation
       // failed — that's a separate, retriable step (Restaurants tab's
       // Recompute button), so still close the dialog, just warn instead of
@@ -694,6 +705,61 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 className="bg-secondary/50 border-border/50"
               />
               <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Shared team wheel</Label>
+                <Switch checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
+              </div>
+              {editWheel.isShared && (() => {
+                // Team invite link for members to join. Sharing itself has to be
+                // persisted before the server will issue/regenerate a token (it
+                // 403s a not-yet-shared wheel), so if isShared was only just
+                // toggled on this session, prompt to save instead of showing a
+                // button that would fail — saving pops the INVITE LINK dialog
+                // automatically in that case (see saveWheelSettings), so this
+                // in-place block mainly matters when reopening settings later.
+                const persisted = wheels?.find((w) => w.id === editWheel.id);
+                const sharedLive = persisted?.isShared === true;
+                const token = persisted?.inviteToken ?? null;
+                const regenerate = () => { const id = editWheel.id; setEditWheel(null); regenInvite.mutate({ id }); };
+                return (
+                  <div className="-mt-1 flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/30 p-3">
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Users size={14} className="flex-shrink-0" /> Team invite
+                    </div>
+                    {!sharedLive ? (
+                      <p className="text-[11px] text-muted-foreground">Press Save Settings to turn on sharing — you'll get an invite link right away.</p>
+                    ) : token ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            readOnly
+                            value={inviteLinkFor(token)}
+                            onFocus={(e) => e.currentTarget.select()}
+                            className="h-9 bg-background/60 border-border/50 text-xs font-mono"
+                          />
+                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Copy invite link" onClick={() => copyLink(inviteLinkFor(token), "Invite link copied!")}>
+                            <Copy size={14} />
+                          </Button>
+                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Share invite" onClick={() => shareInviteLink(token, editWheel.name)}>
+                            <Share2 size={14} />
+                          </Button>
+                        </div>
+                        <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                          Regenerate link (invalidates the old one)
+                        </button>
+                        <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                      </>
+                    ) : (
+                      <>
+                        <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
+                          <Share2 size={14} /> Generate invite link
+                        </Button>
+                        <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+              <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
                 <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
               </div>
@@ -722,46 +788,6 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                       <Globe size={12} className="flex-shrink-0" />
                       {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save Settings."}
                     </p>
-                  </div>
-                );
-              })()}
-              {editWheel.isShared && (() => {
-                // Team invite link for members to join. Only shared wheels carry a
-                // token; regenerating opens the invite dialog with the fresh link
-                // (we close settings first so the two dialogs don't stack).
-                const token = wheels?.find((w) => w.id === editWheel.id)?.inviteToken ?? null;
-                const regenerate = () => { const id = editWheel.id; setEditWheel(null); regenInvite.mutate({ id }); };
-                return (
-                  <div className="-mt-1 flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/30 p-3">
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Users size={14} className="flex-shrink-0" /> Team invite
-                    </div>
-                    {token ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            readOnly
-                            value={inviteLinkFor(token)}
-                            onFocus={(e) => e.currentTarget.select()}
-                            className="h-9 bg-background/60 border-border/50 text-xs font-mono"
-                          />
-                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Copy invite link" onClick={() => copyLink(inviteLinkFor(token), "Invite link copied!")}>
-                            <Copy size={14} />
-                          </Button>
-                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Share invite" onClick={() => shareInviteLink(token, editWheel.name)}>
-                            <Share2 size={14} />
-                          </Button>
-                        </div>
-                        <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
-                          Regenerate link (invalidates the old one)
-                        </button>
-                      </>
-                    ) : (
-                      <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
-                        <Share2 size={14} /> Generate invite link
-                      </Button>
-                    )}
-                    <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                   </div>
                 );
               })()}
