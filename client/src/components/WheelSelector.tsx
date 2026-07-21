@@ -347,6 +347,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
           id: editWheel.id,
           name: editWheel.name.trim(),
           isPublic: editWheel.isPublic,
+          isShared: editWheel.isShared,
           exclusionDays: editWheel.exclusionDays,
           fairnessMode: editWheel.fairnessMode,
           rotateCuisines: editWheel.rotateCuisines,
@@ -694,6 +695,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 className="bg-secondary/50 border-border/50"
               />
               <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">Shared team wheel</Label>
+                <Switch checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
+              </div>
+              <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
                 <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
               </div>
@@ -726,17 +731,23 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 );
               })()}
               {editWheel.isShared && (() => {
-                // Team invite link for members to join. Only shared wheels carry a
-                // token; regenerating opens the invite dialog with the fresh link
-                // (we close settings first so the two dialogs don't stack).
-                const token = wheels?.find((w) => w.id === editWheel.id)?.inviteToken ?? null;
+                // Team invite link for members to join. Sharing itself has to be
+                // persisted before the server will issue/regenerate a token (it
+                // 403s a not-yet-shared wheel), so if isShared was only just
+                // toggled on this session, prompt to save instead of showing a
+                // button that would fail.
+                const persisted = wheels?.find((w) => w.id === editWheel.id);
+                const sharedLive = persisted?.isShared === true;
+                const token = persisted?.inviteToken ?? null;
                 const regenerate = () => { const id = editWheel.id; setEditWheel(null); regenInvite.mutate({ id }); };
                 return (
                   <div className="-mt-1 flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/30 p-3">
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Users size={14} className="flex-shrink-0" /> Team invite
                     </div>
-                    {token ? (
+                    {!sharedLive ? (
+                      <p className="text-[11px] text-muted-foreground">Press Save Settings to turn on sharing, then an invite link appears here.</p>
+                    ) : token ? (
                       <>
                         <div className="flex items-center gap-2">
                           <Input
@@ -755,13 +766,16 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                         <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
                           Regenerate link (invalidates the old one)
                         </button>
+                        <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                       </>
                     ) : (
-                      <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
-                        <Share2 size={14} /> Generate invite link
-                      </Button>
+                      <>
+                        <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
+                          <Share2 size={14} /> Generate invite link
+                        </Button>
+                        <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                      </>
                     )}
-                    <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                   </div>
                 );
               })()}

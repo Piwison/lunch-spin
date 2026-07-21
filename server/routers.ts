@@ -140,6 +140,7 @@ export const appRouter = router({
         id: z.number(),
         name: z.string().min(1).max(128).optional(),
         isPublic: z.boolean().optional(),
+        isShared: z.boolean().optional(),
         exclusionDays: z.number().int().min(0).max(30).optional(),
         fairnessMode: z.boolean().optional(),
         rotateCuisines: z.boolean().optional(),
@@ -148,7 +149,19 @@ export const appRouter = router({
         const wheel = await getWheelById(input.id);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-        await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode, rotateCuisines: input.rotateCuisines });
+        // Turning sharing on for the first time needs an invite token, same as at
+        // creation — generate one now so Team Invite is immediately usable after
+        // this save, with no separate "Generate" click required.
+        const inviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : undefined;
+        await updateWheel(input.id, {
+          name: input.name,
+          isPublic: input.isPublic,
+          isShared: input.isShared,
+          inviteToken,
+          exclusionDays: input.exclusionDays,
+          fairnessMode: input.fairnessMode,
+          rotateCuisines: input.rotateCuisines,
+        });
         return { success: true };
       }),
 

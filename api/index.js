@@ -2196,6 +2196,7 @@ var appRouter = router({
       id: z3.number(),
       name: z3.string().min(1).max(128).optional(),
       isPublic: z3.boolean().optional(),
+      isShared: z3.boolean().optional(),
       exclusionDays: z3.number().int().min(0).max(30).optional(),
       fairnessMode: z3.boolean().optional(),
       rotateCuisines: z3.boolean().optional()
@@ -2203,7 +2204,16 @@ var appRouter = router({
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
-      await updateWheel(input.id, { name: input.name, isPublic: input.isPublic, exclusionDays: input.exclusionDays, fairnessMode: input.fairnessMode, rotateCuisines: input.rotateCuisines });
+      const inviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : void 0;
+      await updateWheel(input.id, {
+        name: input.name,
+        isPublic: input.isPublic,
+        isShared: input.isShared,
+        inviteToken,
+        exclusionDays: input.exclusionDays,
+        fairnessMode: input.fairnessMode,
+        rotateCuisines: input.rotateCuisines
+      });
       return { success: true };
     }),
     delete: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
