@@ -150,19 +150,23 @@ export const appRouter = router({
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         // Turning sharing on for the first time needs an invite token, same as at
-        // creation — generate one now so Team Invite is immediately usable after
-        // this save, with no separate "Generate" click required.
-        const inviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : undefined;
+        // creation — generate one now so the client can offer it immediately
+        // (an INVITE LINK dialog right after save) with no separate "Generate"
+        // click or refetch round-trip required.
+        const newInviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : undefined;
         await updateWheel(input.id, {
           name: input.name,
           isPublic: input.isPublic,
           isShared: input.isShared,
-          inviteToken,
+          inviteToken: newInviteToken,
           exclusionDays: input.exclusionDays,
           fairnessMode: input.fairnessMode,
           rotateCuisines: input.rotateCuisines,
         });
-        return { success: true };
+        // Resolved token after this update: freshly generated, or whatever the
+        // wheel already had (covers re-enabling sharing that still has an old
+        // link). Null if this wheel isn't shared.
+        return { success: true, inviteToken: newInviteToken ?? wheel.inviteToken ?? null };
       }),
 
     delete: protectedProcedure

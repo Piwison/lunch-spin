@@ -2204,17 +2204,17 @@ var appRouter = router({
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
-      const inviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : void 0;
+      const newInviteToken = input.isShared && !wheel.isShared && !wheel.inviteToken ? nanoid(16) : void 0;
       await updateWheel(input.id, {
         name: input.name,
         isPublic: input.isPublic,
         isShared: input.isShared,
-        inviteToken,
+        inviteToken: newInviteToken,
         exclusionDays: input.exclusionDays,
         fairnessMode: input.fairnessMode,
         rotateCuisines: input.rotateCuisines
       });
-      return { success: true };
+      return { success: true, inviteToken: newInviteToken ?? wheel.inviteToken ?? null };
     }),
     delete: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
