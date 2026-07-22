@@ -120,6 +120,25 @@ export const appRouter = router({
         return { ...wheel, members, owner };
       }),
 
+    // One consolidated poll for a shared wheel's fast-changing state: the live
+    // member roster, the current round (veto/vote/dietary), and the latest spin.
+    // Replaces three separate 3s polls (wheels.get-for-members, session.state,
+    // spins.latest) with a single membership check + one round-trip — the main
+    // serverless-cost lever on an active shared wheel. The three reads run
+    // concurrently. Presence stays its own (slower, write-bearing) heartbeat.
+    realtime: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const [members, session, latestSpin] = await Promise.all([
+          getWheelMembers(input.wheelId),
+          getRoundMarks(input.wheelId).then(buildSessionState),
+          getLatestSpin(input.wheelId),
+        ]);
+        return { members, session, latestSpin };
+      }),
+
     create: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(128),

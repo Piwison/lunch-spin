@@ -115,12 +115,9 @@ export default function WheelApp() {
       enabled: !!selectedWheelId,
       retry: (count, err) =>
         err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
-      // Membership (.members) lives on this same query and previously never
-      // refreshed after the initial load — someone joining a shared wheel via
-      // an invite link wouldn't show up in the roster (or the owner's "Team"
-      // panel) until a manual page reload. Poll like the other shared-wheel
-      // realtime queries (session.state, spins.latest) once we know it's shared.
-      refetchInterval: (query) => (query.state.data?.isShared ? 3000 : false),
+      // Loaded once for the wheel's config + owner. The live member roster (which
+      // changes when someone joins) now rides on the consolidated wheels.realtime
+      // poll below, so this query no longer polls every 3s.
     }
   );
 
@@ -254,24 +251,22 @@ export default function WheelApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWheelId, isShared]);
 
-  // Round state (veto/vote/dietary): poll ~3s; derive session straight from it.
-  const sessionStateQuery = trpc.session.state.useQuery(
+  // Consolidated shared-wheel realtime: one ~3s poll returns the live member
+  // roster, the current round (veto/vote/dietary), and the latest spin — one
+  // membership check + one round-trip, replacing three separate 3s polls.
+  const realtimeQuery = trpc.wheels.realtime.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
   );
-  const session: SessionState = sessionStateQuery.data ?? EMPTY_SESSION;
+  const session: SessionState = realtimeQuery.data?.session ?? EMPTY_SESSION;
 
-  // Latest spin: poll ~3s and surface a teammate's spin (skip our own).
+  // Latest spin: surface a teammate's spin (skip our own).
   const lastSpinIdRef = useRef<number | null>(null);
   useEffect(() => {
     lastSpinIdRef.current = null;
   }, [selectedWheelId]);
-  const latestSpinQuery = trpc.spins.latest.useQuery(
-    { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
-  );
   useEffect(() => {
-    const latest = latestSpinQuery.data;
+    const latest = realtimeQuery.data?.latestSpin;
     if (!latest) return;
     if (lastSpinIdRef.current === null) {
       lastSpinIdRef.current = latest.id; // baseline on first load — don't toast history
@@ -285,13 +280,13 @@ export default function WheelApp() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestSpinQuery.data, user]);
+  }, [realtimeQuery.data?.latestSpin, user]);
 
   // Refetch the round state right after my own action so it reflects instantly
   // (instead of waiting for the next ~3s poll).
   const utils = trpc.useUtils();
   const refreshSession = () => {
-    if (selectedWheelId) utils.session.state.invalidate({ wheelId: selectedWheelId });
+    if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
   };
   const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
   const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
@@ -711,7 +706,7 @@ export default function WheelApp() {
                         <WheelMembers
                           ownerId={wheelData.ownerId}
                           owner={wheelData.owner}
-                          members={wheelData.members}
+                          members={realtimeQuery.data?.members ?? wheelData.members}
                           currentUserId={user.id}
                           presentUserIds={presentUserIds}
                           collapsible
