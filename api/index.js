@@ -139,6 +139,13 @@ var restaurantTags = mysqlTable("restaurant_tags", {
   restaurantIdx: index("restaurant_tags_restaurant_idx").on(t2.restaurantId),
   tagIdx: index("restaurant_tags_tag_idx").on(t2.tagId)
 }));
+var restaurantRatings = mysqlTable("restaurant_ratings", {
+  restaurantId: int("restaurantId").notNull(),
+  userId: int("userId").notNull(),
+  stars: int("stars").notNull(),
+  // 1..5, enforced in shared/restaurantRating.ts
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (t2) => ({ pk: primaryKey({ columns: [t2.restaurantId, t2.userId] }) }));
 var spinHistory = mysqlTable("spin_history", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -536,6 +543,20 @@ async function getRestaurantById(id) {
   if (!db) return void 0;
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
+}
+async function upsertRestaurantRating(restaurantId, userId, stars) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(restaurantRatings).values({ restaurantId, userId, stars }).onDuplicateKeyUpdate({ set: { stars } });
+}
+async function getWheelRatingRows(wheelId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    restaurantId: restaurantRatings.restaurantId,
+    userId: restaurantRatings.userId,
+    stars: restaurantRatings.stars
+  }).from(restaurantRatings).innerJoin(restaurants, eq(restaurantRatings.restaurantId, restaurants.id)).where(eq(restaurants.wheelId, wheelId));
 }
 async function recordSpin(wheelId, restaurantId, spunBy) {
   const db = await getDb();
@@ -1656,6 +1677,35 @@ function applyRatingWeights(base, ratingById) {
   }));
 }
 
+// shared/restaurantRating.ts
+var MIN_STARS = 1;
+var MAX_STARS = 5;
+function clampStars(n) {
+  const r = Math.round(n);
+  if (r < MIN_STARS) return MIN_STARS;
+  if (r > MAX_STARS) return MAX_STARS;
+  return r;
+}
+function summarizeRatings(rows, viewerId) {
+  const byRestaurant = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    let e = byRestaurant.get(row.restaurantId);
+    if (!e) {
+      e = { sum: 0, count: 0, mine: null };
+      byRestaurant.set(row.restaurantId, e);
+    }
+    e.sum += row.stars;
+    e.count += 1;
+    if (row.userId === viewerId) e.mine = row.stars;
+  }
+  return Array.from(byRestaurant.entries()).map(([restaurantId, e]) => ({
+    restaurantId,
+    average: e.sum / e.count,
+    count: e.count,
+    myStars: e.mine
+  }));
+}
+
 // shared/realtimeState.ts
 function push(map, key, value) {
   const list = map.get(key);
@@ -2437,6 +2487,26 @@ var appRouter = router({
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
       await deleteRestaurant(input.id);
       return { success: true };
+    }),
+    // ── Ratings (1–5 stars per member per place) ──────────────────────────────
+    // Any member rates any place on the wheel; re-rating overwrites their star.
+    rate: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number(), stars: z3.number().int().min(1).max(5) })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const restaurant = await getRestaurantById(input.restaurantId);
+      if (!restaurant || restaurant.wheelId !== input.wheelId) throw new TRPCError3({ code: "NOT_FOUND" });
+      await upsertRestaurantRating(input.restaurantId, ctx.user.id, clampStars(input.stars));
+      return { success: true };
+    }),
+    // Per-restaurant rollup for the wheel: team average + count + the caller's
+    // own star. Aggregated by the pure shared/restaurantRating helper.
+    ratings: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
+      const rows = await getWheelRatingRows(input.wheelId);
+      return summarizeRatings(rows, ctx.user.id);
     })
   }),
   // ─── Places (located wheel) ───────────────────────────────────────────────────

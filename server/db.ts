@@ -5,6 +5,7 @@ import {
   Restaurant,
   Tag,
   notifications,
+  restaurantRatings,
   restaurantTags,
   restaurants,
   roundMarks,
@@ -397,6 +398,36 @@ export async function getRestaurantById(id: number): Promise<Restaurant | undefi
   if (!db) return undefined;
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
+}
+
+// ─── Restaurant ratings ───────────────────────────────────────────────────────
+
+/** Upsert one member's 1–5 star rating for a restaurant (re-rating overwrites). */
+export async function upsertRestaurantRating(restaurantId: number, userId: number, stars: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .insert(restaurantRatings)
+    .values({ restaurantId, userId, stars })
+    .onDuplicateKeyUpdate({ set: { stars } });
+}
+
+/** All star rows for a wheel's restaurants — small; aggregated by
+ *  shared/restaurantRating (summarizeRatings / averageMapFromRows). */
+export async function getWheelRatingRows(
+  wheelId: number,
+): Promise<{ restaurantId: number; userId: number; stars: number }[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      restaurantId: restaurantRatings.restaurantId,
+      userId: restaurantRatings.userId,
+      stars: restaurantRatings.stars,
+    })
+    .from(restaurantRatings)
+    .innerJoin(restaurants, eq(restaurantRatings.restaurantId, restaurants.id))
+    .where(eq(restaurants.wheelId, wheelId));
 }
 
 // ─── Spin History ─────────────────────────────────────────────────────────────

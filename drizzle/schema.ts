@@ -149,6 +149,20 @@ export const restaurantTags = mysqlTable("restaurant_tags", {
 
 export type RestaurantTag = typeof restaurantTags.$inferSelect;
 
+// ─── Restaurant ratings ───────────────────────────────────────────────────────
+// A 1–5 star verdict per member per place (shared/restaurantRating.ts). One
+// upsert-able row per (restaurant, user); a place's team rating is the average.
+// Supersedes the old per-spin loved/ok/never enum on spin_history. The composite
+// PK is restaurantId-first, so per-restaurant aggregate reads use it directly.
+export const restaurantRatings = mysqlTable("restaurant_ratings", {
+  restaurantId: int("restaurantId").notNull(),
+  userId: int("userId").notNull(),
+  stars: int("stars").notNull(), // 1..5, enforced in shared/restaurantRating.ts
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.restaurantId, t.userId] }) }));
+
+export type RestaurantRating = typeof restaurantRatings.$inferSelect;
+
 // ─── Spin History ─────────────────────────────────────────────────────────────
 
 export const spinHistory = mysqlTable("spin_history", {

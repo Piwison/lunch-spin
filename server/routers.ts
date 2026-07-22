@@ -14,6 +14,7 @@ import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { applyRatingWeights, RATINGS } from "@shared/rating";
+import { clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -64,6 +65,8 @@ import {
   setWheelOrigin,
   updateRestaurant,
   updateWheel,
+  upsertRestaurantRating,
+  getWheelRatingRows,
 } from "./db";
 
 // A presence heartbeat counts as "online" for this long after the last ping.
@@ -427,6 +430,32 @@ export const appRouter = router({
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
         await deleteRestaurant(input.id);
         return { success: true };
+      }),
+
+    // ── Ratings (1–5 stars per member per place) ──────────────────────────────
+    // Any member rates any place on the wheel; re-rating overwrites their star.
+    rate: protectedProcedure
+      .input(z.object({ wheelId: z.number(), restaurantId: z.number(), stars: z.number().int().min(1).max(5) }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const restaurant = await getRestaurantById(input.restaurantId);
+        if (!restaurant || restaurant.wheelId !== input.wheelId) throw new TRPCError({ code: "NOT_FOUND" });
+        await upsertRestaurantRating(input.restaurantId, ctx.user.id, clampStars(input.stars));
+        return { success: true };
+      }),
+
+    // Per-restaurant rollup for the wheel: team average + count + the caller's
+    // own star. Aggregated by the pure shared/restaurantRating helper.
+    ratings: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
+        const rows = await getWheelRatingRows(input.wheelId);
+        return summarizeRatings(rows, ctx.user.id);
       }),
   }),
 
