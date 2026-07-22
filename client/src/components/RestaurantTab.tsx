@@ -343,7 +343,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           }}
         >
           <Tag size={12} className="flex-shrink-0" />
-          You can add restaurants. Only the wheel creator can edit or delete.
+          You can add and edit restaurants. Only the wheel creator can delete.
         </div>
       )}
 
@@ -501,16 +501,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 )}
               </div>
 
-              {/* Actions — always visible on mobile, hover-reveal on desktop */}
-              {isOwner && (
-                <div className="flex items-center gap-1 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
-                  <button
-                    onClick={() => openEdit(r)}
-                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
-                    title="Edit"
-                  >
-                    <Pencil size={16} />
-                  </button>
+              {/* Actions — Edit for any member, Delete owner-only. Always visible
+                  on mobile, hover-reveal on desktop. */}
+              <div className="flex items-center gap-1 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
+                <button
+                  onClick={() => openEdit(r)}
+                  className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
+                  title="Edit"
+                >
+                  <Pencil size={16} />
+                </button>
+                {isOwner && (
                   <button
                     onClick={() => { if (confirm(`Remove "${r.name}"?`)) deleteRestaurant.mutate({ id: r.id }); }}
                     className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
@@ -518,8 +519,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   >
                     <Trash2 size={16} />
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             );
           })}

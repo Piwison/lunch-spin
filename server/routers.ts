@@ -409,7 +409,10 @@ export const appRouter = router({
         if (!restaurant) throw new TRPCError({ code: "NOT_FOUND" });
         const wheel = await getWheelById(restaurant.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
-        if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can edit restaurants" });
+        // Any member can edit a restaurant's details (name/notes/tags/link).
+        // Deleting stays owner-only (see restaurants.delete).
+        const isMember = await isWheelMember(restaurant.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN", message: "Only wheel members can edit restaurants" });
         await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
         return { success: true };
       }),
