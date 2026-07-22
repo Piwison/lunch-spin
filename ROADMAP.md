@@ -50,9 +50,11 @@ changes ship a migration that must be **applied to the live DB** (not just gener
 
 ## P3 / P4 — New feature (spec first) + design pass
 
-- ⬜ Pick the feature (grill to a spec): scheduled "11:45 spin" (PWA push) **or** team taste profile
-- ⬜ Write **user story + spec** before any feature code
-- ⬜ Implement behind TDD (`shared/*.ts` first) + migration if needed
+- ✅ Pick the feature: **Team taste profile** (recommended over scheduled-spin — no new
+      infra/migration/secrets, surfaces already-collected rating data)
+- 🔄 Write **user story + spec** → `docs/team-taste-profile-spec.md` (DRAFT, awaiting sign-off)
+- ⬜ Implement behind TDD (`shared/tasteProfile.ts` first); no schema change. **Blocked on
+      spec sign-off** + 3 open questions (attribution, personal wheels, copy tone)
 - ⬜ Design/a11y pass from owner-provided screenshots (shot-list in chat)
 
 ---
