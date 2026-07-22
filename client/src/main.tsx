@@ -8,7 +8,20 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Static-ish lists (wheels, restaurants, tags, history) were refetching on
+      // every mount and every window focus (React Query's default staleTime is 0).
+      // Give them a short freshness window and stop the focus refetch. Realtime
+      // queries set their own refetchInterval, which is independent of staleTime,
+      // so shared-wheel polling is unaffected; the notifications query keeps its
+      // explicit refetchOnWindowFocus:true override.
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
