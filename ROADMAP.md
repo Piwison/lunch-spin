@@ -9,6 +9,20 @@ Legend: ⬜ todo · 🔄 in progress · ✅ done (gated: `pnpm check && pnpm tes
 deploy (isolated DB + OAuth) → sign in and click through → then merge to `main`. Apply
 each migration to the **staging** DB first (its own cluster), then to prod.
 
+> ### ⚠️ PENDING DB MIGRATIONS — apply before/at deploy
+> Schema is fully generated (0000–0015; `drizzle-kit generate` = "no changes"). The
+> new, **not-yet-applied** ones from this session are **`0014`** (hot indexes) and
+> **`0015`** (`restaurant_ratings` + backfill). `drizzle-kit migrate` is idempotent and
+> journal-tracked, so **one command per env applies all pending in order** — no need to
+> run them individually:
+> ```
+> DATABASE_URL='<staging>' pnpm exec drizzle-kit migrate   # verify on staging, then:
+> DATABASE_URL='<prod>'    pnpm exec drizzle-kit migrate
+> ```
+> Both are non-destructive (add indexes / new table + INSERT; never touch existing
+> columns). To see what prod has already: `SELECT tag FROM __drizzle_migrations`
+> (or just run migrate — it only applies what's missing).
+
 Every `server/`- or `shared/`-touching commit rebuilds & commits `api/index.js` in the
 same commit. New logic lands in `shared/*.ts` with the test written first. Schema
 changes ship a migration that must be **applied to the live DB** (not just generated).
