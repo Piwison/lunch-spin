@@ -8,6 +8,7 @@ import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
+import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
@@ -288,6 +289,20 @@ export default function WheelApp() {
   const refreshSession = () => {
     if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
   };
+
+  // Post-spin rating capture: the result modal lets you star the winner right
+  // there. Reads the viewer's current star so re-opening shows it pre-filled.
+  const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId },
+  );
+  const myStarsFor = (restaurantId: number) =>
+    ratingSummaries?.find((s) => s.restaurantId === restaurantId)?.myStars ?? null;
+  const rateRestaurant = trpc.restaurants.rate.useMutation({
+    onSuccess: () => {
+      if (selectedWheelId) utils.restaurants.ratings.invalidate({ wheelId: selectedWheelId });
+    },
+  });
   const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
   const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
   const dietaryMutation = trpc.session.dietary.useMutation({ onSuccess: refreshSession });
@@ -1063,6 +1078,16 @@ export default function WheelApp() {
                     </p>
                   );
                 })()}
+              </div>
+              {/* Post-spin capture — rate the winner right here (per-place rating). */}
+              <div className="flex flex-col items-center gap-1.5 mb-6">
+                <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>
+                <StarRating
+                  value={myStarsFor(spinResult.id)}
+                  size={26}
+                  disabled={rateRestaurant.isPending}
+                  onChange={(stars) => selectedWheelId && rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })}
+                />
               </div>
               <div className="flex flex-col gap-2.5">
                 <button

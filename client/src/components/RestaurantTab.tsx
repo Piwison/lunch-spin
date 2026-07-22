@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { StarRating, RatingChip } from "@/components/StarRating";
@@ -78,6 +78,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [sortNearest, setSortNearest] = useState(false);
+  const [sortByRating, setSortByRating] = useState(false);
   const [maxWalkMinutes, setMaxWalkMinutes] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
@@ -193,6 +194,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       ? (restaurants ?? [])
       : (restaurants ?? []).filter((r) => selectedTagIds.every((id) => r.tags.some((t) => t.id === id)));
     const filtered = filterRestaurantsByDistance(byTags, maxWalkMinutes);
+    if (sortByRating) {
+      // Highest team average first; unrated places sink to the bottom, name-stable.
+      return [...filtered].sort((a, b) => {
+        const ra = ratingByRestaurant.get(a.id)?.average ?? null;
+        const rb = ratingByRestaurant.get(b.id)?.average ?? null;
+        if (ra == null && rb == null) return a.name.localeCompare(b.name);
+        if (ra == null) return 1;
+        if (rb == null) return -1;
+        return rb - ra || a.name.localeCompare(b.name);
+      });
+    }
     if (!distanceEnabled || !sortNearest) return filtered;
     // Located restaurants first (nearest first), unlocated ones after, name-stable.
     return [...filtered].sort((a, b) => {
@@ -201,7 +213,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       if (b.walkSeconds == null) return -1;
       return a.walkSeconds - b.walkSeconds;
     });
-  }, [restaurants, selectedTagIds, maxWalkMinutes, distanceEnabled, sortNearest]);
+  }, [restaurants, selectedTagIds, maxWalkMinutes, distanceEnabled, sortNearest, sortByRating, ratingByRestaurant]);
 
   const toggleFormTag = (tagId: number) => {
     setForm((f) => ({
@@ -374,7 +386,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           </span>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
-              onClick={() => setSortNearest((s) => !s)}
+              onClick={() => { setSortByRating(false); setSortNearest((s) => !s); }}
               title="Sort nearest first"
               aria-pressed={sortNearest}
               className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
@@ -394,6 +406,25 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               <RefreshCw size={14} className={recomputeDistances.isPending ? "animate-spin" : ""} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Top-rated sort — shown once the wheel has any ratings and 2+ places. */}
+      {(ratingSummaries?.length ?? 0) > 0 && (restaurants?.length ?? 0) > 1 && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => { setSortNearest(false); setSortByRating((s) => !s); }}
+            aria-pressed={sortByRating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+            style={{
+              background: sortByRating ? "color-mix(in oklch, var(--star) 18%, transparent)" : "var(--card)",
+              border: "1px solid var(--border)",
+              color: sortByRating ? "var(--foreground)" : "var(--muted-foreground)",
+            }}
+          >
+            <Star size={13} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star)" }} />
+            Top rated
+          </button>
         </div>
       )}
 
