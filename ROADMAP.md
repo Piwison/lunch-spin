@@ -5,6 +5,10 @@ Started: 2026-07-22
 
 Legend: ⬜ todo · 🔄 in progress · ✅ done (gated: `pnpm check && pnpm test && pnpm build`) · 🔒 blocked (needs owner/ops action)
 
+**Deploy path (STAGING.md):** merge a `claude/*` branch into `staging` → Vercel staging
+deploy (isolated DB + OAuth) → sign in and click through → then merge to `main`. Apply
+each migration to the **staging** DB first (its own cluster), then to prod.
+
 Every `server/`- or `shared/`-touching commit rebuilds & commits `api/index.js` in the
 same commit. New logic lands in `shared/*.ts` with the test written first. Schema
 changes ship a migration that must be **applied to the live DB** (not just generated).
@@ -63,7 +67,8 @@ green increments, fairness-core change deferred to last.
       preserving anchors; wheel-logic + TDD) + History control migrated to stars
 - ✅ Team Taste card (star-based) in History tab (`shared/tasteProfile.ts`, TDD)
 - ✅ Post-spin rating nudge (result modal) + "Top rated" sort in Restaurant tab
-- 🔒 DEPLOY-GATE (owner): apply migration 0015 to live DB (`drizzle-kit migrate`)
+- 🔒 DEPLOY-GATE (owner): apply migration 0015 (+ 0014) to the **staging** DB, verify on
+      the staging URL, then apply to the live DB (`drizzle-kit migrate` per env — STAGING.md)
 - ⬜ Design/a11y pass from owner-provided screenshots (shot-list in chat)
 
 ---
