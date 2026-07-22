@@ -62,8 +62,8 @@ green increments, fairness-core change deferred to last.
 - ✅ Switch spin-weighting source enum→star aggregate (`applyStarWeights`; behaviour-
       preserving anchors; wheel-logic + TDD) + History control migrated to stars
 - ✅ Team Taste card (star-based) in History tab (`shared/tasteProfile.ts`, TDD)
+- ✅ Post-spin rating nudge (result modal) + "Top rated" sort in Restaurant tab
 - 🔒 DEPLOY-GATE (owner): apply migration 0015 to live DB (`drizzle-kit migrate`)
-- ⬜ Deferred follow-ups: post-spin "How was it?" nudge; "Top rated" sort in Restaurant tab
 - ⬜ Design/a11y pass from owner-provided screenshots (shot-list in chat)
 
 ---
