@@ -586,20 +586,6 @@ async function rateSpin(spinId, wheelId, spunBy, rating) {
   await db.update(spinHistory).set({ rating }).where(eq(spinHistory.id, spinId));
   return rows[0].restaurantId;
 }
-async function getLatestRatings(wheelId) {
-  const db = await getDb();
-  if (!db) return /* @__PURE__ */ new Map();
-  const rows = await db.select({
-    restaurantId: spinHistory.restaurantId,
-    rating: spinHistory.rating,
-    spunAt: spinHistory.spunAt
-  }).from(spinHistory).where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.rating} IS NOT NULL`)).orderBy(sql`${spinHistory.spunAt} DESC`);
-  const latest = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    if (r.rating && !latest.has(r.restaurantId)) latest.set(r.restaurantId, r.rating);
-  }
-  return latest;
-}
 async function getExclusions(wheelId, windowDays) {
   const db = await getDb();
   if (!db || windowDays <= 0) return /* @__PURE__ */ new Map();
@@ -1662,20 +1648,6 @@ function applyVoteWeights(base, votes, voteWeight = VOTE_WEIGHT) {
 
 // shared/rating.ts
 var RATINGS = ["loved", "ok", "never"];
-var LOVED_BOOST = 1.6;
-var NEVER_DAMP = 0.15;
-function ratingWeight(r) {
-  if (r === "loved") return LOVED_BOOST;
-  if (r === "never") return NEVER_DAMP;
-  return 1;
-}
-function applyRatingWeights(base, ratingById) {
-  if (ratingById.size === 0) return base;
-  return base.map((w) => ({
-    restaurantId: w.restaurantId,
-    weight: w.weight * ratingWeight(ratingById.get(w.restaurantId))
-  }));
-}
 
 // shared/restaurantRating.ts
 var MIN_STARS = 1;
@@ -1685,6 +1657,22 @@ function clampStars(n) {
   if (r < MIN_STARS) return MIN_STARS;
   if (r > MAX_STARS) return MAX_STARS;
   return r;
+}
+var NEVER_W = 0.15;
+var OK_W = 1;
+var LOVED_W = 1.6;
+function starWeight(avg) {
+  if (avg == null) return 1;
+  const a = Math.min(MAX_STARS, Math.max(MIN_STARS, avg));
+  if (a <= 3) return NEVER_W + (a - 1) / 2 * (OK_W - NEVER_W);
+  return OK_W + (a - 3) / 2 * (LOVED_W - OK_W);
+}
+function applyStarWeights(base, avgById) {
+  if (avgById.size === 0) return base;
+  return base.map((w) => ({
+    restaurantId: w.restaurantId,
+    weight: w.weight * starWeight(avgById.get(w.restaurantId) ?? null)
+  }));
 }
 function summarizeRatings(rows, viewerId) {
   const byRestaurant = /* @__PURE__ */ new Map();
@@ -1704,6 +1692,10 @@ function summarizeRatings(rows, viewerId) {
     count: e.count,
     myStars: e.mine
   }));
+}
+function averageMapFromRows(rows) {
+  const summaries = summarizeRatings(rows, -1);
+  return new Map(summaries.map((s) => [s.restaurantId, s.average]));
 }
 
 // shared/realtimeState.ts
@@ -2692,7 +2684,7 @@ var appRouter = router({
       }
       const votes = voteCounts(session);
       const hasVotes = votes.size > 0;
-      const ratings = await getLatestRatings(input.wheelId);
+      const ratings = averageMapFromRows(await getWheelRatingRows(input.wheelId));
       const hasRatings = ratings.size > 0;
       let restaurantId;
       if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
@@ -2721,7 +2713,7 @@ var appRouter = router({
             cuisineLastPicked
           );
         }
-        base = applyRatingWeights(base, ratings);
+        base = applyStarWeights(base, ratings);
         restaurantId = pickWeighted(applyVoteWeights(base, votes));
       } else {
         restaurantId = pickWinner(eligible);
@@ -2927,7 +2919,7 @@ var appRouter = router({
           cuisineLastPicked
         );
       }
-      base = applyRatingWeights(base, await getLatestRatings(input.wheelId));
+      base = applyStarWeights(base, averageMapFromRows(await getWheelRatingRows(input.wheelId)));
       base = applyVoteWeights(base, voteCounts(session));
       const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });
       base = applyMoodBoost(base, moodBoost(candidates, keywords));

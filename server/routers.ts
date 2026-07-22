@@ -13,8 +13,8 @@ import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
-import { applyRatingWeights, RATINGS } from "@shared/rating";
-import { clampStars, summarizeRatings } from "@shared/restaurantRating";
+import { RATINGS } from "@shared/rating";
+import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -45,7 +45,6 @@ import {
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
-  getLatestRatings,
   getRestaurantStats,
   getSpinHistory,
   markNotificationsRead,
@@ -683,8 +682,8 @@ export const appRouter = router({
         // A plain wheel with no signals stays a uniform pick.
         const votes = voteCounts(session);
         const hasVotes = votes.size > 0;
-        // Persistent preference: the latest "how was it?" per restaurant.
-        const ratings = await getLatestRatings(input.wheelId);
+        // Persistent preference: each restaurant's team average star rating.
+        const ratings = averageMapFromRows(await getWheelRatingRows(input.wheelId));
         const hasRatings = ratings.size > 0;
         let restaurantId: number;
         if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
@@ -715,8 +714,8 @@ export const appRouter = router({
             );
           }
           // Ratings are a persistent preference; votes are the live round signal
-          // and apply last so a team can still override "never again" this round.
-          base = applyRatingWeights(base, ratings);
+          // and apply last so a team can still override a low-rated place this round.
+          base = applyStarWeights(base, ratings);
           restaurantId = pickWeighted(applyVoteWeights(base, votes));
         } else {
           restaurantId = pickWinner(eligible);
@@ -983,7 +982,7 @@ export const appRouter = router({
             cuisineLastPicked,
           );
         }
-        base = applyRatingWeights(base, await getLatestRatings(input.wheelId));
+        base = applyStarWeights(base, averageMapFromRows(await getWheelRatingRows(input.wheelId)));
         base = applyVoteWeights(base, voteCounts(session));
 
         const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });

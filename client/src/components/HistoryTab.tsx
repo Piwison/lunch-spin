@@ -1,9 +1,9 @@
 import { trpc } from "@/lib/trpc";
-import { RefreshCw, Clock, Smile, Meh, Frown } from "lucide-react";
+import { RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
+import { StarRating, RatingChip } from "@/components/StarRating";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
-import { RATINGS, ratingLabel, type Rating } from "@shared/rating";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -17,13 +17,6 @@ interface HistoryTabProps {
   /** Jump to the Wheel tab — wired to the empty-state CTA. */
   onGoToWheel?: () => void;
 }
-
-// Icon + accent per rating, for the "how was it?" control and read-only badges.
-const RATING_META: Record<Rating, { Icon: typeof Smile; color: string }> = {
-  loved: { Icon: Smile, color: "oklch(0.72 0.19 150)" },
-  ok: { Icon: Meh, color: "oklch(0.75 0.15 80)" },
-  never: { Icon: Frown, color: "oklch(0.62 0.22 20)" },
-};
 
 function timeAgo(date: Date): string {
   const now = Date.now();
@@ -44,6 +37,10 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
   const { data: stats, isLoading: statsLoading } =
     trpc.stats.getRestaurantStats.useQuery({ wheelId });
 
+  // Per-restaurant star ratings (team average + the viewer's own star).
+  const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery({ wheelId });
+  const ratingByRestaurant = new Map((ratingSummaries ?? []).map((s) => [s.restaurantId, s]));
+
   const reenable = trpc.spins.reenable.useMutation({
     onSuccess: () => {
       utils.spins.history.invalidate({ wheelId });
@@ -53,9 +50,9 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
     onError: e => toast.error(e.message),
   });
 
-  const rate = trpc.spins.rate.useMutation({
-    onSuccess: () => utils.spins.history.invalidate({ wheelId }),
-    onError: e => toast.error(e.message),
+  const rateRestaurant = trpc.restaurants.rate.useMutation({
+    onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
+    onError: () => toast.error("Couldn't save your rating"),
   });
 
   // restaurantId → server-computed exclusion expiry. The server derives this
@@ -231,47 +228,28 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                       {timeAgo(spunAtDate)} · by {entry.spunByName ?? "Unknown"}
                     </p>
 
-                    {/* "How was it?" — own spins get an editable control; others'
-                        rated spins show a read-only verdict. */}
-                    {entry.spunBy === currentUserId ? (
-                      <div className="flex items-center gap-1 mt-1.5">
-                        {RATINGS.map((r) => {
-                          const { Icon, color } = RATING_META[r];
-                          const active = entry.rating === r;
-                          return (
-                            <button
-                              key={r}
-                              onClick={() =>
-                                rate.mutate({ wheelId, spinId: entry.id, rating: r })
-                              }
-                              disabled={rate.isPending}
-                              title={ratingLabel(r)}
-                              aria-label={ratingLabel(r)}
-                              aria-pressed={active}
-                              className="flex items-center justify-center h-7 w-7 rounded-full transition-all duration-150 active:scale-90 disabled:opacity-60"
-                              style={{
-                                background: active ? `oklch(from ${color} l c h / 0.18)` : "transparent",
-                                border: `1px solid ${active ? color : "var(--border)"}`,
-                                color: active ? color : "var(--muted-foreground)",
-                              }}
-                            >
-                              <Icon size={14} />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : entry.rating ? (
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        {(() => {
-                          const { Icon, color } = RATING_META[entry.rating];
-                          return (
-                            <span className="flex items-center gap-1 text-xs" style={{ color }}>
-                              <Icon size={13} /> {ratingLabel(entry.rating)}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    ) : null}
+                    {/* Rate this place (1–5 stars) — writes the restaurant's team
+                        rating; teammates' rows show the team average read-only.
+                        Rating is per place now, so only the latest spin of each
+                        restaurant carries the control (no duplicate stars). */}
+                    {isLatestForRestaurant && (
+                      entry.spunBy === currentUserId ? (
+                        <div className="mt-1.5">
+                          <StarRating
+                            value={ratingByRestaurant.get(entry.restaurantId)?.myStars ?? null}
+                            size={20}
+                            disabled={rateRestaurant.isPending}
+                            onChange={(stars) => rateRestaurant.mutate({ wheelId, restaurantId: entry.restaurantId, stars })}
+                          />
+                        </div>
+                      ) : (
+                        ratingByRestaurant.get(entry.restaurantId)?.average != null ? (
+                          <div className="mt-1.5">
+                            <RatingChip average={ratingByRestaurant.get(entry.restaurantId)!.average} />
+                          </div>
+                        ) : null
+                      )
+                    )}
                   </div>
 
                   {/* Re-enable button */}
