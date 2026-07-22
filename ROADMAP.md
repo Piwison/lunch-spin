@@ -57,12 +57,13 @@ green increments, fairness-core change deferred to last.
 - ✅ Permission: members can **add + edit** restaurants; **delete** stays owner-only
 - ✅ Foundation: `shared/restaurantRating.ts` (pure, TDD) + `restaurant_ratings` table
       (migration 0015 + backfill) + `restaurants.rate` / `restaurants.ratings` API
-- ⬜ Restaurant tab UI: row `★ avg` chip + ⋮ → detail sheet (star control, team avg,
-      owner Edit/Delete), "Top rated" sort
-- ⬜ Team Taste card (star-based) in History tab
-- ⬜ Switch spin-weighting source enum→star aggregate (`applyStarWeights`; wheel-logic + TDD)
-- ⬜ Post-spin "How was it?" nudge + History control → stars
-- 🔒 DEPLOY-GATE (owner): apply migration 0015 to live DB
+- ✅ Restaurant tab UI: row `★ avg` chip + ⋮ → detail sheet (star control, team avg,
+      owner Edit/Delete)
+- ✅ Switch spin-weighting source enum→star aggregate (`applyStarWeights`; behaviour-
+      preserving anchors; wheel-logic + TDD) + History control migrated to stars
+- ✅ Team Taste card (star-based) in History tab (`shared/tasteProfile.ts`, TDD)
+- 🔒 DEPLOY-GATE (owner): apply migration 0015 to live DB (`drizzle-kit migrate`)
+- ⬜ Deferred follow-ups: post-spin "How was it?" nudge; "Top rated" sort in Restaurant tab
 - ⬜ Design/a11y pass from owner-provided screenshots (shot-list in chat)
 
 ---
@@ -75,3 +76,6 @@ green increments, fairness-core change deferred to last.
 - 2026-07-22 — P1 code shipped: migration 0014 (11 hot indexes) + `wheels.realtime`
   polling consolidation. All gated (check / 250 tests / build). Remaining P1: owner
   applies 0014 to the live DB (deploy-gate).
+- 2026-07-22 — P3 shipped: 5-star restaurant ratings end-to-end (foundation → restaurant-tab
+  sheet → spin-weighting switch + History stars → Team Taste card) + members-can-edit
+  permission. 274 tests, all gated. Deploy-gate: owner applies migration 0015.
