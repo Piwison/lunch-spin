@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { RefreshCw, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
+import { TasteProfile } from "./TasteProfile";
 import { StarRating, RatingChip } from "@/components/StarRating";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 
@@ -92,6 +93,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
             showPeople={isShared}
             isLoading={statsLoading}
           />
+          <TasteProfile wheelId={wheelId} />
         </div>
       )}
 

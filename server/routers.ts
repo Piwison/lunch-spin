@@ -15,6 +15,7 @@ import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } fro
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { RATINGS } from "@shared/rating";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
+import { buildTasteProfile } from "@shared/tasteProfile";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -890,6 +891,24 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         return getRestaurantStats(input.wheelId);
+      }),
+
+    // Team taste: aggregate the wheel's star ratings into overall mood +
+    // crowd-favourite places + cuisines the team leans toward / cools on.
+    tasteProfile: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const summaries = summarizeRatings(await getWheelRatingRows(input.wheelId), ctx.user.id);
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        const metaById = new Map(rests.map((r) => [r.id, r]));
+        const items = summaries.map((s) => {
+          const r = metaById.get(s.restaurantId);
+          const cuisine = r?.tags.find((t) => t.category === "cuisine")?.name ?? r?.cuisine ?? null;
+          return { restaurantId: s.restaurantId, name: r?.name ?? "Unknown", cuisine, average: s.average, count: s.count };
+        });
+        return buildTasteProfile(items);
       }),
   }),
 

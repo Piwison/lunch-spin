@@ -1698,6 +1698,37 @@ function averageMapFromRows(rows) {
   return new Map(summaries.map((s) => [s.restaurantId, s.average]));
 }
 
+// shared/tasteProfile.ts
+var MIN_PLACE_COUNT = 2;
+var MIN_CUISINE_COUNT = 3;
+var MIN_TOTAL_FOR_CARD = 5;
+var LEAN_AT = 3.5;
+var COOL_AT = 2.5;
+function buildTasteProfile(items) {
+  const totalRatings = items.reduce((sum, i) => sum + i.count, 0);
+  const overallAverage = totalRatings === 0 ? null : items.reduce((sum, i) => sum + i.average * i.count, 0) / totalRatings;
+  const topPlaces = items.filter((i) => i.count >= MIN_PLACE_COUNT).sort((a, b) => b.average - a.average || b.count - a.count || a.restaurantId - b.restaurantId).slice(0, 3).map((i) => ({ restaurantId: i.restaurantId, name: i.name, average: i.average, count: i.count }));
+  const byCuisine = /* @__PURE__ */ new Map();
+  for (const i of items) {
+    if (!i.cuisine) continue;
+    const e = byCuisine.get(i.cuisine) ?? { weighted: 0, count: 0 };
+    e.weighted += i.average * i.count;
+    e.count += i.count;
+    byCuisine.set(i.cuisine, e);
+  }
+  const cuisines = Array.from(byCuisine.entries()).filter(([, e]) => e.count >= MIN_CUISINE_COUNT).map(([cuisine, e]) => ({ cuisine, average: e.weighted / e.count, count: e.count }));
+  const leans = cuisines.filter((c) => c.average >= LEAN_AT).sort((a, b) => b.average - a.average || b.count - a.count).slice(0, 3);
+  const cools = cuisines.filter((c) => c.average <= COOL_AT).sort((a, b) => a.average - b.average || b.count - a.count).slice(0, 2);
+  return {
+    totalRatings,
+    overallAverage,
+    topPlaces,
+    leans,
+    cools,
+    hasEnoughData: totalRatings >= MIN_TOTAL_FOR_CARD
+  };
+}
+
 // shared/realtimeState.ts
 function push(map, key, value) {
   const list = map.get(key);
@@ -2841,6 +2872,21 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getRestaurantStats(input.wheelId);
+    }),
+    // Team taste: aggregate the wheel's star ratings into overall mood +
+    // crowd-favourite places + cuisines the team leans toward / cools on.
+    tasteProfile: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const summaries = summarizeRatings(await getWheelRatingRows(input.wheelId), ctx.user.id);
+      const rests = await getRestaurantsByWheel(input.wheelId);
+      const metaById = new Map(rests.map((r) => [r.id, r]));
+      const items = summaries.map((s) => {
+        const r = metaById.get(s.restaurantId);
+        const cuisine = r?.tags.find((t2) => t2.category === "cuisine")?.name ?? r?.cuisine ?? null;
+        return { restaurantId: s.restaurantId, name: r?.name ?? "Unknown", cuisine, average: s.average, count: s.count };
+      });
+      return buildTasteProfile(items);
     })
   }),
   // ─── Smart Pick (free, no LLM) ──────────────────────────────────────────────
