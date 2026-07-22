@@ -63,6 +63,7 @@
   --brand: oklch(0.64 0.19 38);     /* tomato/ember — the single accent */
   --brand-2: oklch(0.74 0.15 65);   /* amber/mango — hero gradient only */
   --brand-glow: 0.20;               /* glow opacity multiplier (calmer in light) */
+  --star: oklch(0.72 0.15 72);      /* rating stars (warm gold) */
 
   /* Semantic text accents — kept legible against their faint tinted chips by
      going darker in light mode, brighter in dark. */
@@ -104,6 +105,7 @@
   --brand: oklch(0.70 0.19 40);
   --brand-2: oklch(0.78 0.15 65);
   --brand-glow: 0.45;
+  --star: oklch(0.80 0.14 76);      /* rating stars (brighter in dark) */
 
   --ok: oklch(0.80 0.15 148);
   --info: oklch(0.82 0.14 70);

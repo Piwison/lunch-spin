@@ -1,7 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { StarRating, RatingChip } from "@/components/StarRating";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -82,6 +84,15 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
   const { data: tags } = trpc.tags.list.useQuery({ wheelId });
 
+  // Per-restaurant star ratings (team average + count + the viewer's own).
+  const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery({ wheelId });
+  const ratingByRestaurant = useMemo(
+    () => new Map((ratingSummaries ?? []).map((s) => [s.restaurantId, s])),
+    [ratingSummaries],
+  );
+  // The restaurant whose detail sheet is open (null = closed).
+  const [detailId, setDetailId] = useState<number | null>(null);
+
   const invalidate = () => {
     utils.restaurants.list.invalidate({ wheelId });
     onRestaurantsChange();
@@ -94,6 +105,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const updateRestaurant = trpc.restaurants.update.useMutation({
     onSuccess: () => { invalidate(); setEditId(null); setForm(EMPTY_FORM); setFormError(null); toast.success("Restaurant updated!"); },
     onError: (e) => setFormError(e.message),
+  });
+  const rateRestaurant = trpc.restaurants.rate.useMutation({
+    onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
+    onError: () => toast.error("Couldn't save your rating"),
   });
   const deleteRestaurant = trpc.restaurants.delete.useMutation({
     onSuccess: () => { invalidate(); toast.success("Restaurant removed"); },
@@ -501,31 +516,104 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 )}
               </div>
 
-              {/* Actions — Edit for any member, Delete owner-only. Always visible
-                  on mobile, hover-reveal on desktop. */}
-              <div className="flex items-center gap-1 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
+              {/* Glanceable team rating + a ⋮ that opens the detail sheet
+                  (rate, team breakdown, edit / owner-delete all live there). */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <RatingChip average={ratingByRestaurant.get(r.id)?.average ?? null} />
                 <button
-                  onClick={() => openEdit(r)}
-                  className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
-                  title="Edit"
+                  onClick={() => setDetailId(r.id)}
+                  className="flex items-center justify-center h-9 w-9 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
+                  aria-label={`Open ${r.name}`}
                 >
-                  <Pencil size={16} />
+                  <MoreVertical size={18} />
                 </button>
-                {isOwner && (
-                  <button
-                    onClick={() => { if (confirm(`Remove "${r.name}"?`)) deleteRestaurant.mutate({ id: r.id }); }}
-                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
-                    title="Delete"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
               </div>
             </div>
             );
           })}
         </div>
       )}
+
+      {/* Restaurant detail sheet — glance chip on the row opens this. Holds the
+          team rating, the member's own star control, and (owner) Edit/Delete. */}
+      <Drawer open={detailId !== null} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+        <DrawerContent>
+          {(() => {
+            const r = (restaurants ?? []).find((x) => x.id === detailId);
+            if (!r) return null;
+            const summary = ratingByRestaurant.get(r.id);
+            const avg = summary?.average ?? null;
+            const count = summary?.count ?? 0;
+            const mine = summary?.myStars ?? null;
+            return (
+              <div className="mx-auto w-full max-w-md px-5 pb-8 pt-1">
+                <h3 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{r.name}</h3>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  {r.tags.map((t) => (
+                    <span key={t.id} className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: t.color + "18", color: t.color, border: `1px solid ${t.color}35` }}>{t.name}</span>
+                  ))}
+                  {distanceEnabled && r.walkSeconds != null && (
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full text-muted-foreground" style={{ background: "var(--muted)" }}>
+                      <Footprints size={10} />{formatWalk(r.walkSeconds / 60)}
+                    </span>
+                  )}
+                  {r.mapUrl && (
+                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--brand)" }}>
+                      <Navigation size={11} />Directions
+                    </a>
+                  )}
+                </div>
+                {r.notes && <p className="text-xs text-muted-foreground mt-2">{r.notes}</p>}
+
+                <div className="mt-6">
+                  <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Team rating</div>
+                  {avg == null ? (
+                    <p className="text-sm text-muted-foreground">No ratings yet — be the first.</p>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-extrabold" style={{ fontFamily: "var(--font-display)" }}>{avg.toFixed(1)}</span>
+                      <div>
+                        <StarRating value={avg} size={18} />
+                        <div className="text-[11px] text-muted-foreground mt-0.5">{count} rating{count === 1 ? "" : "s"}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Your rating</div>
+                  <StarRating
+                    value={mine}
+                    size={30}
+                    disabled={rateRestaurant.isPending}
+                    onChange={(stars) => rateRestaurant.mutate({ wheelId, restaurantId: r.id, stars })}
+                  />
+                </div>
+
+                <div className="mt-7 pt-4 flex gap-2.5" style={{ borderTop: "1px solid var(--border)" }}>
+                  <button
+                    onClick={() => { const target = r; setDetailId(null); openEdit(target); }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <Pencil size={15} /> Edit
+                  </button>
+                  {isOwner && (
+                    <button
+                      onClick={() => { if (confirm(`Remove "${r.name}"?`)) { deleteRestaurant.mutate({ id: r.id }); setDetailId(null); } }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                      style={{ borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)" }}
+                    >
+                      <Trash2 size={15} /> Delete
+                    </button>
+                  )}
+                </div>
+                {!isOwner && <p className="text-[10px] text-muted-foreground text-center mt-2">Only the wheel creator can delete.</p>}
+              </div>
+            );
+          })()}
+        </DrawerContent>
+      </Drawer>
 
       {/* Add/Edit dialog */}
       <Dialog open={showAdd || editId !== null} onOpenChange={(open) => { if (!open) { setShowAdd(false); setEditId(null); setForm(EMPTY_FORM); } }}>
