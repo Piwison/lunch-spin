@@ -28,11 +28,14 @@ changes ship a migration that must be **applied to the live DB** (not just gener
       `{ session, latestSpin, members, presence }` (one membership check, one round-trip);
       `WheelApp.tsx` replaces 3× 3s `useQuery` with 1. (`server/routers.ts` only — NOT
       `trpc.ts`/`context.ts`; rebuild `api/index.js`)
-- ⬜ DB indexes → migration `drizzle/0013_hot_indexes.sql` + schema `index()` entries:
-      `spin_history(wheelId, spunAt)`, `restaurants(wheelId)`, `restaurant_tags(restaurantId)`,
-      `restaurant_tags(tagId)`, `notifications(userId)`, `wheel_members(userId)`,
-      `wheels(inviteToken)`
-- 🔒 DEPLOY-GATE (owner): apply `0013` to live DB via `drizzle-kit migrate`
+- ✅ DB indexes → migration `drizzle/0014_productive_wilson_fisk.sql` (0013 was taken by
+      the notifications feature) + schema `index()` entries. 11 indexes, all `CREATE INDEX`
+      (non-destructive): `spin_history(wheelId,spunAt)` + `(restaurantId)`, `restaurants(wheelId)`,
+      `restaurant_tags(restaurantId)` + `(tagId)`, `wheel_members(wheelId,userId)` + `(userId)`,
+      `tags(wheelId)`, `notifications(wheelId,createdAt)`, `wheels(ownerId)` + `(inviteToken)`.
+      Generated via `drizzle-kit generate`; `api/index.js` rebuilt (schema is in the bundle).
+- 🔒 DEPLOY-GATE (owner): apply `0014` to live DB via `drizzle-kit migrate` — generated ≠ applied
+      (known failure mode #2). Non-destructive, safe on existing rows.
 
 ## P0 — Activate what's already built (owner ops + my verify)
 

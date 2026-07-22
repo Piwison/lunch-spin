@@ -17,6 +17,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   boolean,
   decimal,
+  index,
   int,
   json,
   mysqlEnum,
@@ -64,13 +65,22 @@ var wheels = mysqlTable("wheels", {
   originLabel: varchar("originLabel", { length: 64 }).default("Office"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-});
+}, (t2) => ({
+  // getWheelList reads owned wheels by ownerId; join-by-invite looks up inviteToken.
+  ownerIdx: index("wheels_owner_idx").on(t2.ownerId),
+  inviteTokenIdx: index("wheels_invite_token_idx").on(t2.inviteToken)
+}));
 var wheelMembers = mysqlTable("wheel_members", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
   userId: int("userId").notNull(),
   joinedAt: timestamp("joinedAt").defaultNow().notNull()
-});
+}, (t2) => ({
+  // isWheelMember (WHERE wheelId AND userId) runs on every shared-wheel poll;
+  // getWheelList reads a user's memberships (WHERE userId).
+  wheelUserIdx: index("wheel_members_wheel_user_idx").on(t2.wheelId, t2.userId),
+  userIdx: index("wheel_members_user_idx").on(t2.userId)
+}));
 var tags = mysqlTable("tags", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 64 }).notNull(),
@@ -81,7 +91,10 @@ var tags = mysqlTable("tags", {
   wheelId: int("wheelId"),
   // null = global/system tag; otherwise scoped to one wheel
   createdAt: timestamp("createdAt").defaultNow().notNull()
-});
+}, (t2) => ({
+  // getTagsForWheel filters by wheelId (plus the null/global set).
+  wheelIdx: index("tags_wheel_idx").on(t2.wheelId)
+}));
 var restaurants = mysqlTable("restaurants", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -112,12 +125,20 @@ var restaurants = mysqlTable("restaurants", {
   walkSeconds: int("walkSeconds"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-});
+}, (t2) => ({
+  // restaurants.list / stats / distance all scope by wheelId.
+  wheelIdx: index("restaurants_wheel_idx").on(t2.wheelId)
+}));
 var restaurantTags = mysqlTable("restaurant_tags", {
   id: int("id").autoincrement().primaryKey(),
   restaurantId: int("restaurantId").notNull(),
   tagId: int("tagId").notNull()
-});
+}, (t2) => ({
+  // The tag join loads all tags for a wheel's restaurants (WHERE restaurantId IN …);
+  // tag filtering looks up rows by tagId.
+  restaurantIdx: index("restaurant_tags_restaurant_idx").on(t2.restaurantId),
+  tagIdx: index("restaurant_tags_tag_idx").on(t2.tagId)
+}));
 var spinHistory = mysqlTable("spin_history", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -133,7 +154,12 @@ var spinHistory = mysqlTable("spin_history", {
   // Post-spin "how was it?" verdict; null = unrated. The latest rating per
   // restaurant biases future spins (shared/rating.ts).
   rating: mysqlEnum("rating", ["loved", "ok", "never"])
-});
+}, (t2) => ({
+  // The hottest table: spins.latest (WHERE wheelId ORDER BY spunAt DESC), history,
+  // and exclusion all scope by wheelId + recency; ratings look up by restaurantId.
+  wheelSpunAtIdx: index("spin_history_wheel_spun_at_idx").on(t2.wheelId, t2.spunAt),
+  restaurantIdx: index("spin_history_restaurant_idx").on(t2.restaurantId)
+}));
 var notifications = mysqlTable("notifications", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -141,7 +167,10 @@ var notifications = mysqlTable("notifications", {
   restaurantId: int("restaurantId").notNull(),
   actorUserId: int("actorUserId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull()
-});
+}, (t2) => ({
+  // The bell polls notifications per wheel, newest first.
+  wheelCreatedIdx: index("notifications_wheel_created_idx").on(t2.wheelId, t2.createdAt)
+}));
 var wheelPresence = mysqlTable("wheel_presence", {
   wheelId: int("wheelId").notNull(),
   userId: int("userId").notNull(),

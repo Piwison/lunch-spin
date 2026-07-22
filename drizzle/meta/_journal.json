@@ -99,6 +99,13 @@
       "when": 1784395730998,
       "tag": "0013_acoustic_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1784689085295,
+      "tag": "0014_productive_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }
