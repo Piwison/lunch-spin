@@ -50,11 +50,19 @@ changes ship a migration that must be **applied to the live DB** (not just gener
 
 ## P3 / P4 — New feature (spec first) + design pass
 
-- ✅ Pick the feature: **Team taste profile** (recommended over scheduled-spin — no new
-      infra/migration/secrets, surfaces already-collected rating data)
-- 🔄 Write **user story + spec** → `docs/team-taste-profile-spec.md` (DRAFT, awaiting sign-off)
-- ⬜ Implement behind TDD (`shared/tasteProfile.ts` first); no schema change. **Blocked on
-      spec sign-off** + 3 open questions (attribution, personal wheels, copy tone)
+Scope evolved during design review (wireframes): now a **5-star rating system**
+(Google-style) in the Restaurant tab + a star-based Team Taste card. Building in
+green increments, fairness-core change deferred to last.
+
+- ✅ Permission: members can **add + edit** restaurants; **delete** stays owner-only
+- ✅ Foundation: `shared/restaurantRating.ts` (pure, TDD) + `restaurant_ratings` table
+      (migration 0015 + backfill) + `restaurants.rate` / `restaurants.ratings` API
+- ⬜ Restaurant tab UI: row `★ avg` chip + ⋮ → detail sheet (star control, team avg,
+      owner Edit/Delete), "Top rated" sort
+- ⬜ Team Taste card (star-based) in History tab
+- ⬜ Switch spin-weighting source enum→star aggregate (`applyStarWeights`; wheel-logic + TDD)
+- ⬜ Post-spin "How was it?" nudge + History control → stars
+- 🔒 DEPLOY-GATE (owner): apply migration 0015 to live DB
 - ⬜ Design/a11y pass from owner-provided screenshots (shot-list in chat)
 
 ---
