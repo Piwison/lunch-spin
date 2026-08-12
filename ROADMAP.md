@@ -117,9 +117,14 @@ prefetches the `WheelApp` chunk; fonts moved off the critical path (preload +
 `media="print"` swap + noscript); analytics injected from JS only when configured
 (was shipping a literal `%VITE_ANALYTICS_ENDPOINT%` → 404 every load); `useAuth`'s
 localStorage write moved out of `useMemo`.
-Not done: **#4 serverless/TiDB cold start** (infra-level — would need a warmer or
-connection tuning) and merging the `auth.me → wheels.list → wheel data` waterfall
-into one bootstrap procedure (bigger refactor; say the word).
+Also shipped: **waterfall merged** — `wheels.bootstrap` (+ `shared/bootstrap.ts`,
+7 tests) resolves the target wheel server-side and returns the wheel list, wheel,
+restaurants, tags and ratings in ONE hop; `WheelApp` seeds every per-query cache so
+children read warm data. Entry: **3 serial hops → 2** (`auth.me` → `bootstrap`).
+Not done: **#4 serverless/TiDB cold start** (infra-level — needs a warmer or
+connection tuning). Collapsing `auth.me` into bootstrap too would require issuing a
+protected query before auth resolves, changing what an anonymous visitor to `/app`
+sees (login redirect instead of the landing) — deliberately left alone.
 
 <details><summary>original measured causes</summary>
 1. A signed-in returning user renders the **entire marketing landing page first** —
