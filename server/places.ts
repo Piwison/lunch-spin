@@ -169,6 +169,44 @@ async function placeDetails(placeId: string, apiKey: string): Promise<ResolvedPl
   return mapGooglePlace(data.result);
 }
 
+/**
+ * Fetch a place's weekly opening hours + its own UTC offset. Separate from
+ * `placeDetails` because it asks for different (billable) fields and is called on
+ * its own schedule — hours change, so rows are refreshed rather than fetched once.
+ * Returns null when the provider has no hours for the place, which callers must
+ * store as "unknown" (kept on the wheel), never as "closed".
+ */
+export async function fetchPlaceHours(
+  placeId: string,
+): Promise<{ periods: unknown; utcOffsetMinutes: number | null } | null> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  const url = new URL(PLACE_DETAILS_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set("fields", "opening_hours,utc_offset");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const res = await fetch(url.toString(), { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Place Details (hours) failed (${res.status})`);
+    const data = (await res.json()) as {
+      status?: string;
+      result?: { opening_hours?: { periods?: unknown }; utc_offset?: number };
+    };
+    if (data.status !== "OK" || !data.result) return null;
+    const periods = data.result.opening_hours?.periods ?? null;
+    if (!periods) return null;
+    return {
+      periods,
+      utcOffsetMinutes:
+        typeof data.result.utc_offset === "number" ? data.result.utc_offset : null,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function findPlace(
   text: string,
   bias: { lat: number; lng: number } | null,

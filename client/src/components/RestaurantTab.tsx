@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { StarRating, RatingChip } from "@/components/StarRating";
@@ -106,6 +106,24 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const updateRestaurant = trpc.restaurants.update.useMutation({
     onSuccess: () => { invalidate(); setEditId(null); setForm(EMPTY_FORM); setFormError(null); toast.success("Restaurant updated!"); },
     onError: (e) => setFormError(e.message),
+  });
+  // Pull weekly opening hours for provider-sourced places. Reports the
+  // misconfigured-key case explicitly instead of a silent success (the trap that
+  // hid the Distance Matrix failure for a whole round).
+  const refreshHours = trpc.restaurants.refreshHours.useMutation({
+    onSuccess: (res) => {
+      invalidate();
+      if (!res.configured) {
+        toast.error("Place lookups aren't configured on the server");
+      } else if (res.providerFailed) {
+        toast.error("Couldn't reach Google Places — check the server's Maps API key");
+      } else if (res.updated === 0) {
+        toast.success("Opening hours are already up to date");
+      } else {
+        toast.success(`Updated opening hours for ${res.updated} place${res.updated === 1 ? "" : "s"}`);
+      }
+    },
+    onError: (e) => toast.error(e.message),
   });
   const rateRestaurant = trpc.restaurants.rate.useMutation({
     onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
@@ -409,6 +427,34 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         </div>
       )}
 
+      {/* Open-hours coverage + refresh. Only worth showing when the wheel has
+          provider-sourced places whose hours we could actually fetch. */}
+      {(restaurants?.some((r) => r.placeId) ?? false) && (
+        <div
+          className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-xs"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Clock3 size={13} className="flex-shrink-0" />
+            {(() => {
+              const closed = restaurants?.filter((r) => r.openStatus === "closed").length ?? 0;
+              const unknown = restaurants?.filter((r) => r.openStatus === "unknown").length ?? 0;
+              if (closed > 0) return <>{closed} closed now — <strong className="text-foreground">off the wheel</strong> until they reopen</>;
+              if (unknown > 0) return <>{unknown} place{unknown === 1 ? "" : "s"} with unknown hours — always on the wheel</>;
+              return <>All open right now</>;
+            })()}
+          </span>
+          <button
+            onClick={() => refreshHours.mutate({ wheelId })}
+            disabled={refreshHours.isPending}
+            title="Refresh opening hours"
+            className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
+          >
+            <RefreshCw size={14} className={refreshHours.isPending ? "animate-spin" : ""} />
+          </button>
+        </div>
+      )}
+
       {/* Top-rated sort — shown once the wheel has any ratings and 2+ places. */}
       {(ratingSummaries?.length ?? 0) > 0 && (restaurants?.length ?? 0) > 1 && (
         <div className="flex justify-end">
@@ -526,6 +572,31 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : "no location"}
                     </span>
                   )}
+                  {/* Opening hours. "unknown" shows nothing — those places stay on
+                      the wheel, so a chip would just be noise. */}
+                  {r.openStatus === "closed" && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+                      title="Closed right now — off the wheel until it reopens"
+                    >
+                      <Clock3 size={10} className="flex-shrink-0" /> closed now
+                    </span>
+                  )}
+                  {r.openStatus === "closing_soon" && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      style={{
+                        background: "oklch(from var(--destructive) l c h / 0.12)",
+                        color: "var(--destructive)",
+                        border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
+                      }}
+                      title="Still on the wheel, but closing soon"
+                    >
+                      <Clock3 size={10} className="flex-shrink-0" />
+                      {r.minutesUntilClose != null ? `closes in ${r.minutesUntilClose}m` : "closing soon"}
+                    </span>
+                  )}
                 </div>
                 {r.notes && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{r.notes}</p>}
                 {r.tags.length > 0 && (
@@ -595,6 +666,23 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   )}
                 </div>
                 {r.notes && <p className="text-xs text-muted-foreground mt-2">{r.notes}</p>}
+
+                {/* Opening hours — states mirror shared/openHours.ts. "unknown" is
+                    stated plainly so nobody thinks the place was dropped. */}
+                <div className="mt-5 flex items-center gap-2 text-xs">
+                  <Clock3 size={13} className="flex-shrink-0 text-muted-foreground" />
+                  {r.openStatus === "closed" ? (
+                    <span className="text-muted-foreground">Closed right now — off the wheel until it reopens</span>
+                  ) : r.openStatus === "closing_soon" ? (
+                    <span style={{ color: "var(--destructive)" }} className="font-semibold">
+                      {r.minutesUntilClose != null ? `Closing in ~${r.minutesUntilClose} min` : "Closing soon"}
+                    </span>
+                  ) : r.openStatus === "open" ? (
+                    <span style={{ color: "var(--ok)" }} className="font-semibold">Open now</span>
+                  ) : (
+                    <span className="text-muted-foreground">Hours unknown — always on the wheel</span>
+                  )}
+                </div>
 
                 <div className="mt-6">
                   <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Team rating</div>

@@ -13,7 +13,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -317,9 +317,23 @@ export default function WheelApp() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Closed-right-now restaurants come off the wheel entirely (the server enforces
+  // the same rule in spins.create — this just keeps the visual honest). Unknown
+  // hours stay on: most wheels have hand-typed places with no provider hours.
   const roundCandidates = useMemo(
-    () => filterRestaurantsByDistance(filterRestaurantsByTags(restaurants ?? [], selectedTagIds), maxWalkMinutes),
+    () => filterRestaurantsByDistance(
+      filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
+      maxWalkMinutes,
+    ).filter((r) => r.openStatus !== "closed"),
     [restaurants, selectedTagIds, maxWalkMinutes]
+  );
+
+  // How many were hidden purely because they're shut — worth telling the user,
+  // otherwise the wheel silently shrinks and looks broken.
+  const closedCount = useMemo(
+    () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds)
+      .filter((r) => r.openStatus === "closed").length,
+    [restaurants, selectedTagIds]
   );
 
   const filteredRestaurants = useMemo(() => {
@@ -884,6 +898,15 @@ export default function WheelApp() {
                               <p className="text-xs text-muted-foreground">
                                 <span className="font-semibold" style={{ color: "var(--brand)" }}>{filteredRestaurants.length}</span>
                                 {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
+                                {closedCount > 0 && (
+                                  <>
+                                    {" · "}
+                                    <span className="inline-flex items-center gap-1">
+                                      <Clock3 size={11} className="flex-shrink-0" />
+                                      {closedCount} closed now
+                                    </span>
+                                  </>
+                                )}
                               </p>
                             )}
                           </>
@@ -1079,6 +1102,26 @@ export default function WheelApp() {
                   );
                 })()}
               </div>
+              {/* Closing-soon warning: the winner is open, but not for long. Shown
+                  as a caution, never a block — the spin already stands. */}
+              {(() => {
+                const win = restaurants?.find((r) => r.id === spinResult.id);
+                if (win?.openStatus !== "closing_soon") return null;
+                const mins = win.minutesUntilClose;
+                return (
+                  <div
+                    className="flex items-center justify-center gap-1.5 text-xs font-semibold mb-5 px-3 py-2 rounded-xl"
+                    style={{
+                      background: "oklch(from var(--destructive) l c h / 0.12)",
+                      border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
+                      color: "var(--destructive)",
+                    }}
+                  >
+                    <Clock3 size={13} className="flex-shrink-0" />
+                    {mins != null ? `Closing in ~${mins} min — hurry!` : "Closing soon — hurry!"}
+                  </div>
+                );
+              })()}
               {/* Post-spin capture — rate the winner right here (per-place rating). */}
               <div className="flex flex-col items-center gap-1.5 mb-6">
                 <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>

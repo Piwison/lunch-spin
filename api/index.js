@@ -115,8 +115,16 @@ var restaurants = mysqlTable("restaurants", {
   priceLevel: int("priceLevel"),
   // 1..4 (nullable)
   cuisine: varchar("cuisine", { length: 64 }),
+  // Weekly opening hours from Google Places (`periods`), evaluated by
+  // shared/openHours.ts. null = unknown, which is KEPT on the wheel (never
+  // treated as closed) — most wheels have hand-typed places with no hours.
   openHours: json("openHours"),
-  // raw provider hours; open-now is a hint, not a hard filter
+  // The place's own UTC offset (Places `utc_offset_minutes`), so "is it open now"
+  // is answered in the restaurant's local time without a timezone database.
+  utcOffsetMinutes: int("utcOffsetMinutes"),
+  // When the hours above were last fetched — opening hours change, so this drives
+  // the refresh cadence (stale rows get re-fetched, not trusted forever).
+  hoursUpdatedAt: timestamp("hoursUpdatedAt"),
   source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
   // Walking seconds from the wheel's distance-mode origin (shared/wheelDistance.ts,
   // server/distance.ts); null = distance mode is off, not yet computed, or this
@@ -543,6 +551,24 @@ async function getRestaurantById(id) {
   if (!db) return void 0;
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
+}
+async function setRestaurantHours(id, openHours, utcOffsetMinutes) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(restaurants).set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: /* @__PURE__ */ new Date() }).where(eq(restaurants.id, id));
+}
+async function getRestaurantsNeedingHours(wheelId, staleAfterMs) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({
+    id: restaurants.id,
+    placeId: restaurants.placeId,
+    hoursUpdatedAt: restaurants.hoursUpdatedAt
+  }).from(restaurants).where(eq(restaurants.wheelId, wheelId));
+  const cutoff = Date.now() - staleAfterMs;
+  return rows.filter(
+    (r) => r.placeId && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff)
+  );
 }
 async function upsertRestaurantRating(restaurantId, userId, stars) {
   const db = await getDb();
@@ -1729,6 +1755,73 @@ function buildTasteProfile(items) {
   };
 }
 
+// shared/openHours.ts
+var CLOSING_SOON_MINUTES = 30;
+var MINUTES_PER_WEEK = 7 * 24 * 60;
+function isValidMark(m) {
+  if (!m || typeof m !== "object") return false;
+  const { day, time } = m;
+  return typeof day === "number" && day >= 0 && day <= 6 && typeof time === "string" && /^\d{4}$/.test(time);
+}
+function parsePeriods(raw) {
+  const arr = Array.isArray(raw) ? raw : raw && typeof raw === "object" && Array.isArray(raw.periods) ? raw.periods : null;
+  if (!arr || arr.length === 0) return null;
+  const periods = arr.filter((p) => {
+    if (!p || typeof p !== "object") return false;
+    const { open, close } = p;
+    if (!isValidMark(open)) return false;
+    return close === void 0 || close === null || isValidMark(close);
+  });
+  return periods.length > 0 ? periods : null;
+}
+function localWeekMinutes(now, utcOffsetMinutes) {
+  const local = new Date(now.getTime() + utcOffsetMinutes * 6e4);
+  return local.getUTCDay() * 1440 + local.getUTCHours() * 60 + local.getUTCMinutes();
+}
+function markMinutes(m) {
+  return m.day * 1440 + Number(m.time.slice(0, 2)) * 60 + Number(m.time.slice(2, 4));
+}
+function activeMinutesLeft(period, nowMinutes) {
+  const start = markMinutes(period.open);
+  if (!period.close) return Number.POSITIVE_INFINITY;
+  let end = markMinutes(period.close);
+  if (end <= start) end += MINUTES_PER_WEEK;
+  for (const t2 of [nowMinutes, nowMinutes + MINUTES_PER_WEEK]) {
+    if (t2 >= start && t2 < end) return end - t2;
+  }
+  return null;
+}
+function isOpenAt(periods, now, utcOffsetMinutes) {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  return periods.some((p) => activeMinutesLeft(p, nowMinutes) !== null);
+}
+function minutesUntilClose(periods, now, utcOffsetMinutes) {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  let best = null;
+  for (const p of periods) {
+    const left = activeMinutesLeft(p, nowMinutes);
+    if (left === null || !Number.isFinite(left)) continue;
+    if (best === null || left < best) best = left;
+  }
+  return best;
+}
+function openState(periods, now, utcOffsetMinutes) {
+  const open = isOpenAt(periods, now, utcOffsetMinutes);
+  if (open === null) return { status: "unknown", minutesUntilClose: null };
+  if (!open) return { status: "closed", minutesUntilClose: null };
+  const left = minutesUntilClose(periods, now, utcOffsetMinutes);
+  if (left !== null && left <= CLOSING_SOON_MINUTES) {
+    return { status: "closing_soon", minutesUntilClose: left };
+  }
+  return { status: "open", minutesUntilClose: left };
+}
+function isSpinnableNow(rawOpenHours, utcOffsetMinutes, now = /* @__PURE__ */ new Date()) {
+  const state = openState(parsePeriods(rawOpenHours), now, utcOffsetMinutes ?? 0);
+  return state.status !== "closed";
+}
+
 // shared/realtimeState.ts
 function push(map, key, value) {
   const list = map.get(key);
@@ -2095,6 +2188,30 @@ async function placeDetails(placeId, apiKey) {
   if (data.status !== "OK" || !data.result) return null;
   return mapGooglePlace(data.result);
 }
+async function fetchPlaceHours(placeId) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  const url = new URL(PLACE_DETAILS_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set("fields", "opening_hours,utc_offset");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6e3);
+  try {
+    const res = await fetch(url.toString(), { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Place Details (hours) failed (${res.status})`);
+    const data = await res.json();
+    if (data.status !== "OK" || !data.result) return null;
+    const periods = data.result.opening_hours?.periods ?? null;
+    if (!periods) return null;
+    return {
+      periods,
+      utcOffsetMinutes: typeof data.result.utc_offset === "number" ? data.result.utc_offset : null
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 async function findPlace(text2, bias, apiKey) {
   const url = new URL(FIND_PLACE_URL);
   url.searchParams.set("key", apiKey);
@@ -2240,6 +2357,43 @@ async function maybeComputeOneDistance(wheelId, restaurantId) {
     await setRestaurantWalkSeconds(restaurantId, seconds ?? null);
   } catch (error) {
     console.error(`[distance] walkingMatrix failed for restaurant ${restaurantId}:`, error instanceof Error ? error.message : error);
+  }
+}
+
+// server/openHours.ts
+var HOURS_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1e3;
+var MAX_PER_RUN = 25;
+async function refreshWheelHours(wheelId) {
+  if (!isPlacesConfigured()) return { updated: 0, providerFailed: false };
+  let targets;
+  try {
+    targets = (await getRestaurantsNeedingHours(wheelId, HOURS_STALE_AFTER_MS)).slice(0, MAX_PER_RUN);
+  } catch (err) {
+    console.error("[openHours] failed to list restaurants needing hours", err);
+    return { updated: 0, providerFailed: false };
+  }
+  if (targets.length === 0) return { updated: 0, providerFailed: false };
+  let updated = 0;
+  let providerFailed = false;
+  for (const t2 of targets) {
+    try {
+      const hours = await fetchPlaceHours(t2.placeId);
+      await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+      updated += 1;
+    } catch (err) {
+      providerFailed = true;
+      console.error(`[openHours] fetch failed for restaurant ${t2.id} (place ${t2.placeId})`, err);
+    }
+  }
+  return { updated, providerFailed };
+}
+async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
+  if (!placeId || !isPlacesConfigured()) return;
+  try {
+    const hours = await fetchPlaceHours(placeId);
+    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+  } catch (err) {
+    console.error(`[openHours] initial fetch failed for restaurant ${restaurantId}`, err);
   }
 }
 
@@ -2456,11 +2610,17 @@ var appRouter = router({
       if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
       const rests = await getRestaurantsByWheel(input.wheelId);
       const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-      return rests.map((r) => ({
-        ...r,
-        isExcluded: exclusions.has(r.id),
-        excludedUntil: exclusions.get(r.id) ?? null
-      }));
+      const now = /* @__PURE__ */ new Date();
+      return rests.map((r) => {
+        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+        return {
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          openStatus: hours.status,
+          minutesUntilClose: hours.minutesUntilClose
+        };
+      });
     }),
     // Guest read for the /w/:id view: the full restaurant list of a public wheel
     // (guests spin everything — no exclusion state). Public-safe fields only.
@@ -2510,6 +2670,16 @@ var appRouter = router({
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
       await deleteRestaurant(input.id);
       return { success: true };
+    }),
+    // Refresh cached opening hours for this wheel's provider-sourced places.
+    // Member-gated. Reports providerFailed separately so a misconfigured Places
+    // key surfaces as an error instead of a silent "nothing happened".
+    refreshHours: protectedProcedure.input(z3.object({ wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      if (!isPlacesConfigured()) return { updated: 0, providerFailed: false, configured: false };
+      const res = await refreshWheelHours(input.wheelId);
+      return { ...res, configured: true };
     }),
     // ── Ratings (1–5 stars per member per place) ──────────────────────────────
     // Any member rates any place on the wheel; re-rating overwrites their star.
@@ -2653,6 +2823,7 @@ var appRouter = router({
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
+      await maybeFetchOneRestaurantHours(id, input.place.placeId);
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
     }),
     // Resolve a pasted Google Maps link into a nameable place (Place Details /
@@ -2707,11 +2878,20 @@ var appRouter = router({
       const dietaryBlocked = new Set(
         avoidedTags.size === 0 ? [] : rests.filter((r) => r.tags.some((t2) => avoidedTags.has(t2.id))).map((r) => r.id)
       );
+      const closedNow = new Set(
+        rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id)
+      );
       const eligible = input.candidateIds.filter(
-        (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2)
+        (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2) && !closedNow.has(id2)
       );
       if (eligible.length === 0) {
-        throw new TRPCError3({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
+        const blockedOnlyByHours = input.candidateIds.some(
+          (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2)
+        );
+        throw new TRPCError3({
+          code: "BAD_REQUEST",
+          message: blockedOnlyByHours ? "Every restaurant on this wheel is closed right now." : "No eligible restaurants to spin"
+        });
       }
       const votes = voteCounts(session);
       const hasVotes = votes.size > 0;

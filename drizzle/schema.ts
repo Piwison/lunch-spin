@@ -117,7 +117,16 @@ export const restaurants = mysqlTable("restaurants", {
   address: varchar("address", { length: 512 }),
   priceLevel: int("priceLevel"), // 1..4 (nullable)
   cuisine: varchar("cuisine", { length: 64 }),
-  openHours: json("openHours"), // raw provider hours; open-now is a hint, not a hard filter
+  // Weekly opening hours from Google Places (`periods`), evaluated by
+  // shared/openHours.ts. null = unknown, which is KEPT on the wheel (never
+  // treated as closed) — most wheels have hand-typed places with no hours.
+  openHours: json("openHours"),
+  // The place's own UTC offset (Places `utc_offset_minutes`), so "is it open now"
+  // is answered in the restaurant's local time without a timezone database.
+  utcOffsetMinutes: int("utcOffsetMinutes"),
+  // When the hours above were last fetched — opening hours change, so this drives
+  // the refresh cadence (stale rows get re-fetched, not trusted forever).
+  hoursUpdatedAt: timestamp("hoursUpdatedAt"),
   source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
   // Walking seconds from the wheel's distance-mode origin (shared/wheelDistance.ts,
   // server/distance.ts); null = distance mode is off, not yet computed, or this

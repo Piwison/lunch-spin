@@ -16,6 +16,7 @@ import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "
 import { RATINGS } from "@shared/rating";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
+import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -23,6 +24,7 @@ import { matchCuisineTag } from "@shared/cuisineTag";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
 import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, walkingMatrix } from "./places";
 import { maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
+import { maybeFetchOneRestaurantHours, refreshWheelHours } from "./openHours";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -356,11 +358,19 @@ export const appRouter = router({
         if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
         const rests = await getRestaurantsByWheel(input.wheelId);
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-        return rests.map((r) => ({
-          ...r,
-          isExcluded: exclusions.has(r.id),
-          excludedUntil: exclusions.get(r.id) ?? null,
-        }));
+        const now = new Date();
+        return rests.map((r) => {
+          // Computed server-side so every client agrees on "open now" — and so the
+          // wheel the user sees matches what spins.create will actually allow.
+          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+          return {
+            ...r,
+            isExcluded: exclusions.has(r.id),
+            excludedUntil: exclusions.get(r.id) ?? null,
+            openStatus: hours.status,
+            minutesUntilClose: hours.minutesUntilClose,
+          };
+        });
       }),
 
     // Guest read for the /w/:id view: the full restaurant list of a public wheel
@@ -430,6 +440,19 @@ export const appRouter = router({
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
         await deleteRestaurant(input.id);
         return { success: true };
+      }),
+
+    // Refresh cached opening hours for this wheel's provider-sourced places.
+    // Member-gated. Reports providerFailed separately so a misconfigured Places
+    // key surfaces as an error instead of a silent "nothing happened".
+    refreshHours: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!isPlacesConfigured()) return { updated: 0, providerFailed: false, configured: false };
+        const res = await refreshWheelHours(input.wheelId);
+        return { ...res, configured: true };
       }),
 
     // ── Ratings (1–5 stars per member per place) ──────────────────────────────
@@ -604,6 +627,9 @@ export const appRouter = router({
         } catch {
           // adding the restaurant still succeeded; distance is a courtesy
         }
+        // Same contract for opening hours: a provider place has a placeId, so
+        // fetch its weekly hours now. Never throws (see server/openHours.ts).
+        await maybeFetchOneRestaurantHours(id, input.place.placeId);
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
       }),
 
@@ -671,11 +697,30 @@ export const appRouter = router({
             ? []
             : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
         );
+        // Closed right now? Hard filter, decided server-side so a tampered
+        // candidate list can't spin a closed restaurant. Restaurants with unknown
+        // hours are spinnable (isSpinnableNow) — most wheels have hand-typed
+        // places with no provider hours, and dropping those would gut the wheel.
+        const closedNow = new Set(
+          rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id),
+        );
         const eligible = input.candidateIds.filter(
-          (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
+          (id) =>
+            valid.has(id) && !exclusions.has(id) && !vetoed.has(id) &&
+            !dietaryBlocked.has(id) && !closedNow.has(id),
         );
         if (eligible.length === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
+          // Distinguish "everything is closed" from the generic empty case, or the
+          // user just sees an unexplained failure at 3am.
+          const blockedOnlyByHours = input.candidateIds.some(
+            (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
+          );
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: blockedOnlyByHours
+              ? "Every restaurant on this wheel is closed right now."
+              : "No eligible restaurants to spin",
+          });
         }
 
         // Base weights: fairness mode favours neglected spots, else uniform.

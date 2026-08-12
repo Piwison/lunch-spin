@@ -400,6 +400,41 @@ export async function getRestaurantById(id: number): Promise<Restaurant | undefi
   return result[0];
 }
 
+/** Store fetched opening hours for a restaurant (null periods = still unknown). */
+export async function setRestaurantHours(
+  id: number,
+  openHours: unknown,
+  utcOffsetMinutes: number | null,
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(restaurants)
+    .set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: new Date() })
+    .where(eq(restaurants.id, id));
+}
+
+/**
+ * Restaurants on this wheel whose hours are worth (re)fetching: they have a
+ * provider placeId, and hours were never fetched or are older than `staleAfterMs`.
+ */
+export async function getRestaurantsNeedingHours(wheelId: number, staleAfterMs: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: restaurants.id,
+      placeId: restaurants.placeId,
+      hoursUpdatedAt: restaurants.hoursUpdatedAt,
+    })
+    .from(restaurants)
+    .where(eq(restaurants.wheelId, wheelId));
+  const cutoff = Date.now() - staleAfterMs;
+  return rows.filter(
+    (r) => r.placeId && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff),
+  ) as { id: number; placeId: string; hoursUpdatedAt: Date | null }[];
+}
+
 // ─── Restaurant ratings ───────────────────────────────────────────────────────
 
 /** Upsert one member's 1–5 star rating for a restaurant (re-rating overwrites). */
