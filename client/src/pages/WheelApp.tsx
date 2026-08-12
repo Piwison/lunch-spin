@@ -1,12 +1,14 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
-import { trpc } from "@/lib/trpc";
+import { trpc, type RouterOutputs } from "@/lib/trpc";
+import { clearBootCache, readBootCache, saveBootCache } from "@/lib/bootCache";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
+import AppShellSkeleton from "@/components/AppShellSkeleton";
 import HistoryTab from "@/components/HistoryTab";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
@@ -50,6 +52,25 @@ const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
   { id: "restaurants", label: "Restaurants", icon: Utensils },
   { id: "history", label: "History", icon: History },
 ];
+
+/** The one-hop entry payload (server: wheels.bootstrap). */
+type BootstrapPayload = RouterOutputs["wheels"]["bootstrap"];
+
+/**
+ * Fan a bootstrap payload out into the individual query caches every consumer
+ * already reads (WheelSelector, RestaurantTab, HistoryTab), so they render warm
+ * instead of re-fetching. Shared by the fresh response and the persisted cache so
+ * the two paths can never seed different things.
+ */
+function seedFromBootstrap(utils: ReturnType<typeof trpc.useUtils>, data: BootstrapPayload) {
+  utils.wheels.list.setData(undefined, data.wheels);
+  if (data.wheel && data.wheelId != null) {
+    utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
+    utils.restaurants.list.setData({ wheelId: data.wheelId }, data.restaurants);
+    utils.tags.list.setData({ wheelId: data.wheelId }, data.tags);
+    utils.restaurants.ratings.setData({ wheelId: data.wheelId }, data.ratings);
+  }
+}
 
 export default function WheelApp() {
   const { user, loading, logout } = useAuth();
@@ -118,28 +139,38 @@ export default function WheelApp() {
   // procedure that returns `user` itself, so this fires in the same tick as
   // useAuth's auth.me and httpBatchLink coalesces both into ONE request. Waiting
   // for auth first is what made a reload two serial serverless round trips.
+  // Declared here (not further down) because the cache seeding below runs inside
+  // a useState initializer, i.e. during the first render.
+  const utils = trpc.useUtils();
+
   const bootstrapQuery = trpc.wheels.bootstrap.useQuery(
     { wheelId: initialWheelId },
     { staleTime: 30_000 },
   );
-  const [seeded, setSeeded] = useState(false);
+
+  // Seed the query caches from the persisted payload *during the first render*,
+  // before paint — a reload then shows the real app immediately instead of a
+  // spinner, while the request above revalidates in the background. useState's
+  // initializer is the synchronous hook that runs early enough to do this.
+  const [seeded, setSeeded] = useState(() => {
+    const cached = readBootCache<BootstrapPayload>();
+    if (!cached?.user) return false;
+    seedFromBootstrap(utils, cached);
+    return true;
+  });
 
   useEffect(() => {
     const data = bootstrapQuery.data;
     if (!data) return;
-    // An anonymous visitor gets user: null — don't seed anything (and the effect
-    // above sends them to the landing page).
+    // An anonymous visitor gets user: null — seed nothing, drop any stale cache
+    // (the effect above sends them to the landing page).
     if (!data.user) {
+      clearBootCache();
       setSeeded(true);
       return;
     }
-    utils.wheels.list.setData(undefined, data.wheels);
-    if (data.wheel && data.wheelId != null) {
-      utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
-      utils.restaurants.list.setData({ wheelId: data.wheelId }, data.restaurants);
-      utils.tags.list.setData({ wheelId: data.wheelId }, data.tags);
-      utils.restaurants.ratings.setData({ wheelId: data.wheelId }, data.ratings);
-    }
+    seedFromBootstrap(utils, data);
+    saveBootCache(data);
     setSeeded(true);
     // utils is a stable tRPC helper; seeding must run once per bootstrap payload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,6 +181,18 @@ export default function WheelApp() {
   useEffect(() => {
     if (bootstrapQuery.isError) setSeeded(true);
   }, [bootstrapQuery.isError]);
+
+  // The History tab's data isn't part of bootstrap (it's only needed once you go
+  // there), which made the first visit to that tab pay a full cold round trip.
+  // Warm it in the background as soon as we know the wheel, so switching tabs is
+  // instant. Fire-and-forget: failures just mean the tab loads normally.
+  useEffect(() => {
+    if (!seeded || !user || !selectedWheelId) return;
+    void utils.spins.history.prefetch({ wheelId: selectedWheelId });
+    void utils.stats.getRestaurantStats.prefetch({ wheelId: selectedWheelId });
+    void utils.stats.tasteProfile.prefetch({ wheelId: selectedWheelId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seeded, user, selectedWheelId]);
 
   const { data: tags } = trpc.tags.list.useQuery(
     { wheelId: selectedWheelId! },
@@ -345,7 +388,6 @@ export default function WheelApp() {
 
   // Refetch the round state right after my own action so it reflects instantly
   // (instead of waiting for the next ~3s poll).
-  const utils = trpc.useUtils();
   const refreshSession = () => {
     if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
   };
@@ -506,7 +548,9 @@ export default function WheelApp() {
   // later can bounce the whole app back to a fullscreen loader. `isLoading` is
   // false while the query is disabled or errored, so this can't hang either.
   if (loading || (!seeded && bootstrapQuery.isLoading)) {
-    return <BrandLoader fullscreen />;
+    // Only reached on a cold load — with a persisted payload `seeded` is already
+    // true on the first render and the real app paints straight away.
+    return <AppShellSkeleton />;
   }
 
   if (!user) return null;
