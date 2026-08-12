@@ -10,9 +10,10 @@ deploy (isolated DB + OAuth) → sign in and click through → then merge to `ma
 each migration to the **staging** DB first (its own cluster), then to prod.
 
 > ### ⚠️ PENDING DB MIGRATIONS — apply before/at deploy
-> Schema is fully generated (0000–0015; `drizzle-kit generate` = "no changes"). The
-> new, **not-yet-applied** ones from this session are **`0014`** (hot indexes) and
-> **`0015`** (`restaurant_ratings` + backfill). `drizzle-kit migrate` is idempotent and
+> Schema is fully generated (0000–0016; `drizzle-kit generate` = "no changes"). The
+> new, **not-yet-applied** ones are **`0014`** (hot indexes), **`0015`**
+> (`restaurant_ratings` + backfill) and **`0016`** (restaurant open-hours columns).
+> `drizzle-kit migrate` is idempotent and
 > journal-tracked, so **one command per env applies all pending in order** — no need to
 > run them individually:
 > ```
@@ -87,9 +88,16 @@ green increments, fairness-core change deferred to last.
 
 ---
 
-## Round 12 — owner requests 2026-07-23 (investigated, not yet built)
+## Round 12 — owner requests 2026-07-23
 
-### A. Open-hours filter (needs a small migration — batch it with 0014/0015)
+### A. Open-hours filter — ✅ BUILT (migration 0016; batches with 0014/0015)
+Shipped: `shared/openHours.ts` (15 tests) + migration 0016 + `places.fetchPlaceHours`
++ `server/openHours.ts` refresh + **server-side hard filter in `spins.create`** +
+`restaurants.list` `openStatus`/`minutesUntilClose` + `restaurants.refreshHours` +
+client chips / wheel filtering / closing-soon warning in the result modal.
+Owner's rules honoured: closed = removed · unknown hours = kept · <30 min = warn only.
+
+<details><summary>original investigation notes</summary>
 Goal: for Google-Maps-sourced restaurants, store weekly opening hours and auto-drop
 closed places at spin time.
 - FINDING: `restaurants.openHours` (json) **already exists** (migration 0008) but is
@@ -100,10 +108,20 @@ closed places at spin time.
   now" needs no tz database). `openHours` json is reused for the `periods` payload.
 - Needs a Places **Details** fetch per place (Places API already enabled) — `openHours`
   is not in the nearby-search payload.
-- Design decisions still open: unknown hours = keep or drop? hard filter vs soft weight?
-  refresh cadence? (see chat)
+</details>
 
-### B. Slow first load — measured causes, biggest first
+### B. Slow first load — ✅ OPTIMIZED (items 1–3, 5, 6)
+Shipped: `Home` gates the WebGL shader + cursor RAF + `listPublic` behind `isGuest`
+(signed-in visitors no longer render the marketing page before redirecting) and
+prefetches the `WheelApp` chunk; fonts moved off the critical path (preload +
+`media="print"` swap + noscript); analytics injected from JS only when configured
+(was shipping a literal `%VITE_ANALYTICS_ENDPOINT%` → 404 every load); `useAuth`'s
+localStorage write moved out of `useMemo`.
+Not done: **#4 serverless/TiDB cold start** (infra-level — would need a warmer or
+connection tuning) and merging the `auth.me → wheels.list → wheel data` waterfall
+into one bootstrap procedure (bigger refactor; say the word).
+
+<details><summary>original measured causes</summary>
 1. A signed-in returning user renders the **entire marketing landing page first** —
    `Home` is eager (in the entry chunk), mounts a **WebGL shader** + a `requestAnimation
    Frame` magnetic-cursor loop + fires `wheels.listPublic`, and only *then* an effect
@@ -119,8 +137,9 @@ closed places at spin time.
    → the browser requests a bogus relative URL every load.
 6. `useAuth` does `localStorage.setItem(JSON.stringify(...))` **inside a `useMemo`** — a
    side effect on every render.
+</details>
 
-### C. Spin fairness — verified: the picker IS uniform
+### C. Spin fairness — ✅ verified uniform, owner accepted (no code change)
 - `pickWinner` is `floor(rng()*n)` over the eligible set; `pickWeighted` is correct
   proportional selection. 20k-trial simulation using the real `shared/pick.ts`: over 65
   spins, one place reaching **6 picks is normal** (expected max ≈ 5.7–7.0).
@@ -143,3 +162,6 @@ closed places at spin time.
 - 2026-07-22 — P3 shipped: 5-star restaurant ratings end-to-end (foundation → restaurant-tab
   sheet → spin-weighting switch + History stars → Team Taste card) + members-can-edit
   permission. 274 tests, all gated. Deploy-gate: owner applies migration 0015.
+- 2026-07-23 — Round 12: first-load optimizations + open-hours filter (migration 0016).
+  289 tests, all gated. Spin fairness verified uniform — no change needed.
+  Deploy-gate: 0014 + 0015 + 0016 in one `drizzle-kit migrate` per env, staging first.
