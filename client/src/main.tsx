@@ -79,3 +79,19 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
+
+// Analytics, injected only when configured. This used to be a literal
+// <script src="%VITE_ANALYTICS_ENDPOINT%/umami"> in index.html, which shipped
+// un-substituted when the env vars were unset — firing a 404 request at our own
+// origin on every page load. Appended after load so it never delays first paint.
+const analyticsEndpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+const analyticsWebsiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+if (analyticsEndpoint?.startsWith("http") && analyticsWebsiteId) {
+  window.addEventListener("load", () => {
+    const s = document.createElement("script");
+    s.defer = true;
+    s.src = `${analyticsEndpoint.replace(/\/$/, "")}/umami`;
+    s.dataset.websiteId = analyticsWebsiteId;
+    document.body.appendChild(s);
+  });
+}
