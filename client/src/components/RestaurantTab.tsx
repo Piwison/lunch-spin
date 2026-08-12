@@ -3,6 +3,13 @@ import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { StarRating, RatingChip } from "@/components/StarRating";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -399,88 +406,115 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         </div>
       )}
 
-      {/* Distance mode — walking time from the wheel's single origin */}
-      {distanceEnabled && (restaurants?.length ?? 0) > 0 && (
-        <div
-          className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-xs"
-          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
-        >
-          <span className="flex items-center gap-2 text-muted-foreground">
-            <Footprints size={13} className="flex-shrink-0" />
-            Distances from <strong className="text-foreground">{originLabel || "Office"}</strong>
-          </span>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={() => { setSortByRating(false); setSortNearest((s) => !s); }}
-              title="Sort nearest first"
-              aria-pressed={sortNearest}
-              className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
-              style={{
-                background: sortNearest ? "oklch(from var(--brand) l c h / 0.15)" : "transparent",
-                color: sortNearest ? "var(--brand)" : "var(--muted-foreground)",
-              }}
-            >
-              <ArrowDownWideNarrow size={14} />
-            </button>
-            <button
-              onClick={() => recomputeDistances.mutate({ id: wheelId })}
-              disabled={recomputeDistances.isPending}
-              title="Recompute distances"
-              className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={recomputeDistances.isPending ? "animate-spin" : ""} />
-            </button>
+      {/* ── Meta line ──────────────────────────────────────────────────────────
+          One readable line of state (count · distance origin · hours needing a
+          fetch) plus a single ⋮ for the occasional actions. This replaced three
+          stacked control bars — a distance bar, an hours bar whose sentence wrapped
+          mid-phrase, and a lone "Top rated" pill — which together pushed the actual
+          list far down the screen on mobile. */}
+      {(restaurants?.length ?? 0) > 0 && (() => {
+        const closedCount = restaurants?.filter((r) => r.openStatus === "closed").length ?? 0;
+        const noHoursCount = restaurants?.filter((r) => r.openStatus === "unknown").length ?? 0;
+        const canFetchHours = restaurants?.some((r) => r.placeId || r.mapUrl) ?? false;
+        const hasRatings = (ratingSummaries?.length ?? 0) > 0;
+        const sortable = (restaurants?.length ?? 0) > 1;
+        return (
+          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-xs text-muted-foreground">
+            {distanceEnabled && (
+              <span className="flex items-center gap-1">
+                <Footprints size={12} className="flex-shrink-0" />
+                from <strong className="text-foreground font-semibold">{originLabel || "Office"}</strong>
+              </span>
+            )}
+            {/* Only surface hours when they say something actionable. */}
+            {closedCount > 0 && (
+              <>
+                {distanceEnabled && <span className="opacity-40">·</span>}
+                <span className="flex items-center gap-1">
+                  <Clock3 size={12} className="flex-shrink-0" />
+                  {closedCount} closed now
+                </span>
+              </>
+            )}
+            {closedCount === 0 && noHoursCount > 0 && canFetchHours && (
+              <>
+                {distanceEnabled && <span className="opacity-40">·</span>}
+                <span
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full font-medium"
+                  style={{
+                    background: "oklch(from var(--brand) l c h / 0.12)",
+                    color: "var(--brand)",
+                  }}
+                >
+                  <Clock3 size={11} className="flex-shrink-0" />
+                  {noHoursCount} need hours
+                </span>
+              </>
+            )}
+
+            {/* Tools — sorting and the two refreshes, out of the layout's way. */}
+            <div className="ml-auto flex-shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label="List tools"
+                    className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                  >
+                    {refreshHours.isPending || recomputeDistances.isPending ? (
+                      <RefreshCw size={15} className="animate-spin" />
+                    ) : (
+                      <MoreVertical size={16} />
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  {sortable && hasRatings && (
+                    <DropdownMenuItem
+                      onClick={() => { setSortNearest(false); setSortByRating((s) => !s); }}
+                      className="gap-2.5"
+                    >
+                      <Star size={14} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star)" }} />
+                      Top rated first
+                      {sortByRating && <Check size={13} className="ml-auto" />}
+                    </DropdownMenuItem>
+                  )}
+                  {sortable && distanceEnabled && (
+                    <DropdownMenuItem
+                      onClick={() => { setSortByRating(false); setSortNearest((s) => !s); }}
+                      className="gap-2.5"
+                    >
+                      <ArrowDownWideNarrow size={14} />
+                      Nearest first
+                      {sortNearest && <Check size={13} className="ml-auto" />}
+                    </DropdownMenuItem>
+                  )}
+                  {sortable && (hasRatings || distanceEnabled) && <DropdownMenuSeparator />}
+                  {canFetchHours && (
+                    <DropdownMenuItem
+                      onClick={() => refreshHours.mutate({ wheelId })}
+                      disabled={refreshHours.isPending}
+                      className="gap-2.5"
+                    >
+                      <Clock3 size={14} />
+                      Refresh opening hours
+                    </DropdownMenuItem>
+                  )}
+                  {distanceEnabled && (
+                    <DropdownMenuItem
+                      onClick={() => recomputeDistances.mutate({ id: wheelId })}
+                      disabled={recomputeDistances.isPending}
+                      className="gap-2.5"
+                    >
+                      <RefreshCw size={14} />
+                      Recompute distances
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Open-hours coverage + refresh. Shown when any restaurant is something we
-          could look hours up for — a provider place, or a saved Maps link we can
-          resolve. (Gating on placeId alone hid this from every hand-added row.) */}
-      {(restaurants?.some((r) => r.placeId || r.mapUrl) ?? false) && (
-        <div
-          className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-xs"
-          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
-        >
-          <span className="flex items-center gap-2 text-muted-foreground">
-            <Clock3 size={13} className="flex-shrink-0" />
-            {(() => {
-              const closed = restaurants?.filter((r) => r.openStatus === "closed").length ?? 0;
-              const unknown = restaurants?.filter((r) => r.openStatus === "unknown").length ?? 0;
-              if (closed > 0) return <>{closed} closed now — <strong className="text-foreground">off the wheel</strong> until they reopen</>;
-              if (unknown > 0) return <>{unknown} place{unknown === 1 ? "" : "s"} with no hours yet — <strong className="text-foreground">tap refresh</strong> to fetch them</>;
-              return <>All open right now</>;
-            })()}
-          </span>
-          <button
-            onClick={() => refreshHours.mutate({ wheelId })}
-            disabled={refreshHours.isPending}
-            title="Refresh opening hours"
-            className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
-          >
-            <RefreshCw size={14} className={refreshHours.isPending ? "animate-spin" : ""} />
-          </button>
-        </div>
-      )}
-
-      {/* Top-rated sort — shown once the wheel has any ratings and 2+ places. */}
-      {(ratingSummaries?.length ?? 0) > 0 && (restaurants?.length ?? 0) > 1 && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => { setSortNearest(false); setSortByRating((s) => !s); }}
-            aria-pressed={sortByRating}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
-            style={{
-              background: sortByRating ? "color-mix(in oklch, var(--star) 18%, transparent)" : "var(--card)",
-              border: "1px solid var(--border)",
-              color: sortByRating ? "var(--foreground)" : "var(--muted-foreground)",
-            }}
-          >
-            <Star size={13} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star)" }} />
-            Top rated
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Filter by tags + distance — mirrors the Wheel tab so the list can be narrowed too */}
       <FilterBar

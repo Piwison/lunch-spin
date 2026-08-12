@@ -1,4 +1,5 @@
 import { getLoginUrl } from "@/const";
+import { clearBootCache } from "@/lib/bootCache";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -36,6 +37,9 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
+      // Drop the persisted entry payload — it's this user's wheel data and must
+      // not be seeded into the next person's session on this browser.
+      clearBootCache();
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
