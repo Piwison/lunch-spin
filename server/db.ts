@@ -5,6 +5,7 @@ import {
   Restaurant,
   Tag,
   notifications,
+  restaurantRatings,
   restaurantTags,
   restaurants,
   roundMarks,
@@ -397,6 +398,71 @@ export async function getRestaurantById(id: number): Promise<Restaurant | undefi
   if (!db) return undefined;
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
+}
+
+/** Store fetched opening hours for a restaurant (null periods = still unknown). */
+export async function setRestaurantHours(
+  id: number,
+  openHours: unknown,
+  utcOffsetMinutes: number | null,
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(restaurants)
+    .set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: new Date() })
+    .where(eq(restaurants.id, id));
+}
+
+/**
+ * Restaurants on this wheel whose hours are worth (re)fetching: they have a
+ * provider placeId, and hours were never fetched or are older than `staleAfterMs`.
+ */
+export async function getRestaurantsNeedingHours(wheelId: number, staleAfterMs: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: restaurants.id,
+      placeId: restaurants.placeId,
+      hoursUpdatedAt: restaurants.hoursUpdatedAt,
+    })
+    .from(restaurants)
+    .where(eq(restaurants.wheelId, wheelId));
+  const cutoff = Date.now() - staleAfterMs;
+  return rows.filter(
+    (r) => r.placeId && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff),
+  ) as { id: number; placeId: string; hoursUpdatedAt: Date | null }[];
+}
+
+// ─── Restaurant ratings ───────────────────────────────────────────────────────
+
+/** Upsert one member's 1–5 star rating for a restaurant (re-rating overwrites). */
+export async function upsertRestaurantRating(restaurantId: number, userId: number, stars: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .insert(restaurantRatings)
+    .values({ restaurantId, userId, stars })
+    .onDuplicateKeyUpdate({ set: { stars } });
+}
+
+/** All star rows for a wheel's restaurants — small; aggregated by
+ *  shared/restaurantRating (summarizeRatings / averageMapFromRows). */
+export async function getWheelRatingRows(
+  wheelId: number,
+): Promise<{ restaurantId: number; userId: number; stars: number }[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      restaurantId: restaurantRatings.restaurantId,
+      userId: restaurantRatings.userId,
+      stars: restaurantRatings.stars,
+    })
+    .from(restaurantRatings)
+    .innerJoin(restaurants, eq(restaurantRatings.restaurantId, restaurants.id))
+    .where(eq(restaurants.wheelId, wheelId));
 }
 
 // ─── Spin History ─────────────────────────────────────────────────────────────

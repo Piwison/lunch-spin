@@ -8,11 +8,12 @@ import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
+import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -96,9 +97,53 @@ export default function WheelApp() {
     setSelectedWheelId((current) => (current === fromUrl ? current : fromUrl));
   }, [params.wheelId]);
 
+  // ── One-hop entry load ────────────────────────────────────────────────────
+  // Entering the app used to cost three serial round trips (auth.me →
+  // wheels.list → the selected wheel's data), because deciding *which* wheel to
+  // open required wheels.list first. wheels.bootstrap resolves that server-side
+  // (it knows defaultWheelId) and returns the wheel list, the wheel, its
+  // restaurants, tags and ratings together. We then seed each per-query cache so
+  // every existing consumer reads warm data, and gate those queries until the
+  // seeding has happened so they don't duplicate the same fetch.
+  // Frozen to the wheel in the URL on first render: bootstrap serves *entry* only.
+  // If its input tracked the URL, switching wheels would change the query key —
+  // re-triggering the entry loader and racing the per-wheel queries that already
+  // handle switching perfectly well.
+  const [initialWheelId] = useState(() => {
+    const parsed = params.wheelId ? parseInt(params.wheelId) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  });
+
+  const bootstrapQuery = trpc.wheels.bootstrap.useQuery(
+    { wheelId: initialWheelId },
+    { enabled: !loading && !!user, staleTime: 30_000 },
+  );
+  const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    const data = bootstrapQuery.data;
+    if (!data) return;
+    utils.wheels.list.setData(undefined, data.wheels);
+    if (data.wheel && data.wheelId != null) {
+      utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
+      utils.restaurants.list.setData({ wheelId: data.wheelId }, data.restaurants);
+      utils.tags.list.setData({ wheelId: data.wheelId }, data.tags);
+      utils.restaurants.ratings.setData({ wheelId: data.wheelId }, data.ratings);
+    }
+    setSeeded(true);
+    // utils is a stable tRPC helper; seeding must run once per bootstrap payload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootstrapQuery.data]);
+
+  // A bootstrap failure must not strand the app: fall through to the individual
+  // queries (the pre-bootstrap behaviour) instead of waiting forever.
+  useEffect(() => {
+    if (bootstrapQuery.isError) setSeeded(true);
+  }, [bootstrapQuery.isError]);
+
   const { data: tags } = trpc.tags.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId }
+    { enabled: !!selectedWheelId && seeded }
   );
   const {
     data: restaurants,
@@ -107,20 +152,17 @@ export default function WheelApp() {
     refetch: refetchRestaurants,
   } = trpc.restaurants.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId }
+    { enabled: !!selectedWheelId && seeded }
   );
   const { data: wheelData, error: wheelError } = trpc.wheels.get.useQuery(
     { id: selectedWheelId! },
     {
-      enabled: !!selectedWheelId,
+      enabled: !!selectedWheelId && seeded,
       retry: (count, err) =>
         err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
-      // Membership (.members) lives on this same query and previously never
-      // refreshed after the initial load — someone joining a shared wheel via
-      // an invite link wouldn't show up in the roster (or the owner's "Team"
-      // panel) until a manual page reload. Poll like the other shared-wheel
-      // realtime queries (session.state, spins.latest) once we know it's shared.
-      refetchInterval: (query) => (query.state.data?.isShared ? 3000 : false),
+      // Loaded once for the wheel's config + owner. The live member roster (which
+      // changes when someone joins) now rides on the consolidated wheels.realtime
+      // poll below, so this query no longer polls every 3s.
     }
   );
 
@@ -187,21 +229,24 @@ export default function WheelApp() {
   }, [notifications]);
 
   // Wheel count drives the first-run experience. Same query key as WheelSelector's
-  // list, so React Query dedupes it — no extra request.
-  const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery();
-  const firstRun = !wheelsLoading && isFirstRun(wheels?.length ?? 0);
+  // list and seeded by bootstrap, so this is a cache read — no extra request.
+  const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery(undefined, {
+    enabled: seeded,
+  });
+  const firstRun = seeded && !wheelsLoading && isFirstRun(wheels?.length ?? 0);
 
-  // On arriving without a wheel in the URL, open the user's chosen default wheel
-  // (set via the star toggle in WheelSelector) if they have one, else their first
-  // wheel — so a returning user lands straight on it instead of re-picking every
-  // visit. First-run users (zero wheels) still get the guided create card.
+  // On arriving without a wheel in the URL, open the wheel bootstrap already
+  // resolved for us (the user's starred default, else their first). The server
+  // decided this in the same response that carried the wheel's data, so there's
+  // no extra round trip to find out which wheel to show. First-run users (zero
+  // wheels) still get the guided create card.
   useEffect(() => {
     if (params.wheelId || selectedWheelId) return;
-    if (wheelsLoading || !wheels || wheels.length === 0) return;
-    const preferred = wheels.find((w) => w.id === user?.defaultWheelId) ?? wheels[0]!;
-    setSelectedWheelId(preferred.id);
-    navigate(`/app/${preferred.id}`, { replace: true });
-  }, [params.wheelId, selectedWheelId, wheels, wheelsLoading, user?.defaultWheelId, navigate]);
+    const resolved = bootstrapQuery.data?.wheelId;
+    if (resolved == null) return;
+    setSelectedWheelId(resolved);
+    navigate(`/app/${resolved}`, { replace: true });
+  }, [params.wheelId, selectedWheelId, bootstrapQuery.data?.wheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
   // can launch it (sample vs blank). Ref keeps the callback identity stable.
@@ -254,24 +299,22 @@ export default function WheelApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWheelId, isShared]);
 
-  // Round state (veto/vote/dietary): poll ~3s; derive session straight from it.
-  const sessionStateQuery = trpc.session.state.useQuery(
+  // Consolidated shared-wheel realtime: one ~3s poll returns the live member
+  // roster, the current round (veto/vote/dietary), and the latest spin — one
+  // membership check + one round-trip, replacing three separate 3s polls.
+  const realtimeQuery = trpc.wheels.realtime.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
   );
-  const session: SessionState = sessionStateQuery.data ?? EMPTY_SESSION;
+  const session: SessionState = realtimeQuery.data?.session ?? EMPTY_SESSION;
 
-  // Latest spin: poll ~3s and surface a teammate's spin (skip our own).
+  // Latest spin: surface a teammate's spin (skip our own).
   const lastSpinIdRef = useRef<number | null>(null);
   useEffect(() => {
     lastSpinIdRef.current = null;
   }, [selectedWheelId]);
-  const latestSpinQuery = trpc.spins.latest.useQuery(
-    { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
-  );
   useEffect(() => {
-    const latest = latestSpinQuery.data;
+    const latest = realtimeQuery.data?.latestSpin;
     if (!latest) return;
     if (lastSpinIdRef.current === null) {
       lastSpinIdRef.current = latest.id; // baseline on first load — don't toast history
@@ -285,14 +328,28 @@ export default function WheelApp() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestSpinQuery.data, user]);
+  }, [realtimeQuery.data?.latestSpin, user]);
 
   // Refetch the round state right after my own action so it reflects instantly
   // (instead of waiting for the next ~3s poll).
   const utils = trpc.useUtils();
   const refreshSession = () => {
-    if (selectedWheelId) utils.session.state.invalidate({ wheelId: selectedWheelId });
+    if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
   };
+
+  // Post-spin rating capture: the result modal lets you star the winner right
+  // there. Reads the viewer's current star so re-opening shows it pre-filled.
+  const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && seeded },
+  );
+  const myStarsFor = (restaurantId: number) =>
+    ratingSummaries?.find((s) => s.restaurantId === restaurantId)?.myStars ?? null;
+  const rateRestaurant = trpc.restaurants.rate.useMutation({
+    onSuccess: () => {
+      if (selectedWheelId) utils.restaurants.ratings.invalidate({ wheelId: selectedWheelId });
+    },
+  });
   const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
   const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
   const dietaryMutation = trpc.session.dietary.useMutation({ onSuccess: refreshSession });
@@ -307,9 +364,23 @@ export default function WheelApp() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Closed-right-now restaurants come off the wheel entirely (the server enforces
+  // the same rule in spins.create — this just keeps the visual honest). Unknown
+  // hours stay on: most wheels have hand-typed places with no provider hours.
   const roundCandidates = useMemo(
-    () => filterRestaurantsByDistance(filterRestaurantsByTags(restaurants ?? [], selectedTagIds), maxWalkMinutes),
+    () => filterRestaurantsByDistance(
+      filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
+      maxWalkMinutes,
+    ).filter((r) => r.openStatus !== "closed"),
     [restaurants, selectedTagIds, maxWalkMinutes]
+  );
+
+  // How many were hidden purely because they're shut — worth telling the user,
+  // otherwise the wheel silently shrinks and looks broken.
+  const closedCount = useMemo(
+    () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds)
+      .filter((r) => r.openStatus === "closed").length,
+    [restaurants, selectedTagIds]
   );
 
   const filteredRestaurants = useMemo(() => {
@@ -415,7 +486,13 @@ export default function WheelApp() {
   const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
 
-  if (loading) {
+  // Hold the same brand loader until the one-hop bootstrap has seeded the caches,
+  // so the children (WheelSelector, RestaurantTab, HistoryTab) mount against warm
+  // data rather than firing their own copies of the same queries. Gated on
+  // `!seeded` so this only covers first entry — `seeded` latches true, so nothing
+  // later can bounce the whole app back to a fullscreen loader. `isLoading` is
+  // false while the query is disabled or errored, so this can't hang either.
+  if (loading || (!seeded && bootstrapQuery.isLoading)) {
     return <BrandLoader fullscreen />;
   }
 
@@ -711,7 +788,7 @@ export default function WheelApp() {
                         <WheelMembers
                           ownerId={wheelData.ownerId}
                           owner={wheelData.owner}
-                          members={wheelData.members}
+                          members={realtimeQuery.data?.members ?? wheelData.members}
                           currentUserId={user.id}
                           presentUserIds={presentUserIds}
                           collapsible
@@ -874,6 +951,15 @@ export default function WheelApp() {
                               <p className="text-xs text-muted-foreground">
                                 <span className="font-semibold" style={{ color: "var(--brand)" }}>{filteredRestaurants.length}</span>
                                 {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
+                                {closedCount > 0 && (
+                                  <>
+                                    {" · "}
+                                    <span className="inline-flex items-center gap-1">
+                                      <Clock3 size={11} className="flex-shrink-0" />
+                                      {closedCount} closed now
+                                    </span>
+                                  </>
+                                )}
                               </p>
                             )}
                           </>
@@ -1068,6 +1154,36 @@ export default function WheelApp() {
                     </p>
                   );
                 })()}
+              </div>
+              {/* Closing-soon warning: the winner is open, but not for long. Shown
+                  as a caution, never a block — the spin already stands. */}
+              {(() => {
+                const win = restaurants?.find((r) => r.id === spinResult.id);
+                if (win?.openStatus !== "closing_soon") return null;
+                const mins = win.minutesUntilClose;
+                return (
+                  <div
+                    className="flex items-center justify-center gap-1.5 text-xs font-semibold mb-5 px-3 py-2 rounded-xl"
+                    style={{
+                      background: "oklch(from var(--destructive) l c h / 0.12)",
+                      border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
+                      color: "var(--destructive)",
+                    }}
+                  >
+                    <Clock3 size={13} className="flex-shrink-0" />
+                    {mins != null ? `Closing in ~${mins} min — hurry!` : "Closing soon — hurry!"}
+                  </div>
+                );
+              })()}
+              {/* Post-spin capture — rate the winner right here (per-place rating). */}
+              <div className="flex flex-col items-center gap-1.5 mb-6">
+                <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>
+                <StarRating
+                  value={myStarsFor(spinResult.id)}
+                  size={26}
+                  disabled={rateRestaurant.isPending}
+                  onChange={(stars) => selectedWheelId && rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })}
+                />
               </div>
               <div className="flex flex-col gap-2.5">
                 <button

@@ -1,6 +1,7 @@
 import {
   boolean,
   decimal,
+  index,
   int,
   json,
   mysqlEnum,
@@ -55,7 +56,11 @@ export const wheels = mysqlTable("wheels", {
   originLabel: varchar("originLabel", { length: 64 }).default("Office"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (t) => ({
+  // getWheelList reads owned wheels by ownerId; join-by-invite looks up inviteToken.
+  ownerIdx: index("wheels_owner_idx").on(t.ownerId),
+  inviteTokenIdx: index("wheels_invite_token_idx").on(t.inviteToken),
+}));
 
 export type Wheel = typeof wheels.$inferSelect;
 export type InsertWheel = typeof wheels.$inferInsert;
@@ -67,7 +72,12 @@ export const wheelMembers = mysqlTable("wheel_members", {
   wheelId: int("wheelId").notNull(),
   userId: int("userId").notNull(),
   joinedAt: timestamp("joinedAt").defaultNow().notNull(),
-});
+}, (t) => ({
+  // isWheelMember (WHERE wheelId AND userId) runs on every shared-wheel poll;
+  // getWheelList reads a user's memberships (WHERE userId).
+  wheelUserIdx: index("wheel_members_wheel_user_idx").on(t.wheelId, t.userId),
+  userIdx: index("wheel_members_user_idx").on(t.userId),
+}));
 
 export type WheelMember = typeof wheelMembers.$inferSelect;
 
@@ -81,7 +91,10 @@ export const tags = mysqlTable("tags", {
   createdBy: int("createdBy"), // null = predefined system tag
   wheelId: int("wheelId"), // null = global/system tag; otherwise scoped to one wheel
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => ({
+  // getTagsForWheel filters by wheelId (plus the null/global set).
+  wheelIdx: index("tags_wheel_idx").on(t.wheelId),
+}));
 
 export type Tag = typeof tags.$inferSelect;
 export type InsertTag = typeof tags.$inferInsert;
@@ -104,7 +117,16 @@ export const restaurants = mysqlTable("restaurants", {
   address: varchar("address", { length: 512 }),
   priceLevel: int("priceLevel"), // 1..4 (nullable)
   cuisine: varchar("cuisine", { length: 64 }),
-  openHours: json("openHours"), // raw provider hours; open-now is a hint, not a hard filter
+  // Weekly opening hours from Google Places (`periods`), evaluated by
+  // shared/openHours.ts. null = unknown, which is KEPT on the wheel (never
+  // treated as closed) — most wheels have hand-typed places with no hours.
+  openHours: json("openHours"),
+  // The place's own UTC offset (Places `utc_offset_minutes`), so "is it open now"
+  // is answered in the restaurant's local time without a timezone database.
+  utcOffsetMinutes: int("utcOffsetMinutes"),
+  // When the hours above were last fetched — opening hours change, so this drives
+  // the refresh cadence (stale rows get re-fetched, not trusted forever).
+  hoursUpdatedAt: timestamp("hoursUpdatedAt"),
   source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
   // Walking seconds from the wheel's distance-mode origin (shared/wheelDistance.ts,
   // server/distance.ts); null = distance mode is off, not yet computed, or this
@@ -113,7 +135,10 @@ export const restaurants = mysqlTable("restaurants", {
   walkSeconds: int("walkSeconds"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (t) => ({
+  // restaurants.list / stats / distance all scope by wheelId.
+  wheelIdx: index("restaurants_wheel_idx").on(t.wheelId),
+}));
 
 export type Restaurant = typeof restaurants.$inferSelect;
 export type InsertRestaurant = typeof restaurants.$inferInsert;
@@ -124,9 +149,28 @@ export const restaurantTags = mysqlTable("restaurant_tags", {
   id: int("id").autoincrement().primaryKey(),
   restaurantId: int("restaurantId").notNull(),
   tagId: int("tagId").notNull(),
-});
+}, (t) => ({
+  // The tag join loads all tags for a wheel's restaurants (WHERE restaurantId IN …);
+  // tag filtering looks up rows by tagId.
+  restaurantIdx: index("restaurant_tags_restaurant_idx").on(t.restaurantId),
+  tagIdx: index("restaurant_tags_tag_idx").on(t.tagId),
+}));
 
 export type RestaurantTag = typeof restaurantTags.$inferSelect;
+
+// ─── Restaurant ratings ───────────────────────────────────────────────────────
+// A 1–5 star verdict per member per place (shared/restaurantRating.ts). One
+// upsert-able row per (restaurant, user); a place's team rating is the average.
+// Supersedes the old per-spin loved/ok/never enum on spin_history. The composite
+// PK is restaurantId-first, so per-restaurant aggregate reads use it directly.
+export const restaurantRatings = mysqlTable("restaurant_ratings", {
+  restaurantId: int("restaurantId").notNull(),
+  userId: int("userId").notNull(),
+  stars: int("stars").notNull(), // 1..5, enforced in shared/restaurantRating.ts
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.restaurantId, t.userId] }) }));
+
+export type RestaurantRating = typeof restaurantRatings.$inferSelect;
 
 // ─── Spin History ─────────────────────────────────────────────────────────────
 
@@ -145,7 +189,12 @@ export const spinHistory = mysqlTable("spin_history", {
   // Post-spin "how was it?" verdict; null = unrated. The latest rating per
   // restaurant biases future spins (shared/rating.ts).
   rating: mysqlEnum("rating", ["loved", "ok", "never"]),
-});
+}, (t) => ({
+  // The hottest table: spins.latest (WHERE wheelId ORDER BY spunAt DESC), history,
+  // and exclusion all scope by wheelId + recency; ratings look up by restaurantId.
+  wheelSpunAtIdx: index("spin_history_wheel_spun_at_idx").on(t.wheelId, t.spunAt),
+  restaurantIdx: index("spin_history_restaurant_idx").on(t.restaurantId),
+}));
 
 export type SpinHistory = typeof spinHistory.$inferSelect;
 export type InsertSpinHistory = typeof spinHistory.$inferInsert;
@@ -162,7 +211,10 @@ export const notifications = mysqlTable("notifications", {
   restaurantId: int("restaurantId").notNull(),
   actorUserId: int("actorUserId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => ({
+  // The bell polls notifications per wheel, newest first.
+  wheelCreatedIdx: index("notifications_wheel_created_idx").on(t.wheelId, t.createdAt),
+}));
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;

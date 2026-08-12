@@ -34,8 +34,17 @@ export default function Home() {
   const cursorPos = useRef({ x: 0, y: 0 });
   const targetPos = useRef({ x: 0, y: 0 });
 
+  // A signed-in visitor is redirected to /app, so everything expensive on this
+  // page (WebGL shader, cursor RAF loop, the public-wheels query) is pure waste
+  // for them — and it used to run before the redirect effect fired. Gate all of
+  // it behind "we know this visitor is anonymous".
+  const isGuest = !loading && !user;
+
   // Popular public wheels — guests can try one without signing in.
-  const { data: popularWheels } = trpc.wheels.listPublic.useQuery({ limit: 6 });
+  const { data: popularWheels } = trpc.wheels.listPublic.useQuery(
+    { limit: 6 },
+    { enabled: isGuest },
+  );
 
   // Apply an alpha to any CSS color (incl. var() tokens) via relative color syntax.
   const alpha = (c: string, a: number) => `oklch(from ${c} l c h / ${a})`;
@@ -44,8 +53,19 @@ export default function Home() {
     if (!loading && user) navigate("/app");
   }, [user, loading, navigate]);
 
-  // Smooth magnetic cursor
+  // Warm the /app route chunk as soon as we know we're heading there, so the
+  // redirect doesn't pay a fresh network hop for the lazy chunk.
   useEffect(() => {
+    if (loading || !user) return;
+    void import("./WheelApp");
+  }, [loading, user]);
+
+  // Smooth magnetic cursor (guests only — see isGuest; also skipped for touch
+  // devices and reduced-motion users, where a custom cursor does nothing).
+  useEffect(() => {
+    if (!isGuest) return;
+    if (window.matchMedia("(hover: none)").matches) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const moveCursor = (e: MouseEvent) => {
       targetPos.current = { x: e.clientX, y: e.clientY };
       setMousePos({ x: e.clientX, y: e.clientY });
@@ -71,7 +91,7 @@ export default function Home() {
       window.removeEventListener("mousemove", moveCursor);
       cancelAnimationFrame(rafRef.current);
     };
-  }, []);
+  }, [isGuest]);
 
   // Pointer parallax on hero orb
   const handlePointer = (e: ReactMouseEvent) => {
@@ -82,8 +102,11 @@ export default function Home() {
     el.style.transform = `translate(${x * 30}px, ${y * 30}px)`;
   };
 
-  // WebGL shader background
+  // WebGL shader background — compiling shaders + a continuous render loop is the
+  // most expensive thing on this page, so it only starts once we know the visitor
+  // is staying (anonymous). Signed-in visitors are mid-redirect to /app.
   useEffect(() => {
+    if (!isGuest) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const gl = canvas.getContext("webgl");
@@ -198,7 +221,7 @@ export default function Home() {
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
     };
-  }, [theme]);
+  }, [theme, isGuest]);
 
   return (
     <div

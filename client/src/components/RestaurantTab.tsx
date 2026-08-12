@@ -1,7 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { StarRating, RatingChip } from "@/components/StarRating";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -76,11 +78,21 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [sortNearest, setSortNearest] = useState(false);
+  const [sortByRating, setSortByRating] = useState(false);
   const [maxWalkMinutes, setMaxWalkMinutes] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
   const { data: restaurants, isLoading } = trpc.restaurants.list.useQuery({ wheelId });
   const { data: tags } = trpc.tags.list.useQuery({ wheelId });
+
+  // Per-restaurant star ratings (team average + count + the viewer's own).
+  const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery({ wheelId });
+  const ratingByRestaurant = useMemo(
+    () => new Map((ratingSummaries ?? []).map((s) => [s.restaurantId, s])),
+    [ratingSummaries],
+  );
+  // The restaurant whose detail sheet is open (null = closed).
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const invalidate = () => {
     utils.restaurants.list.invalidate({ wheelId });
@@ -94,6 +106,28 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const updateRestaurant = trpc.restaurants.update.useMutation({
     onSuccess: () => { invalidate(); setEditId(null); setForm(EMPTY_FORM); setFormError(null); toast.success("Restaurant updated!"); },
     onError: (e) => setFormError(e.message),
+  });
+  // Pull weekly opening hours for provider-sourced places. Reports the
+  // misconfigured-key case explicitly instead of a silent success (the trap that
+  // hid the Distance Matrix failure for a whole round).
+  const refreshHours = trpc.restaurants.refreshHours.useMutation({
+    onSuccess: (res) => {
+      invalidate();
+      if (!res.configured) {
+        toast.error("Place lookups aren't configured on the server");
+      } else if (res.providerFailed) {
+        toast.error("Couldn't reach Google Places — check the server's Maps API key");
+      } else if (res.updated === 0) {
+        toast.success("Opening hours are already up to date");
+      } else {
+        toast.success(`Updated opening hours for ${res.updated} place${res.updated === 1 ? "" : "s"}`);
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const rateRestaurant = trpc.restaurants.rate.useMutation({
+    onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
+    onError: () => toast.error("Couldn't save your rating"),
   });
   const deleteRestaurant = trpc.restaurants.delete.useMutation({
     onSuccess: () => { invalidate(); toast.success("Restaurant removed"); },
@@ -178,6 +212,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       ? (restaurants ?? [])
       : (restaurants ?? []).filter((r) => selectedTagIds.every((id) => r.tags.some((t) => t.id === id)));
     const filtered = filterRestaurantsByDistance(byTags, maxWalkMinutes);
+    if (sortByRating) {
+      // Highest team average first; unrated places sink to the bottom, name-stable.
+      return [...filtered].sort((a, b) => {
+        const ra = ratingByRestaurant.get(a.id)?.average ?? null;
+        const rb = ratingByRestaurant.get(b.id)?.average ?? null;
+        if (ra == null && rb == null) return a.name.localeCompare(b.name);
+        if (ra == null) return 1;
+        if (rb == null) return -1;
+        return rb - ra || a.name.localeCompare(b.name);
+      });
+    }
     if (!distanceEnabled || !sortNearest) return filtered;
     // Located restaurants first (nearest first), unlocated ones after, name-stable.
     return [...filtered].sort((a, b) => {
@@ -186,7 +231,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       if (b.walkSeconds == null) return -1;
       return a.walkSeconds - b.walkSeconds;
     });
-  }, [restaurants, selectedTagIds, maxWalkMinutes, distanceEnabled, sortNearest]);
+  }, [restaurants, selectedTagIds, maxWalkMinutes, distanceEnabled, sortNearest, sortByRating, ratingByRestaurant]);
 
   const toggleFormTag = (tagId: number) => {
     setForm((f) => ({
@@ -343,7 +388,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           }}
         >
           <Tag size={12} className="flex-shrink-0" />
-          You can add restaurants. Only the wheel creator can edit or delete.
+          You can add and edit restaurants. Only the wheel creator can delete.
         </div>
       )}
 
@@ -359,7 +404,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           </span>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
-              onClick={() => setSortNearest((s) => !s)}
+              onClick={() => { setSortByRating(false); setSortNearest((s) => !s); }}
               title="Sort nearest first"
               aria-pressed={sortNearest}
               className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
@@ -379,6 +424,53 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               <RefreshCw size={14} className={recomputeDistances.isPending ? "animate-spin" : ""} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Open-hours coverage + refresh. Only worth showing when the wheel has
+          provider-sourced places whose hours we could actually fetch. */}
+      {(restaurants?.some((r) => r.placeId) ?? false) && (
+        <div
+          className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-xs"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Clock3 size={13} className="flex-shrink-0" />
+            {(() => {
+              const closed = restaurants?.filter((r) => r.openStatus === "closed").length ?? 0;
+              const unknown = restaurants?.filter((r) => r.openStatus === "unknown").length ?? 0;
+              if (closed > 0) return <>{closed} closed now — <strong className="text-foreground">off the wheel</strong> until they reopen</>;
+              if (unknown > 0) return <>{unknown} place{unknown === 1 ? "" : "s"} with unknown hours — always on the wheel</>;
+              return <>All open right now</>;
+            })()}
+          </span>
+          <button
+            onClick={() => refreshHours.mutate({ wheelId })}
+            disabled={refreshHours.isPending}
+            title="Refresh opening hours"
+            className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
+          >
+            <RefreshCw size={14} className={refreshHours.isPending ? "animate-spin" : ""} />
+          </button>
+        </div>
+      )}
+
+      {/* Top-rated sort — shown once the wheel has any ratings and 2+ places. */}
+      {(ratingSummaries?.length ?? 0) > 0 && (restaurants?.length ?? 0) > 1 && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => { setSortNearest(false); setSortByRating((s) => !s); }}
+            aria-pressed={sortByRating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+            style={{
+              background: sortByRating ? "color-mix(in oklch, var(--star) 18%, transparent)" : "var(--card)",
+              border: "1px solid var(--border)",
+              color: sortByRating ? "var(--foreground)" : "var(--muted-foreground)",
+            }}
+          >
+            <Star size={13} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star)" }} />
+            Top rated
+          </button>
         </div>
       )}
 
@@ -480,6 +572,31 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : "no location"}
                     </span>
                   )}
+                  {/* Opening hours. "unknown" shows nothing — those places stay on
+                      the wheel, so a chip would just be noise. */}
+                  {r.openStatus === "closed" && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+                      title="Closed right now — off the wheel until it reopens"
+                    >
+                      <Clock3 size={10} className="flex-shrink-0" /> closed now
+                    </span>
+                  )}
+                  {r.openStatus === "closing_soon" && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      style={{
+                        background: "oklch(from var(--destructive) l c h / 0.12)",
+                        color: "var(--destructive)",
+                        border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
+                      }}
+                      title="Still on the wheel, but closing soon"
+                    >
+                      <Clock3 size={10} className="flex-shrink-0" />
+                      {r.minutesUntilClose != null ? `closes in ${r.minutesUntilClose}m` : "closing soon"}
+                    </span>
+                  )}
                 </div>
                 {r.notes && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{r.notes}</p>}
                 {r.tags.length > 0 && (
@@ -501,30 +618,121 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 )}
               </div>
 
-              {/* Actions — always visible on mobile, hover-reveal on desktop */}
-              {isOwner && (
-                <div className="flex items-center gap-1 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
-                  <button
-                    onClick={() => openEdit(r)}
-                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
-                    title="Edit"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => { if (confirm(`Remove "${r.name}"?`)) deleteRestaurant.mutate({ id: r.id }); }}
-                    className="flex items-center justify-center h-10 w-10 rounded-xl hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-all duration-150 active:scale-90"
-                    title="Delete"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              )}
+              {/* Glanceable team rating + a ⋮ that opens the detail sheet
+                  (rate, team breakdown, edit / owner-delete all live there). */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <RatingChip average={ratingByRestaurant.get(r.id)?.average ?? null} />
+                <button
+                  onClick={() => setDetailId(r.id)}
+                  className="flex items-center justify-center h-9 w-9 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
+                  aria-label={`Open ${r.name}`}
+                >
+                  <MoreVertical size={18} />
+                </button>
+              </div>
             </div>
             );
           })}
         </div>
       )}
+
+      {/* Restaurant detail sheet — glance chip on the row opens this. Holds the
+          team rating, the member's own star control, and (owner) Edit/Delete. */}
+      <Drawer open={detailId !== null} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+        <DrawerContent>
+          {(() => {
+            const r = (restaurants ?? []).find((x) => x.id === detailId);
+            if (!r) return null;
+            const summary = ratingByRestaurant.get(r.id);
+            const avg = summary?.average ?? null;
+            const count = summary?.count ?? 0;
+            const mine = summary?.myStars ?? null;
+            return (
+              <div className="mx-auto w-full max-w-md px-5 pb-8 pt-1">
+                <h3 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{r.name}</h3>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  {r.tags.map((t) => (
+                    <span key={t.id} className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: t.color + "18", color: t.color, border: `1px solid ${t.color}35` }}>{t.name}</span>
+                  ))}
+                  {distanceEnabled && r.walkSeconds != null && (
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full text-muted-foreground" style={{ background: "var(--muted)" }}>
+                      <Footprints size={10} />{formatWalk(r.walkSeconds / 60)}
+                    </span>
+                  )}
+                  {r.mapUrl && (
+                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--brand)" }}>
+                      <Navigation size={11} />Directions
+                    </a>
+                  )}
+                </div>
+                {r.notes && <p className="text-xs text-muted-foreground mt-2">{r.notes}</p>}
+
+                {/* Opening hours — states mirror shared/openHours.ts. "unknown" is
+                    stated plainly so nobody thinks the place was dropped. */}
+                <div className="mt-5 flex items-center gap-2 text-xs">
+                  <Clock3 size={13} className="flex-shrink-0 text-muted-foreground" />
+                  {r.openStatus === "closed" ? (
+                    <span className="text-muted-foreground">Closed right now — off the wheel until it reopens</span>
+                  ) : r.openStatus === "closing_soon" ? (
+                    <span style={{ color: "var(--destructive)" }} className="font-semibold">
+                      {r.minutesUntilClose != null ? `Closing in ~${r.minutesUntilClose} min` : "Closing soon"}
+                    </span>
+                  ) : r.openStatus === "open" ? (
+                    <span style={{ color: "var(--ok)" }} className="font-semibold">Open now</span>
+                  ) : (
+                    <span className="text-muted-foreground">Hours unknown — always on the wheel</span>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Team rating</div>
+                  {avg == null ? (
+                    <p className="text-sm text-muted-foreground">No ratings yet — be the first.</p>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-extrabold" style={{ fontFamily: "var(--font-display)" }}>{avg.toFixed(1)}</span>
+                      <div>
+                        <StarRating value={avg} size={18} />
+                        <div className="text-[11px] text-muted-foreground mt-0.5">{count} rating{count === 1 ? "" : "s"}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Your rating</div>
+                  <StarRating
+                    value={mine}
+                    size={30}
+                    disabled={rateRestaurant.isPending}
+                    onChange={(stars) => rateRestaurant.mutate({ wheelId, restaurantId: r.id, stars })}
+                  />
+                </div>
+
+                <div className="mt-7 pt-4 flex gap-2.5" style={{ borderTop: "1px solid var(--border)" }}>
+                  <button
+                    onClick={() => { const target = r; setDetailId(null); openEdit(target); }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <Pencil size={15} /> Edit
+                  </button>
+                  {isOwner && (
+                    <button
+                      onClick={() => { if (confirm(`Remove "${r.name}"?`)) { deleteRestaurant.mutate({ id: r.id }); setDetailId(null); } }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                      style={{ borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)" }}
+                    >
+                      <Trash2 size={15} /> Delete
+                    </button>
+                  )}
+                </div>
+                {!isOwner && <p className="text-[10px] text-muted-foreground text-center mt-2">Only the wheel creator can delete.</p>}
+              </div>
+            );
+          })()}
+        </DrawerContent>
+      </Drawer>
 
       {/* Add/Edit dialog */}
       <Dialog open={showAdd || editId !== null} onOpenChange={(open) => { if (!open) { setShowAdd(false); setEditId(null); setForm(EMPTY_FORM); } }}>

@@ -27,8 +27,26 @@ Drizzle's `drizzle/meta/_journal.json` being populated means a migration was
 - [ ] Verify the new column/table actually exists before code relies on it. New
       code reads `wheels.exclusionDays/fairnessMode/rotateCuisines` and the
       `round_marks`/`wheel_presence` tables with no fallback — missing = runtime error.
+- [ ] Apply the same pending migrations to the **staging** DB too
+      (`DATABASE_URL=<staging> pnpm exec drizzle-kit migrate`), separately from prod —
+      staging has its own cluster (STAGING.md), so it drifts if you only migrate prod.
 
-## 3. PR merge — confirm the right commit lands
+## 3. Staging — click through the real app first
+
+Google OAuth's `redirect_uri` is built from a fixed `APP_ORIGIN` (prod), so a Vercel
+PR *preview* can't sign in — the signed-in app (where almost every feature lives) is
+only verifiable on a deployed origin with a matching OAuth client. That is exactly
+what the `staging` branch + its isolated Vercel project / DB / OAuth client are for.
+Full recipe: **STAGING.md**.
+
+- [ ] Merge (or push) the feature branch into **`staging`** → Vercel auto-deploys the
+      staging project (same as `main` does for prod).
+- [ ] On the staging URL, **sign in with Google for real** and click through the actual
+      change against isolated data — on your phone if it's mobile UX.
+- [ ] Only once staging looks right do you proceed to merge into `main`. `staging` is a
+      verification waypoint, not a long-lived branch (reset it to `main` periodically).
+
+## 4. PR merge — confirm the right commit lands
 
 We once merged a PR at its *open-time* head and stranded later fixes. So:
 
@@ -38,7 +56,7 @@ We once merged a PR at its *open-time* head and stranded later fixes. So:
       (Squash merges create a *new* commit on main, so check the merge commit /
       that the file changes landed, not the branch SHA itself.)
 
-## 4. Vercel deploy — "merged" ≠ "shipped"
+## 5. Vercel deploy — "merged" ≠ "shipped"
 
 The app is hosted on **Vercel** (frontend on the CDN, Express API as the single
 `api/index.js` serverless function), deploying from GitHub `main`. Code in `main`
@@ -58,7 +76,7 @@ is **not live** until Vercel finishes a production deploy.
       open History (the tab that crashed when stats rows were malformed), and on a
       shared wheel confirm presence + a veto/vote reflect within a few seconds.
 
-## 5. Repo hygiene
+## 6. Repo hygiene
 
 - [ ] `node_modules/` is committed here (a Manus convention) — only `git add`
       explicit source paths; never `git add -A` (it pulls in `.bin` symlink churn

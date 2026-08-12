@@ -41,11 +41,14 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [logoutMutation, utils]);
 
+  // Mirror the user into localStorage for the legacy runtime reader. This used to
+  // run inside the useMemo below — a side effect (plus a JSON.stringify) on every
+  // render of every screen that calls useAuth. Only write when the value changes.
+  useEffect(() => {
+    localStorage.setItem("manus-runtime-user-info", JSON.stringify(meQuery.data));
+  }, [meQuery.data]);
+
   const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
     return {
       user: meQuery.data ?? null,
       loading: meQuery.isLoading || logoutMutation.isPending,
