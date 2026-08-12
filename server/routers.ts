@@ -17,6 +17,7 @@ import { RATINGS } from "@shared/rating";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
 import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
+import { resolveBootstrapWheelId } from "@shared/bootstrap";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -93,6 +94,73 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
+
+    /**
+     * Everything the app needs on entry, in ONE round trip.
+     *
+     * The old sequence was three serial hops: auth.me → wheels.list → (wheels.get
+     * + restaurants.list + tags + ratings). The middle hop existed only to decide
+     * *which* wheel to open — but the server already knows the user's
+     * defaultWheelId, so it can resolve the target and return that wheel's data in
+     * the same response. The client seeds its per-query caches from this, so every
+     * existing consumer (WheelSelector, RestaurantTab, HistoryTab) reads warm data
+     * instead of re-fetching.
+     *
+     * Deliberately forgiving: an unknown/forbidden `wheelId` returns `wheel: null`
+     * rather than throwing, so the normal wheels.get path still runs and produces
+     * the existing "that wheel isn't available anymore" eject. Realtime state
+     * (session/presence/latest spin) is NOT here — it's polled separately.
+     */
+    bootstrap: protectedProcedure
+      .input(z.object({ wheelId: z.number().nullable().optional() }))
+      .query(async ({ ctx, input }) => {
+        const wheels = await getUserWheels(ctx.user.id);
+        // Requested (if visible to them) → starred default → first wheel.
+        const wheelId = resolveBootstrapWheelId(
+          wheels.map((w) => w.id),
+          input.wheelId,
+          ctx.user.defaultWheelId,
+        );
+
+        if (wheelId == null) {
+          return { wheels, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+        }
+
+        const wheel = await getWheelById(wheelId);
+        if (!wheel) {
+          return { wheels, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
+        }
+
+        const [members, owner, rests, tagRows, ratingRows] = await Promise.all([
+          getWheelMembers(wheelId),
+          getUserById(wheel.ownerId),
+          getRestaurantsByWheel(wheelId),
+          getTagsForWheel(wheelId),
+          getWheelRatingRows(wheelId),
+        ]);
+        const exclusions = await getExclusions(wheelId, wheel.exclusionDays);
+        const now = new Date();
+        // Same shape as restaurants.list — the client seeds that cache with it.
+        const restaurants = rests.map((r) => {
+          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+          return {
+            ...r,
+            isExcluded: exclusions.has(r.id),
+            excludedUntil: exclusions.get(r.id) ?? null,
+            openStatus: hours.status,
+            minutesUntilClose: hours.minutesUntilClose,
+          };
+        });
+
+        return {
+          wheels,
+          wheelId,
+          wheel: { ...wheel, members, owner },
+          restaurants,
+          tags: tagRows,
+          ratings: summarizeRatings(ratingRows, ctx.user.id),
+        };
+      }),
 
     // ── Guest (no sign-in) reads ──────────────────────────────────────────────
     // Public-safe wheel for the /w/:id guest view. Only public wheels resolve;

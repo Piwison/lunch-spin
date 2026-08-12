@@ -97,9 +97,53 @@ export default function WheelApp() {
     setSelectedWheelId((current) => (current === fromUrl ? current : fromUrl));
   }, [params.wheelId]);
 
+  // ── One-hop entry load ────────────────────────────────────────────────────
+  // Entering the app used to cost three serial round trips (auth.me →
+  // wheels.list → the selected wheel's data), because deciding *which* wheel to
+  // open required wheels.list first. wheels.bootstrap resolves that server-side
+  // (it knows defaultWheelId) and returns the wheel list, the wheel, its
+  // restaurants, tags and ratings together. We then seed each per-query cache so
+  // every existing consumer reads warm data, and gate those queries until the
+  // seeding has happened so they don't duplicate the same fetch.
+  // Frozen to the wheel in the URL on first render: bootstrap serves *entry* only.
+  // If its input tracked the URL, switching wheels would change the query key —
+  // re-triggering the entry loader and racing the per-wheel queries that already
+  // handle switching perfectly well.
+  const [initialWheelId] = useState(() => {
+    const parsed = params.wheelId ? parseInt(params.wheelId) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  });
+
+  const bootstrapQuery = trpc.wheels.bootstrap.useQuery(
+    { wheelId: initialWheelId },
+    { enabled: !loading && !!user, staleTime: 30_000 },
+  );
+  const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    const data = bootstrapQuery.data;
+    if (!data) return;
+    utils.wheels.list.setData(undefined, data.wheels);
+    if (data.wheel && data.wheelId != null) {
+      utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
+      utils.restaurants.list.setData({ wheelId: data.wheelId }, data.restaurants);
+      utils.tags.list.setData({ wheelId: data.wheelId }, data.tags);
+      utils.restaurants.ratings.setData({ wheelId: data.wheelId }, data.ratings);
+    }
+    setSeeded(true);
+    // utils is a stable tRPC helper; seeding must run once per bootstrap payload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootstrapQuery.data]);
+
+  // A bootstrap failure must not strand the app: fall through to the individual
+  // queries (the pre-bootstrap behaviour) instead of waiting forever.
+  useEffect(() => {
+    if (bootstrapQuery.isError) setSeeded(true);
+  }, [bootstrapQuery.isError]);
+
   const { data: tags } = trpc.tags.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId }
+    { enabled: !!selectedWheelId && seeded }
   );
   const {
     data: restaurants,
@@ -108,12 +152,12 @@ export default function WheelApp() {
     refetch: refetchRestaurants,
   } = trpc.restaurants.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId }
+    { enabled: !!selectedWheelId && seeded }
   );
   const { data: wheelData, error: wheelError } = trpc.wheels.get.useQuery(
     { id: selectedWheelId! },
     {
-      enabled: !!selectedWheelId,
+      enabled: !!selectedWheelId && seeded,
       retry: (count, err) =>
         err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
       // Loaded once for the wheel's config + owner. The live member roster (which
@@ -185,21 +229,24 @@ export default function WheelApp() {
   }, [notifications]);
 
   // Wheel count drives the first-run experience. Same query key as WheelSelector's
-  // list, so React Query dedupes it — no extra request.
-  const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery();
-  const firstRun = !wheelsLoading && isFirstRun(wheels?.length ?? 0);
+  // list and seeded by bootstrap, so this is a cache read — no extra request.
+  const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery(undefined, {
+    enabled: seeded,
+  });
+  const firstRun = seeded && !wheelsLoading && isFirstRun(wheels?.length ?? 0);
 
-  // On arriving without a wheel in the URL, open the user's chosen default wheel
-  // (set via the star toggle in WheelSelector) if they have one, else their first
-  // wheel — so a returning user lands straight on it instead of re-picking every
-  // visit. First-run users (zero wheels) still get the guided create card.
+  // On arriving without a wheel in the URL, open the wheel bootstrap already
+  // resolved for us (the user's starred default, else their first). The server
+  // decided this in the same response that carried the wheel's data, so there's
+  // no extra round trip to find out which wheel to show. First-run users (zero
+  // wheels) still get the guided create card.
   useEffect(() => {
     if (params.wheelId || selectedWheelId) return;
-    if (wheelsLoading || !wheels || wheels.length === 0) return;
-    const preferred = wheels.find((w) => w.id === user?.defaultWheelId) ?? wheels[0]!;
-    setSelectedWheelId(preferred.id);
-    navigate(`/app/${preferred.id}`, { replace: true });
-  }, [params.wheelId, selectedWheelId, wheels, wheelsLoading, user?.defaultWheelId, navigate]);
+    const resolved = bootstrapQuery.data?.wheelId;
+    if (resolved == null) return;
+    setSelectedWheelId(resolved);
+    navigate(`/app/${resolved}`, { replace: true });
+  }, [params.wheelId, selectedWheelId, bootstrapQuery.data?.wheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
   // can launch it (sample vs blank). Ref keeps the callback identity stable.
@@ -294,7 +341,7 @@ export default function WheelApp() {
   // there. Reads the viewer's current star so re-opening shows it pre-filled.
   const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId },
+    { enabled: !!selectedWheelId && seeded },
   );
   const myStarsFor = (restaurantId: number) =>
     ratingSummaries?.find((s) => s.restaurantId === restaurantId)?.myStars ?? null;
@@ -439,7 +486,13 @@ export default function WheelApp() {
   const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
 
-  if (loading) {
+  // Hold the same brand loader until the one-hop bootstrap has seeded the caches,
+  // so the children (WheelSelector, RestaurantTab, HistoryTab) mount against warm
+  // data rather than firing their own copies of the same queries. Gated on
+  // `!seeded` so this only covers first entry — `seeded` latches true, so nothing
+  // later can bounce the whole app back to a fullscreen loader. `isLoading` is
+  // false while the query is disabled or errored, so this can't hang either.
+  if (loading || (!seeded && bootstrapQuery.isLoading)) {
     return <BrandLoader fullscreen />;
   }
 
