@@ -87,6 +87,51 @@ green increments, fairness-core change deferred to last.
 
 ---
 
+## Round 12 — owner requests 2026-07-23 (investigated, not yet built)
+
+### A. Open-hours filter (needs a small migration — batch it with 0014/0015)
+Goal: for Google-Maps-sourced restaurants, store weekly opening hours and auto-drop
+closed places at spin time.
+- FINDING: `restaurants.openHours` (json) **already exists** (migration 0008) but is
+  **always null** — `shared/placeMapping.ts` only maps `opening_hours.open_now` (a
+  momentary boolean) into `open`, and nothing ever writes weekly hours. Dead column.
+- Still needs migration **0016**: `hoursUpdatedAt` (timestamp, cache freshness — hours
+  change) + `utcOffsetMinutes` (int, from Places `utc_offset_minutes`, so "is it open
+  now" needs no tz database). `openHours` json is reused for the `periods` payload.
+- Needs a Places **Details** fetch per place (Places API already enabled) — `openHours`
+  is not in the nearby-search payload.
+- Design decisions still open: unknown hours = keep or drop? hard filter vs soft weight?
+  refresh cadence? (see chat)
+
+### B. Slow first load — measured causes, biggest first
+1. A signed-in returning user renders the **entire marketing landing page first** —
+   `Home` is eager (in the entry chunk), mounts a **WebGL shader** + a `requestAnimation
+   Frame` magnetic-cursor loop + fires `wheels.listPublic`, and only *then* an effect
+   sees `user` and redirects to `/app`, which lazy-loads the `WheelApp` chunk.
+2. **Serial request waterfall**, each a separate serverless hop: `auth.me` → `wheels.list`
+   → `wheels.get` + `restaurants.list` (+ `restaurants.ratings`).
+3. **Render-blocking Google Fonts**: a plain `<link rel=stylesheet>` to fonts.googleapis
+   .com in `<head>` (2 extra hosts before first paint), requesting Poppins **8 weights +
+   italic** + Fredoka 4 weights.
+4. **Serverless cold start**: `getDb()` opens a fresh mysql2 connection (TLS to TiDB) per
+   cold lambda; module-scope cached, so only cold requests pay it.
+5. Built `index.html` ships a literal **`%VITE_ANALYTICS_ENDPOINT%`** (env unset at build)
+   → the browser requests a bogus relative URL every load.
+6. `useAuth` does `localStorage.setItem(JSON.stringify(...))` **inside a `useMemo`** — a
+   side effect on every render.
+
+### C. Spin fairness — verified: the picker IS uniform
+- `pickWinner` is `floor(rng()*n)` over the eligible set; `pickWeighted` is correct
+  proportional selection. 20k-trial simulation using the real `shared/pick.ts`: over 65
+  spins, one place reaching **6 picks is normal** (expected max ≈ 5.7–7.0).
+- **`fairnessMode` is opt-in and defaults to `false`** — so weighting is OFF unless the
+  wheel enables it. "DUE FOR A COMEBACK" in the History tab is **purely informational
+  and does not change the odds**, which is the mismatch the owner is seeing.
+- 5 never-picked in 65 spins: ~impossible under uniform if the wheel has ≲20 places
+  (0.0%), but plausible at ~30 (8–20%). Need the wheel's restaurant count to finish the
+  call; also check no tag filter was left on (`filterRestaurantsByTags`) and whether
+  those 5 were added later.
+
 ## Changelog
 
 - 2026-07-22 — roadmap created; P2 started.
