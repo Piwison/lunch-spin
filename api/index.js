@@ -557,17 +557,23 @@ async function setRestaurantHours(id, openHours, utcOffsetMinutes) {
   if (!db) return;
   await db.update(restaurants).set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: /* @__PURE__ */ new Date() }).where(eq(restaurants.id, id));
 }
+async function setRestaurantPlaceId(id, placeId) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(restaurants).set({ placeId }).where(eq(restaurants.id, id));
+}
 async function getRestaurantsNeedingHours(wheelId, staleAfterMs) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.select({
     id: restaurants.id,
     placeId: restaurants.placeId,
+    mapUrl: restaurants.mapUrl,
     hoursUpdatedAt: restaurants.hoursUpdatedAt
   }).from(restaurants).where(eq(restaurants.wheelId, wheelId));
   const cutoff = Date.now() - staleAfterMs;
   return rows.filter(
-    (r) => r.placeId && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff)
+    (r) => (r.placeId || r.mapUrl) && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff)
   );
 }
 async function upsertRestaurantRating(restaurantId, userId, stars) {
@@ -2385,12 +2391,21 @@ async function refreshWheelHours(wheelId) {
   let providerFailed = false;
   for (const t2 of targets) {
     try {
-      const hours = await fetchPlaceHours(t2.placeId);
+      let placeId = t2.placeId;
+      if (!placeId && t2.mapUrl) {
+        const resolved = await resolvePlaceLink(t2.mapUrl);
+        if (resolved?.placeId) {
+          placeId = resolved.placeId;
+          await setRestaurantPlaceId(t2.id, placeId);
+        }
+      }
+      if (!placeId) continue;
+      const hours = await fetchPlaceHours(placeId);
       await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
       updated += 1;
     } catch (err) {
       providerFailed = true;
-      console.error(`[openHours] fetch failed for restaurant ${t2.id} (place ${t2.placeId})`, err);
+      console.error(`[openHours] refresh failed for restaurant ${t2.id}`, err);
     }
   }
   return { updated, providerFailed };
@@ -2438,28 +2453,32 @@ var appRouter = router({
      * the existing "that wheel isn't available anymore" eject. Realtime state
      * (session/presence/latest spin) is NOT here — it's polled separately.
      */
-    bootstrap: protectedProcedure.input(z3.object({ wheelId: z3.number().nullable().optional() })).query(async ({ ctx, input }) => {
-      const wheels2 = await getUserWheels(ctx.user.id);
+    bootstrap: publicProcedure.input(z3.object({ wheelId: z3.number().nullable().optional() })).query(async ({ ctx, input }) => {
+      const user = ctx.user;
+      if (!user) {
+        return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+      }
+      const wheels2 = await getUserWheels(user.id);
       const wheelId = resolveBootstrapWheelId(
         wheels2.map((w) => w.id),
         input.wheelId,
-        ctx.user.defaultWheelId
+        user.defaultWheelId
       );
       if (wheelId == null) {
-        return { wheels: wheels2, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+        return { user, wheels: wheels2, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
       }
       const wheel = await getWheelById(wheelId);
       if (!wheel) {
-        return { wheels: wheels2, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
+        return { user, wheels: wheels2, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
       }
-      const [members, owner, rests, tagRows, ratingRows] = await Promise.all([
+      const [members, owner, rests, tagRows, ratingRows, exclusions] = await Promise.all([
         getWheelMembers(wheelId),
         getUserById(wheel.ownerId),
         getRestaurantsByWheel(wheelId),
         getTagsForWheel(wheelId),
-        getWheelRatingRows(wheelId)
+        getWheelRatingRows(wheelId),
+        getExclusions(wheelId, wheel.exclusionDays)
       ]);
-      const exclusions = await getExclusions(wheelId, wheel.exclusionDays);
       const now = /* @__PURE__ */ new Date();
       const restaurants2 = rests.map((r) => {
         const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
@@ -2472,12 +2491,13 @@ var appRouter = router({
         };
       });
       return {
+        user,
         wheels: wheels2,
         wheelId,
         wheel: { ...wheel, members, owner },
         restaurants: restaurants2,
         tags: tagRows,
-        ratings: summarizeRatings(ratingRows, ctx.user.id)
+        ratings: summarizeRatings(ratingRows, user.id)
       };
     }),
     // ── Guest (no sign-in) reads ──────────────────────────────────────────────
@@ -2696,16 +2716,36 @@ var appRouter = router({
       const rests = await getRestaurantsByWheel(input.wheelId);
       return rests.map(toPublicRestaurant);
     }),
-    add: protectedProcedure.input(z3.object({ wheelId: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()), mapUrl: z3.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
+    add: protectedProcedure.input(z3.object({
+      wheelId: z3.number(),
+      name: z3.string().min(1).max(128),
+      notes: z3.string().max(500).nullable(),
+      tagIds: z3.array(z3.number()),
+      mapUrl: z3.string().max(512).nullable().optional(),
+      // When the name came from "Look up" on a pasted Maps link, the client
+      // passes the resolved place id through. Storing it is what lets opening
+      // hours (and later detail refreshes) work for hand-added restaurants —
+      // without it every such row looked like a name-only entry.
+      placeId: z3.string().max(256).nullable().optional()
+    })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
+      const id = await addRestaurant(
+        input.wheelId,
+        ctx.user.id,
+        input.name,
+        input.notes,
+        input.tagIds,
+        input.mapUrl ?? null,
+        input.placeId ? { placeId: input.placeId, lat: null, lng: null, address: null, priceLevel: null, cuisine: null } : null
+      );
       try {
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
+      await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
       return { id };
     }),
     addBulk: protectedProcedure.input(z3.object({ wheelId: z3.number(), text: z3.string().max(1e4) })).mutation(async ({ ctx, input }) => {

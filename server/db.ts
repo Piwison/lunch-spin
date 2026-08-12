@@ -414,9 +414,20 @@ export async function setRestaurantHours(
     .where(eq(restaurants.id, id));
 }
 
+/** Remember the provider place a restaurant resolved to, so later hour/detail
+ *  refreshes don't have to resolve its Maps link again. */
+export async function setRestaurantPlaceId(id: number, placeId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(restaurants).set({ placeId }).where(eq(restaurants.id, id));
+}
+
 /**
- * Restaurants on this wheel whose hours are worth (re)fetching: they have a
- * provider placeId, and hours were never fetched or are older than `staleAfterMs`.
+ * Restaurants on this wheel whose hours are worth (re)fetching: hours were never
+ * fetched (or are older than `staleAfterMs`) AND we have something to look them
+ * up with — a provider `placeId`, or a saved Maps `mapUrl` we can resolve into
+ * one. Requiring a placeId alone missed every hand-added restaurant, including
+ * ones added by pasting a Maps link, since restaurants.add never stored it.
  */
 export async function getRestaurantsNeedingHours(wheelId: number, staleAfterMs: number) {
   const db = await getDb();
@@ -425,14 +436,17 @@ export async function getRestaurantsNeedingHours(wheelId: number, staleAfterMs: 
     .select({
       id: restaurants.id,
       placeId: restaurants.placeId,
+      mapUrl: restaurants.mapUrl,
       hoursUpdatedAt: restaurants.hoursUpdatedAt,
     })
     .from(restaurants)
     .where(eq(restaurants.wheelId, wheelId));
   const cutoff = Date.now() - staleAfterMs;
   return rows.filter(
-    (r) => r.placeId && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff),
-  ) as { id: number; placeId: string; hoursUpdatedAt: Date | null }[];
+    (r) =>
+      (r.placeId || r.mapUrl) &&
+      (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff),
+  );
 }
 
 // ─── Restaurant ratings ───────────────────────────────────────────────────────

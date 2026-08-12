@@ -57,9 +57,12 @@ interface RestaurantForm {
   notes: string;
   tagIds: number[];
   mapUrl: string;
+  /** Set when "Look up" resolved a Maps link — carried through to the add
+   *  mutation so the row keeps its provider identity (and can get hours). */
+  placeId: string | null;
 }
 
-const EMPTY_FORM: RestaurantForm = { name: "", notes: "", tagIds: [], mapUrl: "" };
+const EMPTY_FORM: RestaurantForm = { name: "", notes: "", tagIds: [], mapUrl: "", placeId: null };
 
 export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, distanceEnabled, originLabel }: RestaurantTabProps) {
   const [showAdd, setShowAdd] = useState(false);
@@ -175,6 +178,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         return {
           ...f,
           name: place.name,
+          // Keep the resolved place id so the saved row can fetch opening hours.
+          placeId: place.placeId ?? f.placeId,
           tagIds: tag && !f.tagIds.includes(tag.id) ? [...f.tagIds, tag.id] : f.tagIds,
         };
       });
@@ -241,7 +246,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   };
 
   const openEdit = (r: NonNullable<typeof restaurants>[number]) => {
-    setForm({ name: r.name, notes: r.notes ?? "", tagIds: r.tags.map((t) => t.id), mapUrl: r.mapUrl ?? "" });
+    // Carry the existing placeId through an edit so we don't discard the row's
+    // provider identity (and its ability to refresh hours).
+    setForm({ name: r.name, notes: r.notes ?? "", tagIds: r.tags.map((t) => t.id), mapUrl: r.mapUrl ?? "", placeId: r.placeId ?? null });
     setEditId(r.id);
   };
 
@@ -251,7 +258,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
     if (editId !== null) {
       updateRestaurant.mutate({ id: editId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds, mapUrl });
     } else {
-      addRestaurant.mutate({ wheelId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds, mapUrl });
+      addRestaurant.mutate({ wheelId, name: form.name.trim(), notes: form.notes || null, tagIds: form.tagIds, mapUrl, placeId: form.placeId });
     }
   };
 
@@ -427,9 +434,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         </div>
       )}
 
-      {/* Open-hours coverage + refresh. Only worth showing when the wheel has
-          provider-sourced places whose hours we could actually fetch. */}
-      {(restaurants?.some((r) => r.placeId) ?? false) && (
+      {/* Open-hours coverage + refresh. Shown when any restaurant is something we
+          could look hours up for — a provider place, or a saved Maps link we can
+          resolve. (Gating on placeId alone hid this from every hand-added row.) */}
+      {(restaurants?.some((r) => r.placeId || r.mapUrl) ?? false) && (
         <div
           className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-xs"
           style={{ background: "var(--card)", border: "1px solid var(--border)" }}
@@ -440,7 +448,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               const closed = restaurants?.filter((r) => r.openStatus === "closed").length ?? 0;
               const unknown = restaurants?.filter((r) => r.openStatus === "unknown").length ?? 0;
               if (closed > 0) return <>{closed} closed now — <strong className="text-foreground">off the wheel</strong> until they reopen</>;
-              if (unknown > 0) return <>{unknown} place{unknown === 1 ? "" : "s"} with unknown hours — always on the wheel</>;
+              if (unknown > 0) return <>{unknown} place{unknown === 1 ? "" : "s"} with no hours yet — <strong className="text-foreground">tap refresh</strong> to fetch them</>;
               return <>All open right now</>;
             })()}
           </span>
