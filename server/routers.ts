@@ -111,34 +111,48 @@ export const appRouter = router({
      * the existing "that wheel isn't available anymore" eject. Realtime state
      * (session/presence/latest spin) is NOT here — it's polled separately.
      */
-    bootstrap: protectedProcedure
+    bootstrap: publicProcedure
       .input(z.object({ wheelId: z.number().nullable().optional() }))
       .query(async ({ ctx, input }) => {
-        const wheels = await getUserWheels(ctx.user.id);
+        // Public (not protected) on purpose: it returns `user` and can therefore
+        // be issued in the SAME tick as auth.me, so httpBatchLink coalesces both
+        // into ONE http request instead of the client waiting for auth to resolve
+        // before asking for its data. An anonymous visitor gets user: null rather
+        // than an UNAUTHORIZED throw, which would trip the global
+        // redirect-to-login handler and send them to Google instead of the
+        // landing page. Authorization is unchanged: we only ever read wheels this
+        // user is a member of.
+        const user = ctx.user;
+        if (!user) {
+          return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+        }
+        const wheels = await getUserWheels(user.id);
         // Requested (if visible to them) → starred default → first wheel.
         const wheelId = resolveBootstrapWheelId(
           wheels.map((w) => w.id),
           input.wheelId,
-          ctx.user.defaultWheelId,
+          user.defaultWheelId,
         );
 
         if (wheelId == null) {
-          return { wheels, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+          return { user, wheels, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
         }
 
         const wheel = await getWheelById(wheelId);
         if (!wheel) {
-          return { wheels, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
+          return { user, wheels, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
         }
 
-        const [members, owner, rests, tagRows, ratingRows] = await Promise.all([
+        // All six reads are independent once we have the wheel — run them together
+        // rather than paying a serial DB round trip each.
+        const [members, owner, rests, tagRows, ratingRows, exclusions] = await Promise.all([
           getWheelMembers(wheelId),
           getUserById(wheel.ownerId),
           getRestaurantsByWheel(wheelId),
           getTagsForWheel(wheelId),
           getWheelRatingRows(wheelId),
+          getExclusions(wheelId, wheel.exclusionDays),
         ]);
-        const exclusions = await getExclusions(wheelId, wheel.exclusionDays);
         const now = new Date();
         // Same shape as restaurants.list — the client seeds that cache with it.
         const restaurants = rests.map((r) => {
@@ -153,12 +167,13 @@ export const appRouter = router({
         });
 
         return {
+          user,
           wheels,
           wheelId,
           wheel: { ...wheel, members, owner },
           restaurants,
           tags: tagRows,
-          ratings: summarizeRatings(ratingRows, ctx.user.id),
+          ratings: summarizeRatings(ratingRows, user.id),
         };
       }),
 
@@ -453,13 +468,34 @@ export const appRouter = router({
       }),
 
     add: protectedProcedure
-      .input(z.object({ wheelId: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()), mapUrl: z.string().max(512).nullable().optional() }))
+      .input(z.object({
+        wheelId: z.number(),
+        name: z.string().min(1).max(128),
+        notes: z.string().max(500).nullable(),
+        tagIds: z.array(z.number()),
+        mapUrl: z.string().max(512).nullable().optional(),
+        // When the name came from "Look up" on a pasted Maps link, the client
+        // passes the resolved place id through. Storing it is what lets opening
+        // hours (and later detail refreshes) work for hand-added restaurants —
+        // without it every such row looked like a name-only entry.
+        placeId: z.string().max(256).nullable().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
+        const id = await addRestaurant(
+          input.wheelId,
+          ctx.user.id,
+          input.name,
+          input.notes,
+          input.tagIds,
+          input.mapUrl ?? null,
+          input.placeId
+            ? { placeId: input.placeId, lat: null, lng: null, address: null, priceLevel: null, cuisine: null }
+            : null,
+        );
         // Best-effort: distance mode auto-computes a walk time for anything
         // it can locate. No-ops immediately if the wheel doesn't have it on.
         try {
@@ -467,6 +503,8 @@ export const appRouter = router({
         } catch {
           // adding the restaurant still succeeded; distance is a courtesy
         }
+        // Opening hours, same best-effort contract (never throws).
+        await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
         return { id };
       }),
 

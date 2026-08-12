@@ -114,15 +114,25 @@ export default function WheelApp() {
     return Number.isFinite(parsed) ? parsed : null;
   });
 
+  // Issued immediately — NOT gated on auth resolving. bootstrap is a public
+  // procedure that returns `user` itself, so this fires in the same tick as
+  // useAuth's auth.me and httpBatchLink coalesces both into ONE request. Waiting
+  // for auth first is what made a reload two serial serverless round trips.
   const bootstrapQuery = trpc.wheels.bootstrap.useQuery(
     { wheelId: initialWheelId },
-    { enabled: !loading && !!user, staleTime: 30_000 },
+    { staleTime: 30_000 },
   );
   const [seeded, setSeeded] = useState(false);
 
   useEffect(() => {
     const data = bootstrapQuery.data;
     if (!data) return;
+    // An anonymous visitor gets user: null — don't seed anything (and the effect
+    // above sends them to the landing page).
+    if (!data.user) {
+      setSeeded(true);
+      return;
+    }
     utils.wheels.list.setData(undefined, data.wheels);
     if (data.wheel && data.wheelId != null) {
       utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
@@ -143,7 +153,7 @@ export default function WheelApp() {
 
   const { data: tags } = trpc.tags.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && seeded }
+    { enabled: !!selectedWheelId && seeded && !!user }
   );
   const {
     data: restaurants,
@@ -152,12 +162,12 @@ export default function WheelApp() {
     refetch: refetchRestaurants,
   } = trpc.restaurants.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && seeded }
+    { enabled: !!selectedWheelId && seeded && !!user }
   );
   const { data: wheelData, error: wheelError } = trpc.wheels.get.useQuery(
     { id: selectedWheelId! },
     {
-      enabled: !!selectedWheelId && seeded,
+      enabled: !!selectedWheelId && seeded && !!user,
       retry: (count, err) =>
         err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
       // Loaded once for the wheel's config + owner. The live member roster (which
@@ -231,7 +241,10 @@ export default function WheelApp() {
   // Wheel count drives the first-run experience. Same query key as WheelSelector's
   // list and seeded by bootstrap, so this is a cache read — no extra request.
   const { data: wheels, isLoading: wheelsLoading } = trpc.wheels.list.useQuery(undefined, {
-    enabled: seeded,
+    // `!!user` matters here: bootstrap now resolves for anonymous visitors too, so
+    // without it this protected query would fire, throw UNAUTHORIZED, and trip the
+    // global redirect-to-login instead of letting them land on "/".
+    enabled: seeded && !!user,
   });
   const firstRun = seeded && !wheelsLoading && isFirstRun(wheels?.length ?? 0);
 
@@ -341,7 +354,7 @@ export default function WheelApp() {
   // there. Reads the viewer's current star so re-opening shows it pre-filled.
   const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && seeded },
+    { enabled: !!selectedWheelId && seeded && !!user },
   );
   const myStarsFor = (restaurantId: number) =>
     ratingSummaries?.find((s) => s.restaurantId === restaurantId)?.myStars ?? null;

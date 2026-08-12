@@ -8,8 +8,8 @@
  * (Same graceful-degradation shape as server/distance.ts.)
  */
 
-import { getRestaurantsNeedingHours, setRestaurantHours } from "./db";
-import { fetchPlaceHours, isPlacesConfigured } from "./places";
+import { getRestaurantsNeedingHours, setRestaurantHours, setRestaurantPlaceId } from "./db";
+import { fetchPlaceHours, isPlacesConfigured, resolvePlaceLink } from "./places";
 
 /** Re-fetch hours older than this (opening hours drift; a week is plenty fresh). */
 export const HOURS_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
@@ -31,7 +31,7 @@ export interface HoursRefreshResult {
  */
 export async function refreshWheelHours(wheelId: number): Promise<HoursRefreshResult> {
   if (!isPlacesConfigured()) return { updated: 0, providerFailed: false };
-  let targets: { id: number; placeId: string }[];
+  let targets: { id: number; placeId: string | null; mapUrl: string | null }[];
   try {
     targets = (await getRestaurantsNeedingHours(wheelId, HOURS_STALE_AFTER_MS)).slice(0, MAX_PER_RUN);
   } catch (err) {
@@ -44,14 +44,25 @@ export async function refreshWheelHours(wheelId: number): Promise<HoursRefreshRe
   let providerFailed = false;
   for (const t of targets) {
     try {
-      const hours = await fetchPlaceHours(t.placeId);
+      // Restaurants added by hand (including via a pasted Maps link) have no
+      // placeId, so resolve one from the saved link first and remember it.
+      let placeId = t.placeId;
+      if (!placeId && t.mapUrl) {
+        const resolved = await resolvePlaceLink(t.mapUrl);
+        if (resolved?.placeId) {
+          placeId = resolved.placeId;
+          await setRestaurantPlaceId(t.id, placeId);
+        }
+      }
+      if (!placeId) continue; // nothing to look up — stays "unknown", stays on the wheel
+      const hours = await fetchPlaceHours(placeId);
       // A place with genuinely no published hours: stamp hoursUpdatedAt anyway so
       // we don't re-request it on every spin, but leave the periods null/unknown.
       await setRestaurantHours(t.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
       updated += 1;
     } catch (err) {
       providerFailed = true;
-      console.error(`[openHours] fetch failed for restaurant ${t.id} (place ${t.placeId})`, err);
+      console.error(`[openHours] refresh failed for restaurant ${t.id}`, err);
     }
   }
   return { updated, providerFailed };
