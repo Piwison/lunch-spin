@@ -244,6 +244,12 @@ export default function WheelApp() {
   // ── Notifications (team accepts, aggregated across all shared wheels) ──────
   // Polled for the header bell's red dot + panel. Opening the panel marks read.
   const notificationsQuery = trpc.notifications.list.useQuery(undefined, {
+    // Deliberately NOT part of the entry batch. httpBatchLink coalesces whatever
+    // is issued in the same tick, so firing this alongside bootstrap made the
+    // entry response wait on the bell's queries too — and nothing on the first
+    // screen depends on it. Gating on `seeded` lets the wheel paint first and the
+    // bell fill in a moment later.
+    enabled: seeded && !!user,
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
   });
