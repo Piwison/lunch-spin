@@ -712,7 +712,13 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>WHEEL SETTINGS</DialogTitle>
           </DialogHeader>
           {editWheel && (
-            <div className="flex flex-col gap-4 px-5 pb-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
+            /* A BLOCK with space-y — deliberately not `flex flex-col gap-4`. As a
+               flex column its children (flex-shrink defaults to 1, and index.css's
+               unlayered `.flex{min-height:0}` removes the auto min-height floor)
+               got squashed below their content height once the body overflowed, so
+               the origin input, the locate button and the status lines rendered on
+               top of each other. */
+            <div className="space-y-4 px-5 pb-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
               <SettingsSection>Basics</SettingsSection>
               <Input
                 placeholder="Wheel name"

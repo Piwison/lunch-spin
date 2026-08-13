@@ -53,13 +53,6 @@ export default function Home() {
     if (!loading && user) navigate("/app");
   }, [user, loading, navigate]);
 
-  // Warm the /app route chunk as soon as we know we're heading there, so the
-  // redirect doesn't pay a fresh network hop for the lazy chunk.
-  useEffect(() => {
-    if (loading || !user) return;
-    void import("./WheelApp");
-  }, [loading, user]);
-
   // Smooth magnetic cursor (guests only — see isGuest; also skipped for touch
   // devices and reduced-motion users, where a custom cursor does nothing).
   useEffect(() => {
