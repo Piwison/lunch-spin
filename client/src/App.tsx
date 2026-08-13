@@ -6,10 +6,14 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import BrandLoader from "./components/BrandLoader";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import WheelApp from "./pages/WheelApp";
 
-// Code-split the heavier, behind-the-action routes so the landing page ships a
-// lean first-load bundle. Home stays eager — it's the entry paint.
-const WheelApp = lazy(() => import("./pages/WheelApp"));
+// WheelApp is imported STATICALLY, not lazily. It is the app — a signed-in user
+// reloading /app is the hot path, and as a lazy chunk its ~220 KB could only start
+// downloading after the entry bundle had been fetched AND parsed and the router had
+// matched, adding a serial round trip to every reload. Static means it joins the
+// entry's modulepreload graph and streams in parallel with the vendor chunks.
+// The genuinely rare routes below stay lazy.
 const JoinWheel = lazy(() => import("./pages/JoinWheel"));
 const GuestWheel = lazy(() => import("./pages/GuestWheel"));
 const NotFound = lazy(() => import("./pages/NotFound"));

@@ -8,7 +8,6 @@ import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
-import AppShellSkeleton from "@/components/AppShellSkeleton";
 import HistoryTab from "@/components/HistoryTab";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
@@ -550,7 +549,7 @@ export default function WheelApp() {
   if (loading || (!seeded && bootstrapQuery.isLoading)) {
     // Only reached on a cold load — with a persisted payload `seeded` is already
     // true on the first render and the real app paints straight away.
-    return <AppShellSkeleton />;
+    return <BrandLoader fullscreen label="Warming up your wheel" />;
   }
 
   if (!user) return null;
