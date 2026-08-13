@@ -13,7 +13,11 @@ import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
-import { applyRatingWeights, RATINGS } from "@shared/rating";
+import { RATINGS } from "@shared/rating";
+import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
+import { buildTasteProfile } from "@shared/tasteProfile";
+import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
+import { resolveBootstrapWheelId } from "@shared/bootstrap";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -21,6 +25,7 @@ import { matchCuisineTag } from "@shared/cuisineTag";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
 import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, walkingMatrix } from "./places";
 import { maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
+import { maybeFetchOneRestaurantHours, refreshWheelHours } from "./openHours";
 import {
   clearRoundAll,
   clearRoundVotes,
@@ -44,7 +49,6 @@ import {
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
-  getLatestRatings,
   getRestaurantStats,
   getSpinHistory,
   markNotificationsRead,
@@ -64,6 +68,8 @@ import {
   setWheelOrigin,
   updateRestaurant,
   updateWheel,
+  upsertRestaurantRating,
+  getWheelRatingRows,
 } from "./db";
 
 // A presence heartbeat counts as "online" for this long after the last ping.
@@ -88,6 +94,88 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
+
+    /**
+     * Everything the app needs on entry, in ONE round trip.
+     *
+     * The old sequence was three serial hops: auth.me → wheels.list → (wheels.get
+     * + restaurants.list + tags + ratings). The middle hop existed only to decide
+     * *which* wheel to open — but the server already knows the user's
+     * defaultWheelId, so it can resolve the target and return that wheel's data in
+     * the same response. The client seeds its per-query caches from this, so every
+     * existing consumer (WheelSelector, RestaurantTab, HistoryTab) reads warm data
+     * instead of re-fetching.
+     *
+     * Deliberately forgiving: an unknown/forbidden `wheelId` returns `wheel: null`
+     * rather than throwing, so the normal wheels.get path still runs and produces
+     * the existing "that wheel isn't available anymore" eject. Realtime state
+     * (session/presence/latest spin) is NOT here — it's polled separately.
+     */
+    bootstrap: publicProcedure
+      .input(z.object({ wheelId: z.number().nullable().optional() }))
+      .query(async ({ ctx, input }) => {
+        // Public (not protected) on purpose: it returns `user` and can therefore
+        // be issued in the SAME tick as auth.me, so httpBatchLink coalesces both
+        // into ONE http request instead of the client waiting for auth to resolve
+        // before asking for its data. An anonymous visitor gets user: null rather
+        // than an UNAUTHORIZED throw, which would trip the global
+        // redirect-to-login handler and send them to Google instead of the
+        // landing page. Authorization is unchanged: we only ever read wheels this
+        // user is a member of.
+        const user = ctx.user;
+        if (!user) {
+          return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+        }
+        const wheels = await getUserWheels(user.id);
+        // Requested (if visible to them) → starred default → first wheel.
+        const wheelId = resolveBootstrapWheelId(
+          wheels.map((w) => w.id),
+          input.wheelId,
+          user.defaultWheelId,
+        );
+
+        if (wheelId == null) {
+          return { user, wheels, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+        }
+
+        const wheel = await getWheelById(wheelId);
+        if (!wheel) {
+          return { user, wheels, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
+        }
+
+        // All six reads are independent once we have the wheel — run them together
+        // rather than paying a serial DB round trip each.
+        const [members, owner, rests, tagRows, ratingRows, exclusions] = await Promise.all([
+          getWheelMembers(wheelId),
+          getUserById(wheel.ownerId),
+          getRestaurantsByWheel(wheelId),
+          getTagsForWheel(wheelId),
+          getWheelRatingRows(wheelId),
+          getExclusions(wheelId, wheel.exclusionDays),
+        ]);
+        const now = new Date();
+        // Same shape as restaurants.list — the client seeds that cache with it.
+        const restaurants = rests.map((r) => {
+          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+          return {
+            ...r,
+            isExcluded: exclusions.has(r.id),
+            excludedUntil: exclusions.get(r.id) ?? null,
+            openStatus: hours.status,
+            minutesUntilClose: hours.minutesUntilClose,
+          };
+        });
+
+        return {
+          user,
+          wheels,
+          wheelId,
+          wheel: { ...wheel, members, owner },
+          restaurants,
+          tags: tagRows,
+          ratings: summarizeRatings(ratingRows, user.id),
+        };
+      }),
 
     // ── Guest (no sign-in) reads ──────────────────────────────────────────────
     // Public-safe wheel for the /w/:id guest view. Only public wheels resolve;
@@ -118,6 +206,25 @@ export const appRouter = router({
         const members = await getWheelMembers(input.id);
         const owner = await getUserById(wheel.ownerId);
         return { ...wheel, members, owner };
+      }),
+
+    // One consolidated poll for a shared wheel's fast-changing state: the live
+    // member roster, the current round (veto/vote/dietary), and the latest spin.
+    // Replaces three separate 3s polls (wheels.get-for-members, session.state,
+    // spins.latest) with a single membership check + one round-trip — the main
+    // serverless-cost lever on an active shared wheel. The three reads run
+    // concurrently. Presence stays its own (slower, write-bearing) heartbeat.
+    realtime: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const [members, session, latestSpin] = await Promise.all([
+          getWheelMembers(input.wheelId),
+          getRoundMarks(input.wheelId).then(buildSessionState),
+          getLatestSpin(input.wheelId),
+        ]);
+        return { members, session, latestSpin };
       }),
 
     create: protectedProcedure
@@ -334,11 +441,19 @@ export const appRouter = router({
         if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
         const rests = await getRestaurantsByWheel(input.wheelId);
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-        return rests.map((r) => ({
-          ...r,
-          isExcluded: exclusions.has(r.id),
-          excludedUntil: exclusions.get(r.id) ?? null,
-        }));
+        const now = new Date();
+        return rests.map((r) => {
+          // Computed server-side so every client agrees on "open now" — and so the
+          // wheel the user sees matches what spins.create will actually allow.
+          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+          return {
+            ...r,
+            isExcluded: exclusions.has(r.id),
+            excludedUntil: exclusions.get(r.id) ?? null,
+            openStatus: hours.status,
+            minutesUntilClose: hours.minutesUntilClose,
+          };
+        });
       }),
 
     // Guest read for the /w/:id view: the full restaurant list of a public wheel
@@ -353,13 +468,34 @@ export const appRouter = router({
       }),
 
     add: protectedProcedure
-      .input(z.object({ wheelId: z.number(), name: z.string().min(1).max(128), notes: z.string().max(500).nullable(), tagIds: z.array(z.number()), mapUrl: z.string().max(512).nullable().optional() }))
+      .input(z.object({
+        wheelId: z.number(),
+        name: z.string().min(1).max(128),
+        notes: z.string().max(500).nullable(),
+        tagIds: z.array(z.number()),
+        mapUrl: z.string().max(512).nullable().optional(),
+        // When the name came from "Look up" on a pasted Maps link, the client
+        // passes the resolved place id through. Storing it is what lets opening
+        // hours (and later detail refreshes) work for hand-added restaurants —
+        // without it every such row looked like a name-only entry.
+        placeId: z.string().max(256).nullable().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const wheel = await getWheelById(input.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
+        const id = await addRestaurant(
+          input.wheelId,
+          ctx.user.id,
+          input.name,
+          input.notes,
+          input.tagIds,
+          input.mapUrl ?? null,
+          input.placeId
+            ? { placeId: input.placeId, lat: null, lng: null, address: null, priceLevel: null, cuisine: null }
+            : null,
+        );
         // Best-effort: distance mode auto-computes a walk time for anything
         // it can locate. No-ops immediately if the wheel doesn't have it on.
         try {
@@ -367,6 +503,8 @@ export const appRouter = router({
         } catch {
           // adding the restaurant still succeeded; distance is a courtesy
         }
+        // Opening hours, same best-effort contract (never throws).
+        await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
         return { id };
       }),
 
@@ -390,7 +528,10 @@ export const appRouter = router({
         if (!restaurant) throw new TRPCError({ code: "NOT_FOUND" });
         const wheel = await getWheelById(restaurant.wheelId);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
-        if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can edit restaurants" });
+        // Any member can edit a restaurant's details (name/notes/tags/link).
+        // Deleting stays owner-only (see restaurants.delete).
+        const isMember = await isWheelMember(restaurant.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN", message: "Only wheel members can edit restaurants" });
         await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
         return { success: true };
       }),
@@ -405,6 +546,45 @@ export const appRouter = router({
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
         await deleteRestaurant(input.id);
         return { success: true };
+      }),
+
+    // Refresh cached opening hours for this wheel's provider-sourced places.
+    // Member-gated. Reports providerFailed separately so a misconfigured Places
+    // key surfaces as an error instead of a silent "nothing happened".
+    refreshHours: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!isPlacesConfigured()) return { updated: 0, providerFailed: false, configured: false };
+        const res = await refreshWheelHours(input.wheelId);
+        return { ...res, configured: true };
+      }),
+
+    // ── Ratings (1–5 stars per member per place) ──────────────────────────────
+    // Any member rates any place on the wheel; re-rating overwrites their star.
+    rate: protectedProcedure
+      .input(z.object({ wheelId: z.number(), restaurantId: z.number(), stars: z.number().int().min(1).max(5) }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const restaurant = await getRestaurantById(input.restaurantId);
+        if (!restaurant || restaurant.wheelId !== input.wheelId) throw new TRPCError({ code: "NOT_FOUND" });
+        await upsertRestaurantRating(input.restaurantId, ctx.user.id, clampStars(input.stars));
+        return { success: true };
+      }),
+
+    // Per-restaurant rollup for the wheel: team average + count + the caller's
+    // own star. Aggregated by the pure shared/restaurantRating helper.
+    ratings: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
+        const rows = await getWheelRatingRows(input.wheelId);
+        return summarizeRatings(rows, ctx.user.id);
       }),
   }),
 
@@ -553,6 +733,9 @@ export const appRouter = router({
         } catch {
           // adding the restaurant still succeeded; distance is a courtesy
         }
+        // Same contract for opening hours: a provider place has a placeId, so
+        // fetch its weekly hours now. Never throws (see server/openHours.ts).
+        await maybeFetchOneRestaurantHours(id, input.place.placeId);
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
       }),
 
@@ -620,11 +803,30 @@ export const appRouter = router({
             ? []
             : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
         );
+        // Closed right now? Hard filter, decided server-side so a tampered
+        // candidate list can't spin a closed restaurant. Restaurants with unknown
+        // hours are spinnable (isSpinnableNow) — most wheels have hand-typed
+        // places with no provider hours, and dropping those would gut the wheel.
+        const closedNow = new Set(
+          rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id),
+        );
         const eligible = input.candidateIds.filter(
-          (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
+          (id) =>
+            valid.has(id) && !exclusions.has(id) && !vetoed.has(id) &&
+            !dietaryBlocked.has(id) && !closedNow.has(id),
         );
         if (eligible.length === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
+          // Distinguish "everything is closed" from the generic empty case, or the
+          // user just sees an unexplained failure at 3am.
+          const blockedOnlyByHours = input.candidateIds.some(
+            (id) => valid.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
+          );
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: blockedOnlyByHours
+              ? "Every restaurant on this wheel is closed right now."
+              : "No eligible restaurants to spin",
+          });
         }
 
         // Base weights: fairness mode favours neglected spots, else uniform.
@@ -632,8 +834,8 @@ export const appRouter = router({
         // A plain wheel with no signals stays a uniform pick.
         const votes = voteCounts(session);
         const hasVotes = votes.size > 0;
-        // Persistent preference: the latest "how was it?" per restaurant.
-        const ratings = await getLatestRatings(input.wheelId);
+        // Persistent preference: each restaurant's team average star rating.
+        const ratings = averageMapFromRows(await getWheelRatingRows(input.wheelId));
         const hasRatings = ratings.size > 0;
         let restaurantId: number;
         if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
@@ -664,8 +866,8 @@ export const appRouter = router({
             );
           }
           // Ratings are a persistent preference; votes are the live round signal
-          // and apply last so a team can still override "never again" this round.
-          base = applyRatingWeights(base, ratings);
+          // and apply last so a team can still override a low-rated place this round.
+          base = applyStarWeights(base, ratings);
           restaurantId = pickWeighted(applyVoteWeights(base, votes));
         } else {
           restaurantId = pickWinner(eligible);
@@ -841,6 +1043,24 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         return getRestaurantStats(input.wheelId);
       }),
+
+    // Team taste: aggregate the wheel's star ratings into overall mood +
+    // crowd-favourite places + cuisines the team leans toward / cools on.
+    tasteProfile: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const summaries = summarizeRatings(await getWheelRatingRows(input.wheelId), ctx.user.id);
+        const rests = await getRestaurantsByWheel(input.wheelId);
+        const metaById = new Map(rests.map((r) => [r.id, r]));
+        const items = summaries.map((s) => {
+          const r = metaById.get(s.restaurantId);
+          const cuisine = r?.tags.find((t) => t.category === "cuisine")?.name ?? r?.cuisine ?? null;
+          return { restaurantId: s.restaurantId, name: r?.name ?? "Unknown", cuisine, average: s.average, count: s.count };
+        });
+        return buildTasteProfile(items);
+      }),
   }),
 
   // ─── Smart Pick (free, no LLM) ──────────────────────────────────────────────
@@ -932,7 +1152,7 @@ export const appRouter = router({
             cuisineLastPicked,
           );
         }
-        base = applyRatingWeights(base, await getLatestRatings(input.wheelId));
+        base = applyStarWeights(base, averageMapFromRows(await getWheelRatingRows(input.wheelId)));
         base = applyVoteWeights(base, voteCounts(session));
 
         const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });

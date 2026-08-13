@@ -17,6 +17,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   boolean,
   decimal,
+  index,
   int,
   json,
   mysqlEnum,
@@ -64,13 +65,22 @@ var wheels = mysqlTable("wheels", {
   originLabel: varchar("originLabel", { length: 64 }).default("Office"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-});
+}, (t2) => ({
+  // getWheelList reads owned wheels by ownerId; join-by-invite looks up inviteToken.
+  ownerIdx: index("wheels_owner_idx").on(t2.ownerId),
+  inviteTokenIdx: index("wheels_invite_token_idx").on(t2.inviteToken)
+}));
 var wheelMembers = mysqlTable("wheel_members", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
   userId: int("userId").notNull(),
   joinedAt: timestamp("joinedAt").defaultNow().notNull()
-});
+}, (t2) => ({
+  // isWheelMember (WHERE wheelId AND userId) runs on every shared-wheel poll;
+  // getWheelList reads a user's memberships (WHERE userId).
+  wheelUserIdx: index("wheel_members_wheel_user_idx").on(t2.wheelId, t2.userId),
+  userIdx: index("wheel_members_user_idx").on(t2.userId)
+}));
 var tags = mysqlTable("tags", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 64 }).notNull(),
@@ -81,7 +91,10 @@ var tags = mysqlTable("tags", {
   wheelId: int("wheelId"),
   // null = global/system tag; otherwise scoped to one wheel
   createdAt: timestamp("createdAt").defaultNow().notNull()
-});
+}, (t2) => ({
+  // getTagsForWheel filters by wheelId (plus the null/global set).
+  wheelIdx: index("tags_wheel_idx").on(t2.wheelId)
+}));
 var restaurants = mysqlTable("restaurants", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -102,8 +115,16 @@ var restaurants = mysqlTable("restaurants", {
   priceLevel: int("priceLevel"),
   // 1..4 (nullable)
   cuisine: varchar("cuisine", { length: 64 }),
+  // Weekly opening hours from Google Places (`periods`), evaluated by
+  // shared/openHours.ts. null = unknown, which is KEPT on the wheel (never
+  // treated as closed) — most wheels have hand-typed places with no hours.
   openHours: json("openHours"),
-  // raw provider hours; open-now is a hint, not a hard filter
+  // The place's own UTC offset (Places `utc_offset_minutes`), so "is it open now"
+  // is answered in the restaurant's local time without a timezone database.
+  utcOffsetMinutes: int("utcOffsetMinutes"),
+  // When the hours above were last fetched — opening hours change, so this drives
+  // the refresh cadence (stale rows get re-fetched, not trusted forever).
+  hoursUpdatedAt: timestamp("hoursUpdatedAt"),
   source: mysqlEnum("source", ["provider", "user"]).default("user").notNull(),
   // Walking seconds from the wheel's distance-mode origin (shared/wheelDistance.ts,
   // server/distance.ts); null = distance mode is off, not yet computed, or this
@@ -112,12 +133,27 @@ var restaurants = mysqlTable("restaurants", {
   walkSeconds: int("walkSeconds"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-});
+}, (t2) => ({
+  // restaurants.list / stats / distance all scope by wheelId.
+  wheelIdx: index("restaurants_wheel_idx").on(t2.wheelId)
+}));
 var restaurantTags = mysqlTable("restaurant_tags", {
   id: int("id").autoincrement().primaryKey(),
   restaurantId: int("restaurantId").notNull(),
   tagId: int("tagId").notNull()
-});
+}, (t2) => ({
+  // The tag join loads all tags for a wheel's restaurants (WHERE restaurantId IN …);
+  // tag filtering looks up rows by tagId.
+  restaurantIdx: index("restaurant_tags_restaurant_idx").on(t2.restaurantId),
+  tagIdx: index("restaurant_tags_tag_idx").on(t2.tagId)
+}));
+var restaurantRatings = mysqlTable("restaurant_ratings", {
+  restaurantId: int("restaurantId").notNull(),
+  userId: int("userId").notNull(),
+  stars: int("stars").notNull(),
+  // 1..5, enforced in shared/restaurantRating.ts
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (t2) => ({ pk: primaryKey({ columns: [t2.restaurantId, t2.userId] }) }));
 var spinHistory = mysqlTable("spin_history", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -133,7 +169,12 @@ var spinHistory = mysqlTable("spin_history", {
   // Post-spin "how was it?" verdict; null = unrated. The latest rating per
   // restaurant biases future spins (shared/rating.ts).
   rating: mysqlEnum("rating", ["loved", "ok", "never"])
-});
+}, (t2) => ({
+  // The hottest table: spins.latest (WHERE wheelId ORDER BY spunAt DESC), history,
+  // and exclusion all scope by wheelId + recency; ratings look up by restaurantId.
+  wheelSpunAtIdx: index("spin_history_wheel_spun_at_idx").on(t2.wheelId, t2.spunAt),
+  restaurantIdx: index("spin_history_restaurant_idx").on(t2.restaurantId)
+}));
 var notifications = mysqlTable("notifications", {
   id: int("id").autoincrement().primaryKey(),
   wheelId: int("wheelId").notNull(),
@@ -141,7 +182,10 @@ var notifications = mysqlTable("notifications", {
   restaurantId: int("restaurantId").notNull(),
   actorUserId: int("actorUserId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull()
-});
+}, (t2) => ({
+  // The bell polls notifications per wheel, newest first.
+  wheelCreatedIdx: index("notifications_wheel_created_idx").on(t2.wheelId, t2.createdAt)
+}));
 var wheelPresence = mysqlTable("wheel_presence", {
   wheelId: int("wheelId").notNull(),
   userId: int("userId").notNull(),
@@ -335,10 +379,17 @@ async function getPopularPublicWheels(limit) {
 async function getUserWheels(userId) {
   const db = await getDb();
   if (!db) return [];
-  const owned = await db.select().from(wheels).where(eq(wheels.ownerId, userId));
-  const memberships = await db.select({ wheelId: wheelMembers.wheelId }).from(wheelMembers).where(eq(wheelMembers.userId, userId));
-  const memberWheelIds = memberships.map((m) => m.wheelId).filter((id) => !owned.find((w) => w.id === id));
-  const joined = memberWheelIds.length > 0 ? await db.select().from(wheels).where(inArray(wheels.id, memberWheelIds)) : [];
+  const rows = await db.select().from(wheels).where(
+    or(
+      eq(wheels.ownerId, userId),
+      inArray(
+        wheels.id,
+        db.select({ id: wheelMembers.wheelId }).from(wheelMembers).where(eq(wheelMembers.userId, userId))
+      )
+    )
+  );
+  const owned = rows.filter((w) => w.ownerId === userId);
+  const joined = rows.filter((w) => w.ownerId !== userId);
   return [...owned, ...joined];
 }
 async function updateWheel(id, data) {
@@ -508,6 +559,44 @@ async function getRestaurantById(id) {
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
 }
+async function setRestaurantHours(id, openHours, utcOffsetMinutes) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(restaurants).set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: /* @__PURE__ */ new Date() }).where(eq(restaurants.id, id));
+}
+async function setRestaurantPlaceId(id, placeId) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(restaurants).set({ placeId }).where(eq(restaurants.id, id));
+}
+async function getRestaurantsNeedingHours(wheelId, staleAfterMs) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({
+    id: restaurants.id,
+    placeId: restaurants.placeId,
+    mapUrl: restaurants.mapUrl,
+    hoursUpdatedAt: restaurants.hoursUpdatedAt
+  }).from(restaurants).where(eq(restaurants.wheelId, wheelId));
+  const cutoff = Date.now() - staleAfterMs;
+  return rows.filter(
+    (r) => (r.placeId || r.mapUrl) && (!r.hoursUpdatedAt || new Date(r.hoursUpdatedAt).getTime() < cutoff)
+  );
+}
+async function upsertRestaurantRating(restaurantId, userId, stars) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(restaurantRatings).values({ restaurantId, userId, stars }).onDuplicateKeyUpdate({ set: { stars } });
+}
+async function getWheelRatingRows(wheelId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    restaurantId: restaurantRatings.restaurantId,
+    userId: restaurantRatings.userId,
+    stars: restaurantRatings.stars
+  }).from(restaurantRatings).innerJoin(restaurants, eq(restaurantRatings.restaurantId, restaurants.id)).where(eq(restaurants.wheelId, wheelId));
+}
 async function recordSpin(wheelId, restaurantId, spunBy) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -535,20 +624,6 @@ async function rateSpin(spinId, wheelId, spunBy, rating) {
   if (rows.length === 0) return null;
   await db.update(spinHistory).set({ rating }).where(eq(spinHistory.id, spinId));
   return rows[0].restaurantId;
-}
-async function getLatestRatings(wheelId) {
-  const db = await getDb();
-  if (!db) return /* @__PURE__ */ new Map();
-  const rows = await db.select({
-    restaurantId: spinHistory.restaurantId,
-    rating: spinHistory.rating,
-    spunAt: spinHistory.spunAt
-  }).from(spinHistory).where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.rating} IS NOT NULL`)).orderBy(sql`${spinHistory.spunAt} DESC`);
-  const latest = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    if (r.rating && !latest.has(r.restaurantId)) latest.set(r.restaurantId, r.rating);
-  }
-  return latest;
 }
 async function getExclusions(wheelId, windowDays) {
   const db = await getDb();
@@ -1612,19 +1687,160 @@ function applyVoteWeights(base, votes, voteWeight = VOTE_WEIGHT) {
 
 // shared/rating.ts
 var RATINGS = ["loved", "ok", "never"];
-var LOVED_BOOST = 1.6;
-var NEVER_DAMP = 0.15;
-function ratingWeight(r) {
-  if (r === "loved") return LOVED_BOOST;
-  if (r === "never") return NEVER_DAMP;
-  return 1;
+
+// shared/restaurantRating.ts
+var MIN_STARS = 1;
+var MAX_STARS = 5;
+function clampStars(n) {
+  const r = Math.round(n);
+  if (r < MIN_STARS) return MIN_STARS;
+  if (r > MAX_STARS) return MAX_STARS;
+  return r;
 }
-function applyRatingWeights(base, ratingById) {
-  if (ratingById.size === 0) return base;
+var NEVER_W = 0.15;
+var OK_W = 1;
+var LOVED_W = 1.6;
+function starWeight(avg) {
+  if (avg == null) return 1;
+  const a = Math.min(MAX_STARS, Math.max(MIN_STARS, avg));
+  if (a <= 3) return NEVER_W + (a - 1) / 2 * (OK_W - NEVER_W);
+  return OK_W + (a - 3) / 2 * (LOVED_W - OK_W);
+}
+function applyStarWeights(base, avgById) {
+  if (avgById.size === 0) return base;
   return base.map((w) => ({
     restaurantId: w.restaurantId,
-    weight: w.weight * ratingWeight(ratingById.get(w.restaurantId))
+    weight: w.weight * starWeight(avgById.get(w.restaurantId) ?? null)
   }));
+}
+function summarizeRatings(rows, viewerId) {
+  const byRestaurant = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    let e = byRestaurant.get(row.restaurantId);
+    if (!e) {
+      e = { sum: 0, count: 0, mine: null };
+      byRestaurant.set(row.restaurantId, e);
+    }
+    e.sum += row.stars;
+    e.count += 1;
+    if (row.userId === viewerId) e.mine = row.stars;
+  }
+  return Array.from(byRestaurant.entries()).map(([restaurantId, e]) => ({
+    restaurantId,
+    average: e.sum / e.count,
+    count: e.count,
+    myStars: e.mine
+  }));
+}
+function averageMapFromRows(rows) {
+  const summaries = summarizeRatings(rows, -1);
+  return new Map(summaries.map((s) => [s.restaurantId, s.average]));
+}
+
+// shared/tasteProfile.ts
+var MIN_PLACE_COUNT = 2;
+var MIN_CUISINE_COUNT = 3;
+var MIN_TOTAL_FOR_CARD = 5;
+var LEAN_AT = 3.5;
+var COOL_AT = 2.5;
+function buildTasteProfile(items) {
+  const totalRatings = items.reduce((sum, i) => sum + i.count, 0);
+  const overallAverage = totalRatings === 0 ? null : items.reduce((sum, i) => sum + i.average * i.count, 0) / totalRatings;
+  const topPlaces = items.filter((i) => i.count >= MIN_PLACE_COUNT).sort((a, b) => b.average - a.average || b.count - a.count || a.restaurantId - b.restaurantId).slice(0, 3).map((i) => ({ restaurantId: i.restaurantId, name: i.name, average: i.average, count: i.count }));
+  const byCuisine = /* @__PURE__ */ new Map();
+  for (const i of items) {
+    if (!i.cuisine) continue;
+    const e = byCuisine.get(i.cuisine) ?? { weighted: 0, count: 0 };
+    e.weighted += i.average * i.count;
+    e.count += i.count;
+    byCuisine.set(i.cuisine, e);
+  }
+  const cuisines = Array.from(byCuisine.entries()).filter(([, e]) => e.count >= MIN_CUISINE_COUNT).map(([cuisine, e]) => ({ cuisine, average: e.weighted / e.count, count: e.count }));
+  const leans = cuisines.filter((c) => c.average >= LEAN_AT).sort((a, b) => b.average - a.average || b.count - a.count).slice(0, 3);
+  const cools = cuisines.filter((c) => c.average <= COOL_AT).sort((a, b) => a.average - b.average || b.count - a.count).slice(0, 2);
+  return {
+    totalRatings,
+    overallAverage,
+    topPlaces,
+    leans,
+    cools,
+    hasEnoughData: totalRatings >= MIN_TOTAL_FOR_CARD
+  };
+}
+
+// shared/openHours.ts
+var CLOSING_SOON_MINUTES = 30;
+var MINUTES_PER_WEEK = 7 * 24 * 60;
+function isValidMark(m) {
+  if (!m || typeof m !== "object") return false;
+  const { day, time } = m;
+  return typeof day === "number" && day >= 0 && day <= 6 && typeof time === "string" && /^\d{4}$/.test(time);
+}
+function parsePeriods(raw) {
+  const arr = Array.isArray(raw) ? raw : raw && typeof raw === "object" && Array.isArray(raw.periods) ? raw.periods : null;
+  if (!arr || arr.length === 0) return null;
+  const periods = arr.filter((p) => {
+    if (!p || typeof p !== "object") return false;
+    const { open, close } = p;
+    if (!isValidMark(open)) return false;
+    return close === void 0 || close === null || isValidMark(close);
+  });
+  return periods.length > 0 ? periods : null;
+}
+function localWeekMinutes(now, utcOffsetMinutes) {
+  const local = new Date(now.getTime() + utcOffsetMinutes * 6e4);
+  return local.getUTCDay() * 1440 + local.getUTCHours() * 60 + local.getUTCMinutes();
+}
+function markMinutes(m) {
+  return m.day * 1440 + Number(m.time.slice(0, 2)) * 60 + Number(m.time.slice(2, 4));
+}
+function activeMinutesLeft(period, nowMinutes) {
+  const start = markMinutes(period.open);
+  if (!period.close) return Number.POSITIVE_INFINITY;
+  let end = markMinutes(period.close);
+  if (end <= start) end += MINUTES_PER_WEEK;
+  for (const t2 of [nowMinutes, nowMinutes + MINUTES_PER_WEEK]) {
+    if (t2 >= start && t2 < end) return end - t2;
+  }
+  return null;
+}
+function isOpenAt(periods, now, utcOffsetMinutes) {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  return periods.some((p) => activeMinutesLeft(p, nowMinutes) !== null);
+}
+function minutesUntilClose(periods, now, utcOffsetMinutes) {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  let best = null;
+  for (const p of periods) {
+    const left = activeMinutesLeft(p, nowMinutes);
+    if (left === null || !Number.isFinite(left)) continue;
+    if (best === null || left < best) best = left;
+  }
+  return best;
+}
+function openState(periods, now, utcOffsetMinutes) {
+  const open = isOpenAt(periods, now, utcOffsetMinutes);
+  if (open === null) return { status: "unknown", minutesUntilClose: null };
+  if (!open) return { status: "closed", minutesUntilClose: null };
+  const left = minutesUntilClose(periods, now, utcOffsetMinutes);
+  if (left !== null && left <= CLOSING_SOON_MINUTES) {
+    return { status: "closing_soon", minutesUntilClose: left };
+  }
+  return { status: "open", minutesUntilClose: left };
+}
+function isSpinnableNow(rawOpenHours, utcOffsetMinutes, now = /* @__PURE__ */ new Date()) {
+  const state = openState(parsePeriods(rawOpenHours), now, utcOffsetMinutes ?? 0);
+  return state.status !== "closed";
+}
+
+// shared/bootstrap.ts
+function resolveBootstrapWheelId(accessibleWheelIds, requestedWheelId, defaultWheelId) {
+  const accessible = new Set(accessibleWheelIds);
+  if (requestedWheelId != null && accessible.has(requestedWheelId)) return requestedWheelId;
+  if (defaultWheelId != null && accessible.has(defaultWheelId)) return defaultWheelId;
+  return accessibleWheelIds[0] ?? null;
 }
 
 // shared/realtimeState.ts
@@ -1993,6 +2209,30 @@ async function placeDetails(placeId, apiKey) {
   if (data.status !== "OK" || !data.result) return null;
   return mapGooglePlace(data.result);
 }
+async function fetchPlaceHours(placeId) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  const url = new URL(PLACE_DETAILS_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set("fields", "opening_hours,utc_offset");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6e3);
+  try {
+    const res = await fetch(url.toString(), { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Place Details (hours) failed (${res.status})`);
+    const data = await res.json();
+    if (data.status !== "OK" || !data.result) return null;
+    const periods = data.result.opening_hours?.periods ?? null;
+    if (!periods) return null;
+    return {
+      periods,
+      utcOffsetMinutes: typeof data.result.utc_offset === "number" ? data.result.utc_offset : null
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 async function findPlace(text2, bias, apiKey) {
   const url = new URL(FIND_PLACE_URL);
   url.searchParams.set("key", apiKey);
@@ -2141,6 +2381,52 @@ async function maybeComputeOneDistance(wheelId, restaurantId) {
   }
 }
 
+// server/openHours.ts
+var HOURS_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1e3;
+var MAX_PER_RUN = 25;
+async function refreshWheelHours(wheelId) {
+  if (!isPlacesConfigured()) return { updated: 0, providerFailed: false };
+  let targets;
+  try {
+    targets = (await getRestaurantsNeedingHours(wheelId, HOURS_STALE_AFTER_MS)).slice(0, MAX_PER_RUN);
+  } catch (err) {
+    console.error("[openHours] failed to list restaurants needing hours", err);
+    return { updated: 0, providerFailed: false };
+  }
+  if (targets.length === 0) return { updated: 0, providerFailed: false };
+  let updated = 0;
+  let providerFailed = false;
+  for (const t2 of targets) {
+    try {
+      let placeId = t2.placeId;
+      if (!placeId && t2.mapUrl) {
+        const resolved = await resolvePlaceLink(t2.mapUrl);
+        if (resolved?.placeId) {
+          placeId = resolved.placeId;
+          await setRestaurantPlaceId(t2.id, placeId);
+        }
+      }
+      if (!placeId) continue;
+      const hours = await fetchPlaceHours(placeId);
+      await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+      updated += 1;
+    } catch (err) {
+      providerFailed = true;
+      console.error(`[openHours] refresh failed for restaurant ${t2.id}`, err);
+    }
+  }
+  return { updated, providerFailed };
+}
+async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
+  if (!placeId || !isPlacesConfigured()) return;
+  try {
+    const hours = await fetchPlaceHours(placeId);
+    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+  } catch (err) {
+    console.error(`[openHours] initial fetch failed for restaurant ${restaurantId}`, err);
+  }
+}
+
 // server/routers.ts
 var PRESENCE_TTL_MS = 25e3;
 var appRouter = router({
@@ -2157,6 +2443,69 @@ var appRouter = router({
   wheels: router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
+    }),
+    /**
+     * Everything the app needs on entry, in ONE round trip.
+     *
+     * The old sequence was three serial hops: auth.me → wheels.list → (wheels.get
+     * + restaurants.list + tags + ratings). The middle hop existed only to decide
+     * *which* wheel to open — but the server already knows the user's
+     * defaultWheelId, so it can resolve the target and return that wheel's data in
+     * the same response. The client seeds its per-query caches from this, so every
+     * existing consumer (WheelSelector, RestaurantTab, HistoryTab) reads warm data
+     * instead of re-fetching.
+     *
+     * Deliberately forgiving: an unknown/forbidden `wheelId` returns `wheel: null`
+     * rather than throwing, so the normal wheels.get path still runs and produces
+     * the existing "that wheel isn't available anymore" eject. Realtime state
+     * (session/presence/latest spin) is NOT here — it's polled separately.
+     */
+    bootstrap: publicProcedure.input(z3.object({ wheelId: z3.number().nullable().optional() })).query(async ({ ctx, input }) => {
+      const user = ctx.user;
+      if (!user) {
+        return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+      }
+      const wheels2 = await getUserWheels(user.id);
+      const wheelId = resolveBootstrapWheelId(
+        wheels2.map((w) => w.id),
+        input.wheelId,
+        user.defaultWheelId
+      );
+      if (wheelId == null) {
+        return { user, wheels: wheels2, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
+      }
+      const wheel = await getWheelById(wheelId);
+      if (!wheel) {
+        return { user, wheels: wheels2, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
+      }
+      const [members, owner, rests, tagRows, ratingRows, exclusions] = await Promise.all([
+        getWheelMembers(wheelId),
+        getUserById(wheel.ownerId),
+        getRestaurantsByWheel(wheelId),
+        getTagsForWheel(wheelId),
+        getWheelRatingRows(wheelId),
+        getExclusions(wheelId, wheel.exclusionDays)
+      ]);
+      const now = /* @__PURE__ */ new Date();
+      const restaurants2 = rests.map((r) => {
+        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+        return {
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          openStatus: hours.status,
+          minutesUntilClose: hours.minutesUntilClose
+        };
+      });
+      return {
+        user,
+        wheels: wheels2,
+        wheelId,
+        wheel: { ...wheel, members, owner },
+        restaurants: restaurants2,
+        tags: tagRows,
+        ratings: summarizeRatings(ratingRows, user.id)
+      };
     }),
     // ── Guest (no sign-in) reads ──────────────────────────────────────────────
     // Public-safe wheel for the /w/:id guest view. Only public wheels resolve;
@@ -2179,6 +2528,22 @@ var appRouter = router({
       const members = await getWheelMembers(input.id);
       const owner = await getUserById(wheel.ownerId);
       return { ...wheel, members, owner };
+    }),
+    // One consolidated poll for a shared wheel's fast-changing state: the live
+    // member roster, the current round (veto/vote/dietary), and the latest spin.
+    // Replaces three separate 3s polls (wheels.get-for-members, session.state,
+    // spins.latest) with a single membership check + one round-trip — the main
+    // serverless-cost lever on an active shared wheel. The three reads run
+    // concurrently. Presence stays its own (slower, write-bearing) heartbeat.
+    realtime: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const [members, session, latestSpin] = await Promise.all([
+        getWheelMembers(input.wheelId),
+        getRoundMarks(input.wheelId).then(buildSessionState),
+        getLatestSpin(input.wheelId)
+      ]);
+      return { members, session, latestSpin };
     }),
     create: protectedProcedure.input(z3.object({
       name: z3.string().min(1).max(128),
@@ -2338,11 +2703,17 @@ var appRouter = router({
       if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
       const rests = await getRestaurantsByWheel(input.wheelId);
       const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-      return rests.map((r) => ({
-        ...r,
-        isExcluded: exclusions.has(r.id),
-        excludedUntil: exclusions.get(r.id) ?? null
-      }));
+      const now = /* @__PURE__ */ new Date();
+      return rests.map((r) => {
+        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
+        return {
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          openStatus: hours.status,
+          minutesUntilClose: hours.minutesUntilClose
+        };
+      });
     }),
     // Guest read for the /w/:id view: the full restaurant list of a public wheel
     // (guests spin everything — no exclusion state). Public-safe fields only.
@@ -2352,16 +2723,36 @@ var appRouter = router({
       const rests = await getRestaurantsByWheel(input.wheelId);
       return rests.map(toPublicRestaurant);
     }),
-    add: protectedProcedure.input(z3.object({ wheelId: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()), mapUrl: z3.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
+    add: protectedProcedure.input(z3.object({
+      wheelId: z3.number(),
+      name: z3.string().min(1).max(128),
+      notes: z3.string().max(500).nullable(),
+      tagIds: z3.array(z3.number()),
+      mapUrl: z3.string().max(512).nullable().optional(),
+      // When the name came from "Look up" on a pasted Maps link, the client
+      // passes the resolved place id through. Storing it is what lets opening
+      // hours (and later detail refreshes) work for hand-added restaurants —
+      // without it every such row looked like a name-only entry.
+      placeId: z3.string().max(256).nullable().optional()
+    })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const id = await addRestaurant(input.wheelId, ctx.user.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
+      const id = await addRestaurant(
+        input.wheelId,
+        ctx.user.id,
+        input.name,
+        input.notes,
+        input.tagIds,
+        input.mapUrl ?? null,
+        input.placeId ? { placeId: input.placeId, lat: null, lng: null, address: null, priceLevel: null, cuisine: null } : null
+      );
       try {
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
+      await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
       return { id };
     }),
     addBulk: protectedProcedure.input(z3.object({ wheelId: z3.number(), text: z3.string().max(1e4) })).mutation(async ({ ctx, input }) => {
@@ -2379,7 +2770,8 @@ var appRouter = router({
       if (!restaurant) throw new TRPCError3({ code: "NOT_FOUND" });
       const wheel = await getWheelById(restaurant.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
-      if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Only the wheel creator can edit restaurants" });
+      const isMember = await isWheelMember(restaurant.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN", message: "Only wheel members can edit restaurants" });
       await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
       return { success: true };
     }),
@@ -2391,6 +2783,36 @@ var appRouter = router({
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Only the wheel creator can delete restaurants" });
       await deleteRestaurant(input.id);
       return { success: true };
+    }),
+    // Refresh cached opening hours for this wheel's provider-sourced places.
+    // Member-gated. Reports providerFailed separately so a misconfigured Places
+    // key surfaces as an error instead of a silent "nothing happened".
+    refreshHours: protectedProcedure.input(z3.object({ wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      if (!isPlacesConfigured()) return { updated: 0, providerFailed: false, configured: false };
+      const res = await refreshWheelHours(input.wheelId);
+      return { ...res, configured: true };
+    }),
+    // ── Ratings (1–5 stars per member per place) ──────────────────────────────
+    // Any member rates any place on the wheel; re-rating overwrites their star.
+    rate: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number(), stars: z3.number().int().min(1).max(5) })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const restaurant = await getRestaurantById(input.restaurantId);
+      if (!restaurant || restaurant.wheelId !== input.wheelId) throw new TRPCError3({ code: "NOT_FOUND" });
+      await upsertRestaurantRating(input.restaurantId, ctx.user.id, clampStars(input.stars));
+      return { success: true };
+    }),
+    // Per-restaurant rollup for the wheel: team average + count + the caller's
+    // own star. Aggregated by the pure shared/restaurantRating helper.
+    ratings: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
+      const rows = await getWheelRatingRows(input.wheelId);
+      return summarizeRatings(rows, ctx.user.id);
     })
   }),
   // ─── Places (located wheel) ───────────────────────────────────────────────────
@@ -2514,6 +2936,7 @@ var appRouter = router({
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
+      await maybeFetchOneRestaurantHours(id, input.place.placeId);
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
     }),
     // Resolve a pasted Google Maps link into a nameable place (Place Details /
@@ -2568,15 +2991,24 @@ var appRouter = router({
       const dietaryBlocked = new Set(
         avoidedTags.size === 0 ? [] : rests.filter((r) => r.tags.some((t2) => avoidedTags.has(t2.id))).map((r) => r.id)
       );
+      const closedNow = new Set(
+        rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id)
+      );
       const eligible = input.candidateIds.filter(
-        (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2)
+        (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2) && !closedNow.has(id2)
       );
       if (eligible.length === 0) {
-        throw new TRPCError3({ code: "BAD_REQUEST", message: "No eligible restaurants to spin" });
+        const blockedOnlyByHours = input.candidateIds.some(
+          (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2)
+        );
+        throw new TRPCError3({
+          code: "BAD_REQUEST",
+          message: blockedOnlyByHours ? "Every restaurant on this wheel is closed right now." : "No eligible restaurants to spin"
+        });
       }
       const votes = voteCounts(session);
       const hasVotes = votes.size > 0;
-      const ratings = await getLatestRatings(input.wheelId);
+      const ratings = averageMapFromRows(await getWheelRatingRows(input.wheelId));
       const hasRatings = ratings.size > 0;
       let restaurantId;
       if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
@@ -2605,7 +3037,7 @@ var appRouter = router({
             cuisineLastPicked
           );
         }
-        base = applyRatingWeights(base, ratings);
+        base = applyStarWeights(base, ratings);
         restaurantId = pickWeighted(applyVoteWeights(base, votes));
       } else {
         restaurantId = pickWinner(eligible);
@@ -2733,6 +3165,21 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getRestaurantStats(input.wheelId);
+    }),
+    // Team taste: aggregate the wheel's star ratings into overall mood +
+    // crowd-favourite places + cuisines the team leans toward / cools on.
+    tasteProfile: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const summaries = summarizeRatings(await getWheelRatingRows(input.wheelId), ctx.user.id);
+      const rests = await getRestaurantsByWheel(input.wheelId);
+      const metaById = new Map(rests.map((r) => [r.id, r]));
+      const items = summaries.map((s) => {
+        const r = metaById.get(s.restaurantId);
+        const cuisine = r?.tags.find((t2) => t2.category === "cuisine")?.name ?? r?.cuisine ?? null;
+        return { restaurantId: s.restaurantId, name: r?.name ?? "Unknown", cuisine, average: s.average, count: s.count };
+      });
+      return buildTasteProfile(items);
     })
   }),
   // ─── Smart Pick (free, no LLM) ──────────────────────────────────────────────
@@ -2811,7 +3258,7 @@ var appRouter = router({
           cuisineLastPicked
         );
       }
-      base = applyRatingWeights(base, await getLatestRatings(input.wheelId));
+      base = applyStarWeights(base, averageMapFromRows(await getWheelRatingRows(input.wheelId)));
       base = applyVoteWeights(base, voteCounts(session));
       const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });
       base = applyMoodBoost(base, moodBoost(candidates, keywords));

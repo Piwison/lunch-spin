@@ -8,7 +8,20 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Static-ish lists (wheels, restaurants, tags, history) were refetching on
+      // every mount and every window focus (React Query's default staleTime is 0).
+      // Give them a short freshness window and stop the focus refetch. Realtime
+      // queries set their own refetchInterval, which is independent of staleTime,
+      // so shared-wheel polling is unaffected; the notifications query keeps its
+      // explicit refetchOnWindowFocus:true override.
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -64,5 +77,21 @@ createRoot(document.getElementById("root")!).render(
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
+// Analytics, injected only when configured. This used to be a literal
+// <script src="%VITE_ANALYTICS_ENDPOINT%/umami"> in index.html, which shipped
+// un-substituted when the env vars were unset — firing a 404 request at our own
+// origin on every page load. Appended after load so it never delays first paint.
+const analyticsEndpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+const analyticsWebsiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+if (analyticsEndpoint?.startsWith("http") && analyticsWebsiteId) {
+  window.addEventListener("load", () => {
+    const s = document.createElement("script");
+    s.defer = true;
+    s.src = `${analyticsEndpoint.replace(/\/$/, "")}/umami`;
+    s.dataset.websiteId = analyticsWebsiteId;
+    document.body.appendChild(s);
   });
 }

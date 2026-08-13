@@ -63,6 +63,16 @@ function exclusionOptionsFor(current: number) {
 /** Per-wheel actions, consolidated into one kebab menu so they can never overlap
  *  the row's select target (the old always-on icon cluster caused tap-hijack on
  *  mobile). Shared by the desktop rail and the mobile switcher sheet. */
+/** Group heading inside the settings dialog — turns one long flat list of
+ *  controls into scannable sections (Basics / Sharing / Spin rules / Distance). */
+function SettingsSection({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] font-bold tracking-[0.12em] uppercase text-muted-foreground/70 pt-1 first:pt-0">
+      {children}
+    </div>
+  );
+}
+
 function WheelActionsMenu({
   wheel,
   isOwner,
@@ -692,18 +702,31 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
 
       {/* Wheel settings dialog */}
       <Dialog open={!!editWheel} onOpenChange={(open) => { if (!open) setEditWheel(null); }}>
-        <DialogContent className="glass border-border/50 max-w-sm">
-          <DialogHeader>
+        {/* This dialog is the app's longest, and on a phone it used to overflow the
+            viewport with Save stranded off-screen. It now owns its own layout: a
+            pinned title, a single scrolling body, and a pinned footer so Save is
+            always reachable no matter how many sections are expanded. (p-0 +
+            flex-col overrides DialogContent's default grid/padding.) */}
+        <DialogContent className="glass border-border/50 max-w-sm p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-3 flex-shrink-0">
             <DialogTitle style={{ fontFamily: "var(--font-display)" }}>WHEEL SETTINGS</DialogTitle>
           </DialogHeader>
           {editWheel && (
-            <div className="flex flex-col gap-4 pt-2">
+            /* A BLOCK with space-y — deliberately not `flex flex-col gap-4`. As a
+               flex column its children (flex-shrink defaults to 1, and index.css's
+               unlayered `.flex{min-height:0}` removes the auto min-height floor)
+               got squashed below their content height once the body overflowed, so
+               the origin input, the locate button and the status lines rendered on
+               top of each other. */
+            <div className="space-y-4 px-5 pb-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
+              <SettingsSection>Basics</SettingsSection>
               <Input
                 placeholder="Wheel name"
                 value={editWheel.name}
                 onChange={(e) => setEditWheel({ ...editWheel, name: e.target.value })}
                 className="bg-secondary/50 border-border/50"
               />
+              <SettingsSection>Sharing</SettingsSection>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Shared team wheel</Label>
                 <Switch checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
@@ -791,6 +814,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                   </div>
                 );
               })()}
+              <SettingsSection>Spin rules</SettingsSection>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
                 <Select value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
@@ -813,10 +837,11 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 <Switch checked={editWheel.rotateCuisines} onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })} />
               </div>
 
+              <SettingsSection>Distance</SettingsSection>
               {/* Distance mode — its origin (paste a link / geolocate) is resolved
                   into local state here and only actually persisted by the single
                   save button below, together with everything else in this dialog. */}
-              <div className="flex flex-col gap-3 pt-3 border-t border-border/30">
+              <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">Distance mode</Label>
                   <Switch
@@ -899,12 +924,21 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 )}
               </div>
 
+            </div>
+          )}
+          {/* Pinned footer — outside the scroll area, so Save (and any error) is
+              visible whatever the body is scrolled to. */}
+          {editWheel && (
+            <div
+              className="flex flex-col gap-2 px-5 py-4 flex-shrink-0"
+              style={{ borderTop: "1px solid var(--border)", background: "var(--glass-opaque)" }}
+            >
               <ErrorChip error={updateError} onDismiss={() => setUpdateError(null)} />
               <ErrorChip error={originError} onDismiss={() => setOriginError(null)} />
               <Button
                 onClick={saveWheelSettings}
                 disabled={!editWheel.name.trim() || savingWheelSettings}
-                className="transition-all duration-200 active:scale-[0.97]"
+                className="w-full transition-all duration-200 active:scale-[0.97]"
                 style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
               >
                 {savingWheelSettings ? (
