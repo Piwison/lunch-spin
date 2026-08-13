@@ -140,12 +140,28 @@ export async function getPopularPublicWheels(limit: number) {
 export async function getUserWheels(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  // Own wheels
-  const owned = await db.select().from(wheels).where(eq(wheels.ownerId, userId));
-  // Joined shared wheels
-  const memberships = await db.select({ wheelId: wheelMembers.wheelId }).from(wheelMembers).where(eq(wheelMembers.userId, userId));
-  const memberWheelIds = memberships.map((m) => m.wheelId).filter((id) => !owned.find((w) => w.id === id));
-  const joined = memberWheelIds.length > 0 ? await db.select().from(wheels).where(inArray(wheels.id, memberWheelIds)) : [];
+  // ONE query, not three. This sits on the app-entry critical path (wheels.list
+  // and wheels.bootstrap both start here), and the previous shape — owned, then
+  // memberships, then the joined wheels — was three *sequential* round trips,
+  // each paying full latency to a TiDB cluster that may be cold. The membership
+  // lookup is now a subquery; both sides are index-backed (wheels_owner_idx,
+  // wheel_members_user_idx from migration 0014).
+  const rows = await db
+    .select()
+    .from(wheels)
+    .where(
+      or(
+        eq(wheels.ownerId, userId),
+        inArray(
+          wheels.id,
+          db.select({ id: wheelMembers.wheelId }).from(wheelMembers).where(eq(wheelMembers.userId, userId)),
+        ),
+      ),
+    );
+  // Preserve the previous ordering (owned first, then joined): callers treat
+  // wheels[0] as the fallback default wheel, so the order is behaviour.
+  const owned = rows.filter((w) => w.ownerId === userId);
+  const joined = rows.filter((w) => w.ownerId !== userId);
   return [...owned, ...joined];
 }
 

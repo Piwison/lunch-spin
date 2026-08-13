@@ -379,10 +379,17 @@ async function getPopularPublicWheels(limit) {
 async function getUserWheels(userId) {
   const db = await getDb();
   if (!db) return [];
-  const owned = await db.select().from(wheels).where(eq(wheels.ownerId, userId));
-  const memberships = await db.select({ wheelId: wheelMembers.wheelId }).from(wheelMembers).where(eq(wheelMembers.userId, userId));
-  const memberWheelIds = memberships.map((m) => m.wheelId).filter((id) => !owned.find((w) => w.id === id));
-  const joined = memberWheelIds.length > 0 ? await db.select().from(wheels).where(inArray(wheels.id, memberWheelIds)) : [];
+  const rows = await db.select().from(wheels).where(
+    or(
+      eq(wheels.ownerId, userId),
+      inArray(
+        wheels.id,
+        db.select({ id: wheelMembers.wheelId }).from(wheelMembers).where(eq(wheelMembers.userId, userId))
+      )
+    )
+  );
+  const owned = rows.filter((w) => w.ownerId === userId);
+  const joined = rows.filter((w) => w.ownerId !== userId);
   return [...owned, ...joined];
 }
 async function updateWheel(id, data) {
