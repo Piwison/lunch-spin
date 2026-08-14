@@ -27,6 +27,19 @@ Drizzle's `drizzle/meta/_journal.json` being populated means a migration was
 - [ ] Verify the new column/table actually exists before code relies on it. New
       code reads `wheels.exclusionDays/fairnessMode/rotateCuisines` and the
       `round_marks`/`wheel_presence` tables with no fallback — missing = runtime error.
+- [ ] **"I ran `drizzle-kit migrate`" is not verification — a stale shell env can
+      silently point it at the wrong database.** `DATABASE_URL` set earlier in the
+      same terminal (e.g. exported for staging) persists across commands; running
+      `migrate` again against prod work looks identical whether it hit prod or
+      quietly re-ran against staging (which reports success either way, since it's
+      already current). Before trusting "done", `echo "$DATABASE_URL"` to confirm
+      the **host** matches the target, then confirm the actual column/table exists
+      against that same env:
+      `node -e "const m=require('mysql2/promise');(async()=>{const c=await m.createConnection(process.env.DATABASE_URL);const [r]=await c.query(\"SHOW COLUMNS FROM <table> LIKE '<column>'\");console.log(r.length?'exists':'MISSING');await c.end();})()"`
+      (Hit in production: PR #37 merged after "DB already migrated" turned out to
+      be a stale `DATABASE_URL` still pointed at staging — prod crashed on
+      `restaurants.utcOffsetMinutes` until re-migrated against the right host and
+      re-verified this way.)
 - [ ] Apply the same pending migrations to the **staging** DB too
       (`DATABASE_URL=<staging> pnpm exec drizzle-kit migrate`), separately from prod —
       staging has its own cluster (STAGING.md), so it drifts if you only migrate prod.
