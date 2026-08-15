@@ -39,16 +39,25 @@ function placeMapUrl(placeId: string, name: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}&query_place_id=${placeId}`;
 }
 
+/**
+ * Last resolved position, kept for the page session so re-opening the dialog
+ * doesn't re-prompt for geolocation (and re-pay the fix). Deliberately module
+ * scope and deliberately not persisted — it's a convenience for the current
+ * visit, not stored location data.
+ */
+const lastKnown: { coords: Coords | null } = { coords: null };
+
 export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: NearbyDialogProps) {
-  const [coords, setCoords] = useState<Coords | null>(null);
+  const [coords, setCoords] = useState<Coords | null>(lastKnown.coords);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [radius, setRadius] = useState<number>(DEFAULT_RADIUS_M);
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const search = trpc.places.searchNearby.useMutation();
-  const addNearby = trpc.places.addNearby.useMutation();
+  const addNearby = trpc.places.addNearbyBulk.useMutation();
 
   const runSearch = (at: Coords, r: number) => {
     search.mutate(
@@ -68,6 +77,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
       (pos) => {
         setLocating(false);
         const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        lastKnown.coords = at;
         setCoords(at);
         runSearch(at, radius);
       },
@@ -90,31 +100,49 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
     runSearch(coords, next);
   };
 
-  const handleAdd = (p: NearbyResult) => {
+  const toggle = (placeId: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(placeId)) next.delete(placeId);
+      else next.add(placeId);
+      return next;
+    });
+
+  /**
+   * Add every ticked place in ONE request. This used to be a mutation per row,
+   * so filling a wheel from a nearby search cost a cold round trip for each
+   * restaurant — the worst possible shape on this app's serverless + TiDB path.
+   */
+  const handleAddSelected = () => {
+    const places = results
+      .filter((p) => selected.has(p.placeId))
+      .map((p) => ({
+        placeId: p.placeId,
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        address: p.address,
+        priceLevel: p.priceLevel,
+        cuisine: p.cuisine,
+        mapUrl: placeMapUrl(p.placeId, p.name),
+      }));
+    if (places.length === 0) return;
     addNearby.mutate(
-      {
-        wheelId,
-        place: {
-          placeId: p.placeId,
-          name: p.name,
-          lat: p.lat,
-          lng: p.lng,
-          address: p.address,
-          priceLevel: p.priceLevel,
-          cuisine: p.cuisine,
-          mapUrl: placeMapUrl(p.placeId, p.name),
-        },
-      },
+      { wheelId, places },
       {
         onSuccess: (res) => {
-          setAdded((prev) => new Set(prev).add(p.placeId));
+          setAdded((prev) => {
+            const next = new Set(prev);
+            for (const p of places) next.add(p.placeId);
+            return next;
+          });
+          setSelected(new Set());
           onAdded();
           toast.success(
-            res.duplicate
-              ? `${p.name} is already on the wheel`
-              : res.taggedAs
-                ? `Added ${p.name} · tagged ${res.taggedAs}`
-                : `Added ${p.name}`,
+            res.added === 0
+              ? "Those are already on the wheel"
+              : `Added ${res.added} ${res.added === 1 ? "place" : "places"}` +
+                  (res.duplicates > 0 ? ` · ${res.duplicates} already there` : ""),
           );
         },
         onError: (e) => toast.error(e.message),
@@ -123,12 +151,14 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
   };
 
   const reset = () => {
-    setCoords(null);
     setGeoError(null);
     setKeyword("");
     setRadius(DEFAULT_RADIUS_M);
     setAdded(new Set());
+    setSelected(new Set());
     search.reset();
+    // `coords` deliberately survives — see lastKnown. Re-opening the
+    // dialog shouldn't re-prompt for a location we already have.
   };
 
   const results = (search.data?.places ?? []) as NearbyResult[];
@@ -275,48 +305,92 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             </div>
           )}
 
-          {/* Results */}
+          {/* Results — tick as many as you want, then add them in one go. */}
           {results.length > 0 && (
             <div className="flex flex-col gap-2">
               {results.map((p) => {
                 const isAdded = p.alreadyAdded || added.has(p.placeId);
+                const on = selected.has(p.placeId);
                 return (
-                  <div
+                  <button
                     key={p.placeId}
-                    className="flex items-start gap-3 px-3.5 py-3 rounded-2xl"
-                    style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+                    onClick={() => !isAdded && toggle(p.placeId)}
+                    disabled={isAdded}
+                    aria-pressed={on}
+                    className="flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all active:scale-[0.99] disabled:active:scale-100"
+                    style={{
+                      background: on ? "oklch(from var(--brand) l c h / 0.08)" : "var(--card)",
+                      border: on
+                        ? "1px solid oklch(from var(--brand) l c h / 0.45)"
+                        : "1px solid var(--border)",
+                      opacity: isAdded ? 0.6 : 1,
+                    }}
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">{p.name}</p>
-                      <div className="flex items-center gap-2 flex-wrap mt-1 text-[11px] text-muted-foreground">
-                        <span className="flex items-center gap-1" title={p.walkSource === "route" ? "Walking route time" : "Straight-line estimate"}>
+                    <span
+                      aria-hidden
+                      className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={
+                        isAdded
+                          ? { background: "oklch(from var(--ok) l c h / 0.2)", color: "var(--ok)" }
+                          : on
+                            ? { background: "var(--brand)", color: "white" }
+                            : { border: "1.5px solid var(--border)" }
+                      }
+                    >
+                      {(isAdded || on) && <Check size={13} strokeWidth={3} />}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-semibold text-sm truncate">{p.name}</span>
+                      <span className="flex items-center gap-2 flex-wrap mt-1 text-[11px] text-muted-foreground">
+                        <span
+                          className="flex items-center gap-1"
+                          title={p.walkSource === "route" ? "Walking route time" : "Straight-line estimate"}
+                        >
                           <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
                         </span>
                         {p.priceLevel != null && <span style={{ color: "var(--brand)" }}>{"$".repeat(p.priceLevel)}</span>}
                         {p.cuisine && <span>{p.cuisine}</span>}
                         {p.open === true && <span style={{ color: "var(--ok)" }}>Open now</span>}
                         {p.open === false && <span className="opacity-70">Closed</span>}
-                      </div>
-                      {p.address && <p className="text-[11px] text-muted-foreground/70 truncate mt-0.5">{p.address}</p>}
-                    </div>
-                    <button
-                      onClick={() => handleAdd(p)}
-                      disabled={isAdded || addNearby.isPending}
-                      className="flex items-center justify-center gap-1 h-9 px-3 rounded-full text-xs font-semibold flex-shrink-0 transition-all active:scale-95 disabled:opacity-100"
-                      style={
-                        isAdded
-                          ? { background: "oklch(from var(--ok) l c h / 0.15)", color: "var(--ok)", border: "1px solid oklch(from var(--ok) l c h / 0.3)" }
-                          : { background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }
-                      }
-                    >
-                      {isAdded ? <><Check size={13} /> Added</> : <><Plus size={13} /> Add</>}
-                    </button>
-                  </div>
+                        {isAdded && <span style={{ color: "var(--ok)" }}>On the wheel</span>}
+                      </span>
+                      {p.address && (
+                        <span className="block text-[11px] text-muted-foreground/70 truncate mt-0.5">{p.address}</span>
+                      )}
+                    </span>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
+
+        {/* One request for the whole selection. */}
+        {results.length > 0 && (
+          <div className="sticky bottom-0 -mx-6 -mb-6 px-6 pt-3 pb-5 mt-1" style={{ background: "var(--popover)" }}>
+            <Button
+              onClick={handleAddSelected}
+              disabled={selected.size === 0 || addNearby.isPending}
+              className="w-full transition-all active:scale-[0.98]"
+              style={{
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                color: "white",
+              }}
+            >
+              {addNearby.isPending ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Adding…
+                </span>
+              ) : selected.size === 0 ? (
+                "Select places to add"
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Plus size={14} /> Add {selected.size} {selected.size === 1 ? "place" : "places"}
+                </span>
+              )}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

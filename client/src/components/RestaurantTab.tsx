@@ -346,19 +346,24 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* NEARBY is the primary action and ADD is the ghost, not the other
+              way round: one tap here yields ten real places sorted by walking
+              time, while typing a restaurant's name by hand is the rare case.
+              The label stays visible on mobile — an unlabelled 40px icon is
+              what kept the best thing in the app hidden. */}
           <button
             onClick={() => setShowNearby(true)}
             title="Add nearby restaurants"
-            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            className="flex items-center justify-center gap-2 h-10 px-3.5 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
             style={{
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              color: "var(--muted-foreground)",
+              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+              color: "white",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
+              boxShadow: "0 0 16px oklch(from var(--brand) l c h / 0.35)",
             }}
           >
-            <Navigation size={14} /> <span className="hidden sm:inline">NEARBY</span>
+            <Navigation size={14} /> NEARBY
           </button>
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
@@ -377,13 +382,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title="Add restaurant"
-            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
             style={{
-              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-              color: "white",
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              color: "var(--muted-foreground)",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
-              boxShadow: "0 0 16px oklch(from var(--brand) l c h / 0.35)",
             }}
           >
             <Plus size={14} /> <span className="hidden sm:inline">ADD</span>
@@ -543,29 +548,50 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           ))}
         </div>
       ) : restaurants?.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+        /* Empty state leads with nearby search, not the manual form. Filling a
+           wheel one typed name at a time is the slowest path we offer, and it
+           was the only one this state suggested. */
+        <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
           <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
-            style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+            className="w-16 h-16 rounded-2xl flex items-center justify-center"
+            style={{ background: "oklch(from var(--brand) l c h / 0.12)" }}
           >
-            🍜
+            <MapPin size={26} style={{ color: "var(--brand)" }} />
           </div>
           <div>
-            <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>NO RESTAURANTS YET</p>
-            <p className="text-sm text-muted-foreground">Add your first place to get started</p>
+            <p className="font-semibold text-foreground/70 mb-1" style={{ fontFamily: "var(--font-display)" }}>NO RESTAURANTS YET</p>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              Find real places near you, sorted by walking time — or add them yourself.
+            </p>
           </div>
-          <button
-            onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110 mt-1"
-            style={{
-              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-              color: "white",
-              fontFamily: "var(--font-display)",
-              letterSpacing: "0.06em",
-            }}
-          >
-            <Plus size={14} /> ADD FIRST RESTAURANT
-          </button>
+          <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
+            <button
+              onClick={() => setShowNearby(true)}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
+              style={{
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                color: "white",
+                fontFamily: "var(--font-display)",
+                letterSpacing: "0.06em",
+                boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.3)",
+              }}
+            >
+              <Navigation size={14} /> ADD NEARBY
+            </button>
+            <button
+              onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:bg-white/5"
+              style={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                color: "var(--foreground)",
+                fontFamily: "var(--font-display)",
+                letterSpacing: "0.06em",
+              }}
+            >
+              <Plus size={13} /> ADD ONE BY HAND
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">

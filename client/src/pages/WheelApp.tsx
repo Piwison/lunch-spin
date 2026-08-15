@@ -10,6 +10,7 @@ import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
 import OnboardingFlow from "@/components/OnboardingFlow";
+import { track } from "@/lib/analytics";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
@@ -35,6 +36,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 type Tab = "wheel" | "restaurants" | "history";
+
+/** How many spins this browser has completed — drives the one-time exclusion tip. */
+const SPINS_SEEN_KEY = "lw:spinsSeen";
+/** Show the exclusion explainer on this many spins, then retire it. */
+const EXPLAINER_SPINS = 2;
 
 // Compact relative time for notification rows ("just now", "3m ago", "2d ago").
 function formatTimeAgo(d: Date): string {
@@ -100,6 +106,16 @@ export default function WheelApp() {
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
+  // Spins completed in this browser, read once. The exclusion explainer is for
+  // people who have never seen it; after a couple of spins it's noise.
+  const [spinsSeen, setSpinsSeen] = useState(() => {
+    try {
+      return Number(localStorage.getItem(SPINS_SEEN_KEY) || 0);
+    } catch {
+      return 0;
+    }
+  });
+  const isEarlySpin = spinsSeen <= EXPLAINER_SPINS;
 
   // PWA share-target
   useEffect(() => {
@@ -476,6 +492,17 @@ export default function WheelApp() {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
+    // Activation metric, and the counter that retires the exclusion explainer.
+    setSpinsSeen((n) => {
+      const next = n + 1;
+      try {
+        localStorage.setItem(SPINS_SEEN_KEY, String(next));
+      } catch {
+        // private mode — the tip just shows a couple more times
+      }
+      if (next === 1) track("first_spin_completed");
+      return next;
+    });
     setTargetId(null);
     refetchRestaurants();
   };
@@ -1228,6 +1255,27 @@ export default function WheelApp() {
                   </div>
                 );
               })()}
+              {/* The one teaching moment in the whole product. Exclusion used to
+                  be a dropdown in the create dialog, asked of someone who had
+                  never spun the wheel; here it's explained at the exact moment
+                  it becomes real, and only on the user's first couple of spins.
+                  After that it's just noise they've already read. */}
+              {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
+                <div
+                  className="flex items-start gap-2 text-xs mb-5 px-3 py-2.5 rounded-xl text-left"
+                  style={{
+                    background: "oklch(from var(--brand) l c h / 0.10)",
+                    border: "1px solid oklch(from var(--brand) l c h / 0.25)",
+                  }}
+                >
+                  <Clock size={13} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
+                  <span className="text-muted-foreground">
+                    We'll skip <span className="text-foreground font-semibold">{spinResult.label}</span> for the next{" "}
+                    {wheelData.exclusionDays} {wheelData.exclusionDays === 1 ? "day" : "days"} so you don't get it
+                    twice. Change that in wheel settings.
+                  </span>
+                </div>
+              )}
               {/* Post-spin capture — rate the winner right here (per-place rating). */}
               <div className="flex flex-col items-center gap-1.5 mb-6">
                 <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>
