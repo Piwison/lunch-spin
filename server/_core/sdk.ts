@@ -301,11 +301,14 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
-
+    // No write here, on purpose. This used to `upsertUser({ lastSignedIn })` on
+    // every authenticated request — a database WRITE in front of every single
+    // API call, polls included (realtime 3s + presence 10s + notifications 15s
+    // is ~30 writes a minute per open tab), on the critical path of a cluster
+    // that may be cold. Nothing reads the column, and `lastSignedIn` is already
+    // set where the name says it should be: at real sign-in (googleAuth.ts) and
+    // when a user row is first synced (just above). Session handling itself is
+    // untouched — the cookie, the JWT and the lookup all behave as before.
     return user;
   }
 }

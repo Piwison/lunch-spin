@@ -1014,10 +1014,6 @@ var SDKServer = class {
     if (!user) {
       throw ForbiddenError("User not found");
     }
-    await upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt
-    });
     return user;
   }
 };
