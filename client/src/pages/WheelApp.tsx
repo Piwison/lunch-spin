@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
-import { clearBootCache, readBootCache, saveBootCache } from "@/lib/bootCache";
+import { cachedUserId, clearBootCache, readBootCache, saveBootCache } from "@/lib/bootCache";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
@@ -197,6 +197,14 @@ export default function WheelApp() {
       setSeeded(true);
       return;
     }
+    // The persisted payload we seeded from may have belonged to a DIFFERENT
+    // account (sign in as someone else on the same browser without signing out
+    // first). Seeding auth.me from it means the app briefly renders as that
+    // other user — wrong identity, and ownership checks like the settings gear
+    // fail. The fresh payload is authoritative, so drop the stale copy the
+    // moment the ids disagree; seedFromBootstrap below then overwrites every
+    // seeded query with this user's real data.
+    if (cachedUserId() !== data.user.id) clearBootCache();
     seedFromBootstrap(utils, data);
     saveBootCache(data);
     setSeeded(true);

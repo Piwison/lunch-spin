@@ -14,6 +14,7 @@ import { cuisineFromTypes, normalizePriceLevel, type ProviderPlace } from "@shar
 import { parseMapLink } from "@shared/mapLink";
 import type { MatrixElement } from "@shared/walkTime";
 
+const TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
 const NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 const PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
@@ -29,6 +30,77 @@ export interface NearbySearchResponse {
 /** True once GOOGLE_MAPS_API_KEY is set (Places API enabled on that key). */
 export function isPlacesConfigured(): boolean {
   return !!process.env.GOOGLE_MAPS_API_KEY;
+}
+
+/** One candidate from a free-text place search. */
+export interface PlaceCandidate {
+  placeId: string;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+}
+
+export interface TextSearchResponse {
+  candidates: PlaceCandidate[];
+  status?: string;
+  /** Google's own explanation, when it gives one. Null when it doesn't. */
+  errorMessage?: string | null;
+}
+
+/**
+ * Free-text place search — "where is my office", not "restaurants near me".
+ *
+ * Uses Places **Text Search**, deliberately not Find Place: Find Place answers
+ * with a single best guess, and a name like "總公司" or a chain office needs the
+ * user to disambiguate between several real candidates. That means this is a
+ * SEPARATE billing SKU from the nearby search and the link resolver — worth its
+ * own quota cap in the Google console.
+ *
+ * Only ever called from an explicit user action (typing a name and pressing
+ * search), never on a timer or a render. Results without usable coordinates are
+ * dropped: an origin with no lat/lng is useless to every caller.
+ */
+export async function searchPlacesByText(
+  query: string,
+  bias?: { lat: number; lng: number } | null,
+): Promise<TextSearchResponse> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+
+  const url = new URL(TEXT_SEARCH_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("query", query);
+  if (bias) url.searchParams.set("location", `${bias.lat},${bias.lng}`);
+  if (bias) url.searchParams.set("radius", "50000");
+
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetch(url.toString(), { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Place text search failed (${res.status} ${res.statusText})`);
+    const data = (await res.json()) as {
+      status?: string;
+      error_message?: string;
+      results?: GooglePlace[];
+    };
+    const candidates = (data.results ?? []).flatMap((p) => {
+      const loc = p.geometry?.location;
+      if (!p.place_id || !p.name || typeof loc?.lat !== "number" || typeof loc?.lng !== "number") {
+        return [];
+      }
+      return [{
+        placeId: p.place_id,
+        name: p.name,
+        address: p.formatted_address ?? null,
+        lat: loc.lat,
+        lng: loc.lng,
+      }];
+    });
+    return { candidates, status: data.status, errorMessage: data.error_message ?? null };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Nearby restaurants around a point, straight from Google's Places API. */

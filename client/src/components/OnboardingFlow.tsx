@@ -22,6 +22,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { providerAlert } from "@/lib/placesError";
+import LocationPicker, { type PickedLocation } from "@/components/LocationPicker";
 import { formatWalk } from "@shared/nearby";
 import {
   DEFAULT_PICK_COUNT,
@@ -34,13 +35,11 @@ import {
   Check,
   Footprints,
   Loader2,
-  MapPin,
   Navigation,
   RotateCw,
 } from "lucide-react";
 
 type Step = "locate" | "pick" | "building";
-type Coords = { lat: number; lng: number };
 type Filter = "all" | "walk" | "price" | "open";
 
 /** A place row as returned by places.searchNearby. */
@@ -88,11 +87,12 @@ export default function OnboardingFlow({
   onManualCreate: () => void;
 }) {
   const [step, setStep] = useState<Step>("locate");
-  const [coords, setCoords] = useState<Coords | null>(null);
+  // Where we searched from. `label` is set when the user picked a named place
+  // (their office) rather than using raw geolocation — that name becomes the
+  // wheel's office label, so settings shows "台北101" and not a bare "Office".
+  const [origin, setOrigin] = useState<PickedLocation | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<Filter>("all");
-  const [geoError, setGeoError] = useState<string | null>(null);
-  const [locating, setLocating] = useState(false);
 
   const search = trpc.places.searchNearby.useMutation({
     onSuccess: (data) => {
@@ -109,37 +109,12 @@ export default function OnboardingFlow({
   const selectedCount = selected.size;
 
   const runSearch = useCallback(
-    (at: Coords, radius?: number) => {
+    (at: PickedLocation, radius?: number) => {
+      setOrigin(at);
       search.mutate({ wheelId: null, lat: at.lat, lng: at.lng, radius });
     },
     [search],
   );
-
-  const locate = useCallback(() => {
-    setGeoError(null);
-    if (!("geolocation" in navigator)) {
-      setGeoError("This device can't share its location.");
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setCoords(at);
-        runSearch(at);
-      },
-      (err) => {
-        setLocating(false);
-        setGeoError(
-          err.code === err.PERMISSION_DENIED
-            ? "No problem — you can add places yourself instead."
-            : "Couldn't get your location. Try again, or add places yourself.",
-        );
-      },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
-    );
-  }, [runSearch]);
 
   const toggle = (placeId: string) =>
     setSelected((prev) => {
@@ -167,7 +142,16 @@ export default function OnboardingFlow({
     if (!canStartSpinning(places.length)) return;
     setStep("building");
     createWheel.mutate(
-      { places },
+      {
+        places,
+        // Only a *named* pick becomes the wheel's office. A raw geolocation fix
+        // is where the user happened to be standing, not their office, and
+        // pinning distance mode to it would be wrong tomorrow.
+        origin:
+          origin && origin.label
+            ? { lat: origin.lat, lng: origin.lng, label: origin.label }
+            : null,
+      },
       {
         onSuccess: (res) => {
           onCreated(res.id);
@@ -242,7 +226,7 @@ export default function OnboardingFlow({
             })}
           </div>
 
-          {search.data?.lowDensity && coords && (
+          {search.data?.lowDensity && origin && (
             <div
               className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs"
               style={{ background: "oklch(from var(--info) l c h / 0.08)", border: "1px solid oklch(from var(--info) l c h / 0.20)", color: "var(--info)" }}
@@ -251,7 +235,7 @@ export default function OnboardingFlow({
                 <AlertTriangle size={13} /> Not many spots within reach.
               </span>
               <button
-                onClick={() => runSearch(coords, 2500)}
+                onClick={() => runSearch(origin, 2500)}
                 disabled={search.isPending}
                 className="font-semibold underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
               >
@@ -345,7 +329,6 @@ export default function OnboardingFlow({
   }
 
   // ── Locate ────────────────────────────────────────────────────────────────
-  const busy = locating || search.isPending;
   return (
     <Shell>
       <div className="flex flex-col items-center gap-6 text-center w-full">
@@ -362,7 +345,6 @@ export default function OnboardingFlow({
           </p>
         </div>
 
-        {geoError && <ErrorNote>{geoError}</ErrorNote>}
         {alert && (
           // A spent map quota is a limit, not a crash: calmer styling, no retry
           // affordance, and a nudge to the path that still works.
@@ -375,23 +357,14 @@ export default function OnboardingFlow({
         )}
 
         <div className="flex flex-col gap-2.5 w-full max-w-xs">
-          <button
-            onClick={locate}
-            disabled={busy}
-            className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5 disabled:opacity-60 disabled:translate-y-0"
-            style={{
-              fontFamily: "var(--font-display)",
-              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-              boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
-              color: "white",
-            }}
-          >
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
-            {locating ? "Finding you…" : search.isPending ? "Looking around…" : "Use my location"}
-          </button>
-          <p className="text-[11px] text-muted-foreground px-4">
-            Only used for this search — it's never stored.
-          </p>
+          {/* Three ways in — current location, search a place, paste a link.
+              A user whose browser won't share a position is not stuck. */}
+          <LocationPicker onPicked={(at) => runSearch(at)} />
+          {search.isPending && (
+            <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
+              <Loader2 size={12} className="animate-spin" /> Looking around…
+            </p>
+          )}
           <button
             onClick={onManualCreate}
             className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold text-muted-foreground transition-all active:scale-95 hover:text-foreground"

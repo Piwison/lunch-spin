@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, Trash2, Share2, Copy, Settings, Download, Upload, MoreVertical, Check, ChevronDown, Star, MapPin, Navigation, Users } from "lucide-react";
+import { Plus, Globe, Lock, Trash2, Share2, Copy, CopyPlus, Settings, MoreVertical, Check, ChevronDown, Star, MapPin, Users } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -19,8 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorChip } from "@/components/StatusChip";
+import LocationPicker from "@/components/LocationPicker";
 import { STARTER_RESTAURANTS } from "@shared/starter";
-import { parseWheelImport } from "@shared/transfer";
 
 interface WheelSelectorProps {
   selectedWheelId: number | null;
@@ -38,10 +37,6 @@ interface WheelSelectorProps {
    */
   registerSettingsOpener?: (open: (wheelId: number) => void) => void;
 }
-
-/** Loose check: does this string look like a Google Maps link worth resolving? */
-const looksLikeMapLink = (s: string) =>
-  /(google\.[a-z.]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/)/i.test(s.trim());
 
 const EXCLUSION_OPTIONS = [
   { value: "0", label: "Off" },
@@ -79,7 +74,7 @@ function WheelActionsMenu({
   large,
   onShare,
   onCopyPublic,
-  onExport,
+  onCopyWheel,
   onSettings,
   onDelete,
 }: {
@@ -88,7 +83,7 @@ function WheelActionsMenu({
   large?: boolean;
   onShare: () => void;
   onCopyPublic: () => void;
-  onExport: () => void;
+  onCopyWheel: () => void;
   onSettings: () => void;
   onDelete: () => void;
 }) {
@@ -117,14 +112,15 @@ function WheelActionsMenu({
             <Share2 size={14} /> Share invite link
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem onClick={onExport} className="gap-2.5">
-          <Download size={14} /> Export
+        <DropdownMenuItem onClick={onCopyWheel} className="gap-2.5">
+          <CopyPlus size={14} /> Copy wheel
         </DropdownMenuItem>
-        {isOwner && (
-          <DropdownMenuItem onClick={onSettings} className="gap-2.5">
-            <Settings size={14} /> Settings
-          </DropdownMenuItem>
-        )}
+        {/* Members get Settings too — read-only inside (see `canEdit`), so a
+            teammate can see the office and the spin rules without being able to
+            change them. */}
+        <DropdownMenuItem onClick={onSettings} className="gap-2.5">
+          <Settings size={14} /> Settings
+        </DropdownMenuItem>
         {isOwner && (
           <>
             <DropdownMenuSeparator />
@@ -162,11 +158,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     originLat: number | null;
     originLng: number | null;
   } | null>(null);
-  const [originLinkInput, setOriginLinkInput] = useState("");
-  const [locatingOrigin, setLocatingOrigin] = useState(false);
+  /** Expanded origin editor. Collapsed by default once an office is stored, so
+   *  a wheel that already HAS one shows it instead of blank inputs. */
+  const [editingOrigin, setEditingOrigin] = useState(false);
   const [originError, setOriginError] = useState<string | null>(null);
-  const [showImport, setShowImport] = useState(false);
-  const [importText, setImportText] = useState("");
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -174,47 +169,22 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const utils = trpc.useUtils();
   const { data: wheels } = trpc.wheels.list.useQuery();
 
-  const handleExport = async (wheelId: number, name: string) => {
-    try {
-      const data = await utils.wheels.export.fetch({ id: wheelId });
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(name || "wheel").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-wheel.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Wheel exported");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Export failed");
-    }
-  };
-
-  const importWheel = trpc.wheels.import.useMutation({
+  /**
+   * Duplicate a wheel — "same restaurants, different team". Server-side row
+   * copy (wheels.copy), not the lossy export JSON: that format drops place
+   * ids, coordinates and cached opening hours, which would then cost a Place
+   * Details call per restaurant to rebuild.
+   */
+  const copyWheel = trpc.wheels.copy.useMutation({
     onSuccess: (data) => {
       utils.wheels.list.invalidate();
+      utils.wheels.bootstrap.invalidate();
       onSelect(data.id);
-      setShowImport(false);
-      setImportText("");
-      toast.success("Wheel imported!");
+      setShowSwitcher(false);
+      toast.success(`Copied to "${data.name}" — rename it in Settings`);
     },
     onError: (e) => toast.error(e.message),
   });
-
-  const submitImport = () => {
-    try {
-      const parsed = parseWheelImport(importText);
-      importWheel.mutate(parsed);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Invalid wheel file");
-    }
-  };
-
-  const onImportFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => setImportText(String(reader.result ?? ""));
-    reader.readAsText(file);
-  };
 
   // Default the starter pack on for a user's very first wheel only. Skip while the
   // create dialog is open so a wheels.list refetch (e.g. window refocus) can't
@@ -238,8 +208,10 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   // (registerSettingsOpener below) so both entry points seed the exact same
   // form state — no duplicated logic to drift out of sync.
   const openSettingsFor = (wheel: NonNullable<typeof wheels>[number]) => {
-    setOriginLinkInput("");
     setOriginError(null);
+    // Collapsed when the wheel already has an office; expanded when it doesn't,
+    // because then there is genuinely something to fill in.
+    setEditingOrigin(wheel.originLat == null || wheel.originLng == null);
     setEditWheel({
       id: wheel.id,
       name: wheel.name,
@@ -318,26 +290,6 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const updateWheel = trpc.wheels.update.useMutation({
     onError: (e) => { setUpdateError(e.message); },
   });
-  const resolveOriginLink = trpc.places.resolveLink.useMutation({
-    onSuccess: ({ place }) => {
-      // Unlike a restaurant's "Look up" (name-only, coordinates optional), the
-      // origin is USELESS without coordinates — Google's response can carry a
-      // name with no geometry (e.g. some establishment results). Reporting
-      // success here when there's nothing to save is exactly what produced the
-      // "I saved it but it's gone" confusion: the origin was never captured, so
-      // the later Save Settings step correctly rejected it, but by then the
-      // misleading toast had already made it look like this step had worked.
-      if (place.lat == null || place.lng == null) {
-        setOriginError(`Found "${place.name}" but couldn't get its exact location. Try "Use my current location" instead, or a more specific Maps link.`);
-        return;
-      }
-      setOriginError(null);
-      setOriginLinkInput("");
-      if (editWheel) setEditWheel({ ...editWheel, originLat: place.lat, originLng: place.lng });
-      toast.success(`Found: ${place.name}`);
-    },
-    onError: (e) => setOriginError(e.message),
-  });
   const setDistanceOrigin = trpc.wheels.setDistanceOrigin.useMutation({
     onError: (e) => setOriginError(e.message),
   });
@@ -403,31 +355,6 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
     }
   };
 
-  const locateOrigin = () => {
-    if (!editWheel) return;
-    setOriginError(null);
-    if (!("geolocation" in navigator)) {
-      setOriginError("This device can't share its location.");
-      return;
-    }
-    setLocatingOrigin(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocatingOrigin(false);
-        setEditWheel({ ...editWheel, originLat: pos.coords.latitude, originLng: pos.coords.longitude });
-      },
-      (err) => {
-        setLocatingOrigin(false);
-        setOriginError(
-          err.code === err.PERMISSION_DENIED
-            ? "Location permission was denied."
-            : "Couldn't get your location. Try again.",
-        );
-      },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
-    );
-  };
-
   const inviteUrl = showInvite ? `${window.location.origin}/join/${showInvite.token}` : "";
 
   const copyInvite = () => {
@@ -465,6 +392,12 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
 
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
   const isSelectedWheelOwner = selectedWheel?.ownerId === user?.id;
+
+  /** Members can OPEN wheel settings but not change anything: the office and the
+   *  spin rules are things a teammate needs to be able to see, while renaming,
+   *  sharing and deleting stay with the owner. Every control below is disabled
+   *  on this flag and the Save button is replaced by a note. */
+  const canEdit = editWheel != null && wheels?.find((w) => w.id === editWheel.id)?.ownerId === user?.id;
 
   /** One row, shared between the desktop rail and the mobile sheet. The select
    *  target and the kebab are siblings (not nested), so a tap can only ever do
@@ -530,7 +463,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             large={inSheet}
             onShare={() => regenInvite.mutate({ id: wheel.id })}
             onCopyPublic={() => copyPublicLink(wheel.id)}
-            onExport={() => handleExport(wheel.id, wheel.name)}
+            onCopyWheel={() => copyWheel.mutate({ id: wheel.id })}
             onSettings={() => openSettingsFor(wheel)}
             onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
           />
@@ -724,12 +657,13 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 placeholder="Wheel name"
                 value={editWheel.name}
                 onChange={(e) => setEditWheel({ ...editWheel, name: e.target.value })}
+                disabled={!canEdit}
                 className="bg-secondary/50 border-border/50"
               />
               <SettingsSection>Sharing</SettingsSection>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Shared team wheel</Label>
-                <Switch checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
+                <Switch disabled={!canEdit} checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
               </div>
               {editWheel.isShared && (() => {
                 // Team invite link for members to join. Sharing itself has to be
@@ -784,7 +718,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
               })()}
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
-                <Switch checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
+                <Switch disabled={!canEdit} checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
               </div>
               {editWheel.isPublic && (() => {
                 // The link is live only once isPublic is persisted; if it was just
@@ -817,7 +751,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
               <SettingsSection>Spin rules</SettingsSection>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
-                <Select value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
+                <Select disabled={!canEdit} value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
                   <SelectTrigger size="sm" className="w-28 bg-secondary/50 border-border/50">
                     <SelectValue />
                   </SelectTrigger>
@@ -830,11 +764,11 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
               </div>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Fairness mode</Label>
-                <Switch checked={editWheel.fairnessMode} onCheckedChange={(v) => setEditWheel({ ...editWheel, fairnessMode: v })} />
+                <Switch disabled={!canEdit} checked={editWheel.fairnessMode} onCheckedChange={(v) => setEditWheel({ ...editWheel, fairnessMode: v })} />
               </div>
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">Rotate cuisines</Label>
-                <Switch checked={editWheel.rotateCuisines} onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })} />
+                <Switch disabled={!canEdit} checked={editWheel.rotateCuisines} onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })} />
               </div>
 
               <SettingsSection>Distance</SettingsSection>
@@ -845,6 +779,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">Distance mode</Label>
                   <Switch
+                    disabled={!canEdit}
                     checked={editWheel.distanceEnabled}
                     onCheckedChange={(v) => setEditWheel({ ...editWheel, distanceEnabled: v })}
                   />
@@ -855,36 +790,32 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                       Shows walking time from one point to every restaurant.
                       {editWheel.isShared ? " Shared wheels use a single office/meeting point, visible to the team." : ""}
                     </p>
-                    <Input
-                      placeholder="Label (e.g. Office)"
-                      value={editWheel.originLabel}
-                      onChange={(e) => setEditWheel({ ...editWheel, originLabel: e.target.value })}
-                      className="bg-secondary/50 border-border/50"
-                    />
-                    <div className="flex gap-2">
-                      <Input
-                        type="url"
-                        inputMode="url"
-                        placeholder="Paste a Google Maps link"
-                        value={originLinkInput}
-                        onChange={(e) => setOriginLinkInput(e.target.value)}
-                        className="bg-secondary/50 border-border/50"
-                      />
-                      <Button
-                        type="button"
-                        onClick={() => { setOriginError(null); resolveOriginLink.mutate({ wheelId: editWheel.id, url: originLinkInput.trim() }); }}
-                        disabled={!looksLikeMapLink(originLinkInput) || resolveOriginLink.isPending}
-                        className="flex-shrink-0"
-                        style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
-                      >
-                        {resolveOriginLink.isPending
-                          ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                          : "Look up"}
-                      </Button>
-                    </div>
-                    <Button type="button" variant="outline" onClick={locateOrigin} disabled={locatingOrigin} className="gap-2">
-                      <Navigation size={14} /> {locatingOrigin ? "Locating…" : "Use my current location"}
-                    </Button>
+                    {editingOrigin && canEdit && (
+                      <>
+                        <Input
+                          placeholder="Label (e.g. Office)"
+                          value={editWheel.originLabel}
+                          onChange={(e) => setEditWheel({ ...editWheel, originLabel: e.target.value })}
+                          className="bg-secondary/50 border-border/50"
+                        />
+                        {/* Same three ways in as everywhere else: current
+                            location, search a place, or paste a link. */}
+                        <LocationPicker
+                          compact
+                          primaryLabel="Use my current location"
+                          onPicked={(at) =>
+                            setEditWheel({
+                              ...editWheel,
+                              originLat: at.lat,
+                              originLng: at.lng,
+                              // A named pick renames the office to that place;
+                              // a raw fix keeps whatever label is already there.
+                              originLabel: at.label ?? editWheel.originLabel,
+                            })
+                          }
+                        />
+                      </>
+                    )}
                     {(() => {
                       // Distinguish an origin already persisted in the DB (loaded
                       // on open — reassures the owner it really did save last time)
@@ -899,24 +830,38 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                         return (
                           <p className="text-xs flex items-center gap-1.5 text-muted-foreground">
                             <MapPin size={12} className="flex-shrink-0" />
-                            No location set yet — paste a link or use your location
+                            No location set yet — pick one above
                           </p>
                         );
                       }
                       const isPersisted = editWheel.originLat === savedLat && editWheel.originLng === savedLng;
                       const mapHref = `https://www.google.com/maps/search/?api=1&query=${editWheel.originLat},${editWheel.originLng}`;
+                      // A wheel that HAS an office shows it, rather than a pair
+                      // of blank inputs that read as "nothing is set".
                       return (
-                        <div className="flex flex-col gap-0.5">
-                          <p className="text-xs flex items-center flex-wrap gap-x-1.5 gap-y-0.5" style={{ color: "var(--ok)" }}>
-                            <MapPin size={12} className="flex-shrink-0" />
-                            {isPersisted
-                              ? `${editWheel.originLabel.trim() || "Office"} location saved`
-                              : "New location ready — press Save Settings to apply"}
-                            <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline" style={{ color: "var(--ok)" }}>
-                              view on map
-                            </a>
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">Paste a new link or use your location to change it.</p>
+                        <div
+                          className="flex items-center gap-2.5 rounded-lg border border-border/40 bg-secondary/30 px-3 py-2.5"
+                        >
+                          <MapPin size={14} className="flex-shrink-0" style={{ color: "var(--ok)" }} />
+                          <div className="flex flex-col min-w-0 flex-1">
+                            <span className="text-sm truncate">{editWheel.originLabel.trim() || "Office"}</span>
+                            <span className="text-[11px] flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand)" }}>
+                              {isPersisted ? "Saved" : "Press Save Settings to apply"}
+                              <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
+                                view on map
+                              </a>
+                            </span>
+                          </div>
+                          {canEdit && !editingOrigin && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingOrigin(true)}
+                              className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors"
+                              style={{ color: "var(--foreground)" }}
+                            >
+                              Edit
+                            </button>
+                          )}
                         </div>
                       );
                     })()}
@@ -935,62 +880,29 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             >
               <ErrorChip error={updateError} onDismiss={() => setUpdateError(null)} />
               <ErrorChip error={originError} onDismiss={() => setOriginError(null)} />
-              <Button
-                onClick={saveWheelSettings}
-                disabled={!editWheel.name.trim() || savingWheelSettings}
-                className="w-full transition-all duration-200 active:scale-[0.97]"
-                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
-              >
-                {savingWheelSettings ? (
-                  <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
-                ) : "Save Settings"}
-              </Button>
+              {canEdit ? (
+                <Button
+                  onClick={saveWheelSettings}
+                  disabled={!editWheel.name.trim() || savingWheelSettings}
+                  className="w-full transition-all duration-200 active:scale-[0.97]"
+                  style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+                >
+                  {savingWheelSettings ? (
+                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
+                  ) : "Save Settings"}
+                </Button>
+              ) : (
+                /* Members see the settings but can't change them — no Save at
+                   all, rather than a button that would only fail server-side. */
+                <p className="text-xs text-muted-foreground text-center py-1">
+                  Only the wheel's creator can change these settings.
+                </p>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Import wheel dialog */}
-      <Dialog open={showImport} onOpenChange={(open) => { if (!open) { setShowImport(false); setImportText(""); } }}>
-        <DialogContent className="glass border-border/50 max-w-md">
-          <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>IMPORT WHEEL</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 pt-2">
-            <p className="text-xs text-muted-foreground">
-              Paste a wheel export, or load a <code>.json</code> file. It's added as a new wheel you own.
-            </p>
-            <label
-              htmlFor="wheel-import-file"
-              className="self-start text-xs text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5"
-            >
-              <Upload size={12} /> Choose file…
-              <input
-                id="wheel-import-file"
-                aria-label="Import wheel from JSON file"
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); }}
-              />
-            </label>
-            <Textarea
-              placeholder='{ "name": "Office Lunch", "restaurants": [ … ] }'
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              className="bg-secondary/50 border-border/50 resize-none font-mono text-xs"
-              rows={8}
-            />
-            <Button
-              onClick={submitImport}
-              disabled={!importText.trim() || importWheel.isPending}
-              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
-            >
-              {importWheel.isPending ? "Importing..." : "Import Wheel"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
