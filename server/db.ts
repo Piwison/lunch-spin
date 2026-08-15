@@ -369,6 +369,83 @@ export async function getWheelPlaceIds(wheelId: number): Promise<Set<string>> {
 
 // Bulk-insert restaurants by name only (used by paste import). Returns the
 // number of rows created.
+/** One provider-sourced restaurant for `addProviderRestaurants`. */
+export interface ProviderRestaurantInput {
+  name: string;
+  mapUrl: string | null;
+  /** Already-resolved tag ids; the first becomes the primary tag. */
+  tagIds: number[];
+  place: PlaceFields;
+}
+
+/**
+ * Bulk-add provider-sourced restaurants to a wheel in THREE round trips
+ * (insert the rows, read their ids back, insert their tags) no matter how many
+ * places there are. The per-place `addRestaurant` path costs two hops each,
+ * which is how "add these 8 nearby spots" would otherwise become a 16-hop
+ * request on the entry path.
+ *
+ * Ids are read back by placeId rather than derived from the batch insertId:
+ * TiDB allocates auto-increment values from per-node caches, so contiguity is
+ * not something to bet the tag rows on.
+ *
+ * Returns the created rows in input order; callers de-duplicate by placeId
+ * before calling (see `addNearbyPlaces` in routers.ts).
+ */
+export async function addProviderRestaurants(
+  wheelId: number,
+  addedBy: number,
+  rows: ProviderRestaurantInput[],
+): Promise<{ id: number; placeId: string }[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (rows.length === 0) return [];
+
+  await db.insert(restaurants).values(
+    rows.map((r) => ({
+      wheelId,
+      addedBy,
+      name: r.name,
+      notes: null,
+      mapUrl: r.mapUrl,
+      primaryTagId: r.tagIds[0] ?? null,
+      placeId: r.place.placeId,
+      // decimal columns take strings in drizzle-mysql; null stays null.
+      lat: r.place.lat == null ? null : String(r.place.lat),
+      lng: r.place.lng == null ? null : String(r.place.lng),
+      address: r.place.address,
+      priceLevel: r.place.priceLevel,
+      cuisine: r.place.cuisine,
+      openHours: r.place.openHours ?? null,
+      source: "provider" as const,
+    })),
+  );
+
+  const inserted = await db
+    .select({ id: restaurants.id, placeId: restaurants.placeId })
+    .from(restaurants)
+    .where(
+      and(
+        eq(restaurants.wheelId, wheelId),
+        inArray(restaurants.placeId, rows.map((r) => r.place.placeId)),
+      ),
+    );
+  const idByPlace = new Map(
+    inserted.flatMap((r) => (r.placeId ? [[r.placeId, r.id] as const] : [])),
+  );
+
+  const tagRows = rows.flatMap((r) => {
+    const id = idByPlace.get(r.place.placeId);
+    return id == null ? [] : r.tagIds.map((tagId) => ({ restaurantId: id, tagId }));
+  });
+  if (tagRows.length > 0) await db.insert(restaurantTags).values(tagRows);
+
+  return rows.flatMap((r) => {
+    const id = idByPlace.get(r.place.placeId);
+    return id == null ? [] : [{ id, placeId: r.place.placeId }];
+  });
+}
+
 export async function addRestaurants(wheelId: number, addedBy: number, names: string[]): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

@@ -18,8 +18,11 @@ import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } fr
 import { buildTasteProfile } from "@shared/tasteProfile";
 import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
 import { resolveBootstrapWheelId, speculativeWheelId } from "@shared/bootstrap";
+import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
+import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
+import { addProviderRestaurants } from "./db";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
@@ -75,6 +78,90 @@ import {
 // A presence heartbeat counts as "online" for this long after the last ping.
 // Kept ≥ 2.5× the client's ~10s ping interval so one dropped beat doesn't flicker.
 const PRESENCE_TTL_MS = 25_000;
+
+/** A place the client picked out of a nearby search, ready to persist. */
+const nearbyPlaceSchema = z.object({
+  placeId: z.string().min(1).max(256),
+  name: z.string().min(1).max(128),
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+  address: z.string().max(512).nullable(),
+  priceLevel: z.number().int().min(1).max(4).nullable(),
+  cuisine: z.string().max(64).nullable(),
+  mapUrl: z.string().max(512).nullable().optional(),
+});
+type NearbyPlaceInput = z.infer<typeof nearbyPlaceSchema>;
+
+/**
+ * Persist a batch of chosen nearby places onto a wheel.
+ *
+ * Same contract as the single-place `places.addNearby`: de-duplicated by
+ * placeId, cuisine auto-linked to an EXISTING tag (never invents one) which
+ * becomes the primary tag, and best-effort hours/distance enrichment that can
+ * fail without failing the add. Factored out so `places.addNearbyBulk` and
+ * `wheels.createFromNearby` can't drift apart on any of that.
+ *
+ * Cost is flat in the number of places: two reads, three writes, and one
+ * concurrent enrichment wave — not the two-hops-per-place the single-add path
+ * would charge. Caller does the membership check.
+ */
+async function addNearbyPlaces(
+  wheelId: number,
+  userId: number,
+  places: NearbyPlaceInput[],
+): Promise<{ added: number; duplicates: number; ids: number[] }> {
+  const [existing, wheelTags] = await Promise.all([
+    getWheelPlaceIds(wheelId),
+    getTagsForWheel(wheelId),
+  ]);
+
+  const fresh: NearbyPlaceInput[] = [];
+  let duplicates = 0;
+  for (const place of places) {
+    // `existing` also absorbs this batch, so a client that sends the same spot
+    // twice can't create two rows for it.
+    if (existing.has(place.placeId)) {
+      duplicates++;
+      continue;
+    }
+    existing.add(place.placeId);
+    fresh.push(place);
+  }
+
+  const rows = await addProviderRestaurants(
+    wheelId,
+    userId,
+    fresh.map((place) => {
+      const cuisineTag = matchCuisineTag(place.cuisine, wheelTags);
+      return {
+        name: place.name,
+        mapUrl: place.mapUrl ?? null,
+        tagIds: cuisineTag ? [cuisineTag.id] : [],
+        place: {
+          placeId: place.placeId,
+          lat: place.lat,
+          lng: place.lng,
+          address: place.address,
+          priceLevel: place.priceLevel,
+          cuisine: place.cuisine,
+        },
+      };
+    }),
+  );
+
+  // Enrichment is per-restaurant and independent, so run the whole batch
+  // concurrently rather than paying provider latency once per place. Every one
+  // of these is already best-effort — allSettled keeps one bad lookup from
+  // failing an add that has otherwise succeeded.
+  await Promise.allSettled(
+    rows.flatMap((r) => [
+      maybeFetchOneRestaurantHours(r.id, r.placeId),
+      maybeComputeOneDistance(wheelId, r.id),
+    ]),
+  );
+
+  return { added: rows.length, duplicates, ids: rows.map((r) => r.id) };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -255,6 +342,39 @@ export const appRouter = router({
         const inviteToken = input.isShared ? nanoid(16) : undefined;
         const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays, input.fairnessMode, input.rotateCuisines);
         return { id, inviteToken };
+      }),
+
+    /**
+     * First-run: build a wheel out of places the user just picked from a nearby
+     * search, in ONE request.
+     *
+     * The old first-run path was `wheels.create` (behind a seven-field dialog)
+     * and then one `places.addNearby` per spot — a request each, on the cold
+     * entry path, before the user had seen the product do anything. Everything
+     * that dialog asked for is a tuning knob a first-timer has no basis to
+     * answer and can change later in wheel settings, so this takes none of it:
+     * the wheel is private, non-shared, and named after the neighbourhood the
+     * places are in. Zero typed characters.
+     *
+     * `name` is accepted so a later caller (or a rename-during-onboarding) can
+     * override the inferred one, but onboarding itself never sends it.
+     */
+    createFromNearby: protectedProcedure
+      .input(
+        z.object({
+          // Capped at the wheel's own segment ceiling — more than this can't be
+          // rendered as a spinnable wheel anyway (shared/nearby).
+          places: z.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
+          name: z.string().min(1).max(128).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const name =
+          input.name?.trim() ||
+          wheelNameForArea(deriveAreaName(input.places.map((p) => p.address)));
+        const id = await createWheel(ctx.user.id, name, false, false);
+        const { added, duplicates } = await addNearbyPlaces(id, ctx.user.id, input.places);
+        return { id, name, added, duplicates };
       }),
 
     update: protectedProcedure
@@ -616,7 +736,11 @@ export const appRouter = router({
     searchNearby: protectedProcedure
       .input(
         z.object({
-          wheelId: z.number(),
+          // Null/absent = searching before a wheel exists, which is how
+          // first-run works: pick the places, THEN the wheel gets built out of
+          // them. Without a wheel there's nothing to be a member of and nothing
+          // to mark as already-added; with one, both apply exactly as before.
+          wheelId: z.number().nullable().optional(),
           lat: z.number().min(-90).max(90),
           lng: z.number().min(-180).max(180),
           radius: z.number().int().min(100).max(5000).optional(),
@@ -624,8 +748,10 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        if (input.wheelId != null) {
+          const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+          if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        }
         if (!isPlacesConfigured()) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -666,7 +792,8 @@ export const appRouter = router({
           // estimates stand
         }
 
-        const existing = await getWheelPlaceIds(input.wheelId);
+        const existing =
+          input.wheelId == null ? new Set<string>() : await getWheelPlaceIds(input.wheelId);
         const places = segments.map((p) => ({
           placeId: p.placeId,
           name: p.name,
@@ -752,6 +879,30 @@ export const appRouter = router({
         // fetch its weekly hours now. Never throws (see server/openHours.ts).
         await maybeFetchOneRestaurantHours(id, input.place.placeId);
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
+      }),
+
+    // Batch of the above. The dialog lets you tick several spots and add them
+    // together, which used to be one mutation — and one cold round trip — per
+    // row. Same de-dup, tagging and enrichment contract as addNearby; see
+    // `addNearbyPlaces`.
+    addNearbyBulk: protectedProcedure
+      .input(
+        z.object({
+          wheelId: z.number(),
+          places: z.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const { added, duplicates } = await addNearbyPlaces(
+          input.wheelId,
+          ctx.user.id,
+          input.places,
+        );
+        return { added, duplicates };
       }),
 
     // Resolve a pasted Google Maps link into a nameable place (Place Details /

@@ -509,6 +509,48 @@ async function getWheelPlaceIds(wheelId) {
   for (const r of rows) if (r.placeId) ids.add(r.placeId);
   return ids;
 }
+async function addProviderRestaurants(wheelId, addedBy, rows) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (rows.length === 0) return [];
+  await db.insert(restaurants).values(
+    rows.map((r) => ({
+      wheelId,
+      addedBy,
+      name: r.name,
+      notes: null,
+      mapUrl: r.mapUrl,
+      primaryTagId: r.tagIds[0] ?? null,
+      placeId: r.place.placeId,
+      // decimal columns take strings in drizzle-mysql; null stays null.
+      lat: r.place.lat == null ? null : String(r.place.lat),
+      lng: r.place.lng == null ? null : String(r.place.lng),
+      address: r.place.address,
+      priceLevel: r.place.priceLevel,
+      cuisine: r.place.cuisine,
+      openHours: r.place.openHours ?? null,
+      source: "provider"
+    }))
+  );
+  const inserted = await db.select({ id: restaurants.id, placeId: restaurants.placeId }).from(restaurants).where(
+    and(
+      eq(restaurants.wheelId, wheelId),
+      inArray(restaurants.placeId, rows.map((r) => r.place.placeId))
+    )
+  );
+  const idByPlace = new Map(
+    inserted.flatMap((r) => r.placeId ? [[r.placeId, r.id]] : [])
+  );
+  const tagRows = rows.flatMap((r) => {
+    const id = idByPlace.get(r.place.placeId);
+    return id == null ? [] : r.tagIds.map((tagId) => ({ restaurantId: id, tagId }));
+  });
+  if (tagRows.length > 0) await db.insert(restaurantTags).values(tagRows);
+  return rows.flatMap((r) => {
+    const id = idByPlace.get(r.place.placeId);
+    return id == null ? [] : [{ id, placeId: r.place.placeId }];
+  });
+}
 async function addRestaurants(wheelId, addedBy, names) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -1856,30 +1898,42 @@ function speculativeWheelId(requestedWheelId, defaultWheelId) {
   return requestedWheelId ?? defaultWheelId ?? null;
 }
 
-// shared/realtimeState.ts
-function push(map, key, value) {
-  const list = map.get(key);
-  if (list) list.push(value);
-  else map.set(key, [value]);
+// shared/areaName.ts
+var CONSENSUS = 0.5;
+var MAX_WHEEL_NAME = 128;
+var CJK = "\\u4e00-\\u9fff";
+var DISTRICT_RE = new RegExp(`(?:^|[\u5E02\u7E23\\s0-9])([${CJK}]{2,3})([\u5340\u9109\u93AE])`);
+var CITY_RE = new RegExp(`([${CJK}]{2,3})([\u5E02\u7E23])`);
+function areaOf(address) {
+  const trimmed = address.trim();
+  if (!trimmed) return null;
+  const district = DISTRICT_RE.exec(trimmed);
+  if (district) return district[1] + district[2];
+  const city = CITY_RE.exec(trimmed);
+  if (city) return city[1] + city[2];
+  const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const locality = parts[1].replace(/[\s,]*\d[\d\s-]*$/, "").trim();
+  return locality.length >= 2 ? locality : null;
 }
-function buildSessionState(rows) {
-  const vetoes = /* @__PURE__ */ new Map();
-  const votes = /* @__PURE__ */ new Map();
-  const dietary = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    if (r.kind === "veto") push(vetoes, r.refId, r.userId);
-    else if (r.kind === "vote") push(votes, r.refId, r.userId);
-    else push(dietary, r.userId, r.refId);
-  }
-  return {
-    vetoes: Array.from(vetoes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
-    votes: Array.from(votes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
-    dietary: Array.from(dietary, ([userId, tagIds]) => ({ userId, tagIds }))
-  };
+function deriveAreaName(addresses) {
+  const areas = addresses.filter((a) => typeof a === "string" && a.trim().length > 0).map(areaOf).filter((a) => a !== null);
+  if (areas.length === 0) return null;
+  const counts = /* @__PURE__ */ new Map();
+  for (const a of areas) counts.set(a, (counts.get(a) ?? 0) + 1);
+  let best = null;
+  let bestCount = 0;
+  counts.forEach((count, area) => {
+    if (count > bestCount) {
+      best = area;
+      bestCount = count;
+    }
+  });
+  return bestCount / areas.length >= CONSENSUS ? best : null;
 }
-function activePresence(rows, nowMs, ttlMs) {
-  const cutoff = nowMs - ttlMs;
-  return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
+function wheelNameForArea(area) {
+  const name = area ? `Lunch near ${area}` : "Lunch near me";
+  return name.length > MAX_WHEEL_NAME ? name.slice(0, MAX_WHEEL_NAME) : name;
 }
 
 // shared/nearby.ts
@@ -1929,6 +1983,32 @@ function rankNearby(places, filters = {}, opts = {}) {
   const segments = deduped.slice(0, max);
   const weights = segments.map((p) => spinWeight(p, filters));
   return { segments, weights, chainsGrouped, lowDensity: isLowDensity(segments.length, min) };
+}
+
+// shared/realtimeState.ts
+function push(map, key, value) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+function buildSessionState(rows) {
+  const vetoes = /* @__PURE__ */ new Map();
+  const votes = /* @__PURE__ */ new Map();
+  const dietary = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (r.kind === "veto") push(vetoes, r.refId, r.userId);
+    else if (r.kind === "vote") push(votes, r.refId, r.userId);
+    else push(dietary, r.userId, r.refId);
+  }
+  return {
+    vetoes: Array.from(vetoes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
+    votes: Array.from(votes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
+    dietary: Array.from(dietary, ([userId, tagIds]) => ({ userId, tagIds }))
+  };
+}
+function activePresence(rows, nowMs, ttlMs) {
+  const cutoff = nowMs - ttlMs;
+  return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
 }
 
 // shared/placeMapping.ts
@@ -2442,6 +2522,59 @@ async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
 
 // server/routers.ts
 var PRESENCE_TTL_MS = 25e3;
+var nearbyPlaceSchema = z3.object({
+  placeId: z3.string().min(1).max(256),
+  name: z3.string().min(1).max(128),
+  lat: z3.number().min(-90).max(90).nullable(),
+  lng: z3.number().min(-180).max(180).nullable(),
+  address: z3.string().max(512).nullable(),
+  priceLevel: z3.number().int().min(1).max(4).nullable(),
+  cuisine: z3.string().max(64).nullable(),
+  mapUrl: z3.string().max(512).nullable().optional()
+});
+async function addNearbyPlaces(wheelId, userId, places) {
+  const [existing, wheelTags] = await Promise.all([
+    getWheelPlaceIds(wheelId),
+    getTagsForWheel(wheelId)
+  ]);
+  const fresh = [];
+  let duplicates = 0;
+  for (const place of places) {
+    if (existing.has(place.placeId)) {
+      duplicates++;
+      continue;
+    }
+    existing.add(place.placeId);
+    fresh.push(place);
+  }
+  const rows = await addProviderRestaurants(
+    wheelId,
+    userId,
+    fresh.map((place) => {
+      const cuisineTag = matchCuisineTag(place.cuisine, wheelTags);
+      return {
+        name: place.name,
+        mapUrl: place.mapUrl ?? null,
+        tagIds: cuisineTag ? [cuisineTag.id] : [],
+        place: {
+          placeId: place.placeId,
+          lat: place.lat,
+          lng: place.lng,
+          address: place.address,
+          priceLevel: place.priceLevel,
+          cuisine: place.cuisine
+        }
+      };
+    })
+  );
+  await Promise.allSettled(
+    rows.flatMap((r) => [
+      maybeFetchOneRestaurantHours(r.id, r.placeId),
+      maybeComputeOneDistance(wheelId, r.id)
+    ])
+  );
+  return { added: rows.length, duplicates, ids: rows.map((r) => r.id) };
+}
 var appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2573,6 +2706,34 @@ var appRouter = router({
       const inviteToken = input.isShared ? nanoid(16) : void 0;
       const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays, input.fairnessMode, input.rotateCuisines);
       return { id, inviteToken };
+    }),
+    /**
+     * First-run: build a wheel out of places the user just picked from a nearby
+     * search, in ONE request.
+     *
+     * The old first-run path was `wheels.create` (behind a seven-field dialog)
+     * and then one `places.addNearby` per spot — a request each, on the cold
+     * entry path, before the user had seen the product do anything. Everything
+     * that dialog asked for is a tuning knob a first-timer has no basis to
+     * answer and can change later in wheel settings, so this takes none of it:
+     * the wheel is private, non-shared, and named after the neighbourhood the
+     * places are in. Zero typed characters.
+     *
+     * `name` is accepted so a later caller (or a rename-during-onboarding) can
+     * override the inferred one, but onboarding itself never sends it.
+     */
+    createFromNearby: protectedProcedure.input(
+      z3.object({
+        // Capped at the wheel's own segment ceiling — more than this can't be
+        // rendered as a spinnable wheel anyway (shared/nearby).
+        places: z3.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
+        name: z3.string().min(1).max(128).optional()
+      })
+    ).mutation(async ({ ctx, input }) => {
+      const name = input.name?.trim() || wheelNameForArea(deriveAreaName(input.places.map((p) => p.address)));
+      const id = await createWheel(ctx.user.id, name, false, false);
+      const { added, duplicates } = await addNearbyPlaces(id, ctx.user.id, input.places);
+      return { id, name, added, duplicates };
     }),
     update: protectedProcedure.input(z3.object({
       id: z3.number(),
@@ -2843,15 +3004,21 @@ var appRouter = router({
     // an on-demand action driven by a location the client just captured.
     searchNearby: protectedProcedure.input(
       z3.object({
-        wheelId: z3.number(),
+        // Null/absent = searching before a wheel exists, which is how
+        // first-run works: pick the places, THEN the wheel gets built out of
+        // them. Without a wheel there's nothing to be a member of and nothing
+        // to mark as already-added; with one, both apply exactly as before.
+        wheelId: z3.number().nullable().optional(),
         lat: z3.number().min(-90).max(90),
         lng: z3.number().min(-180).max(180),
         radius: z3.number().int().min(100).max(5e3).optional(),
         keyword: z3.string().max(120).optional()
       })
     ).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      if (input.wheelId != null) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      }
       if (!isPlacesConfigured()) {
         throw new TRPCError3({
           code: "PRECONDITION_FAILED",
@@ -2883,7 +3050,7 @@ var appRouter = router({
         segments = mergeWalkTimes(ranked.segments, elements);
       } catch {
       }
-      const existing = await getWheelPlaceIds(input.wheelId);
+      const existing = input.wheelId == null ? /* @__PURE__ */ new Set() : await getWheelPlaceIds(input.wheelId);
       const places = segments.map((p) => ({
         placeId: p.placeId,
         name: p.name,
@@ -2955,6 +3122,27 @@ var appRouter = router({
       }
       await maybeFetchOneRestaurantHours(id, input.place.placeId);
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
+    }),
+    // Batch of the above. The dialog lets you tick several spots and add them
+    // together, which used to be one mutation — and one cold round trip — per
+    // row. Same de-dup, tagging and enrichment contract as addNearby; see
+    // `addNearbyPlaces`.
+    addNearbyBulk: protectedProcedure.input(
+      z3.object({
+        wheelId: z3.number(),
+        places: z3.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS)
+      })
+    ).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const { added, duplicates } = await addNearbyPlaces(
+        input.wheelId,
+        ctx.user.id,
+        input.places
+      );
+      return { added, duplicates };
     }),
     // Resolve a pasted Google Maps link into a nameable place (Place Details /
     // Find Place, expanding short links). Read-only proposal — the client
