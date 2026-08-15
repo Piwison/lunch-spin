@@ -9,6 +9,7 @@ import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
+import OnboardingFlow from "@/components/OnboardingFlow";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
@@ -781,47 +782,21 @@ export default function WheelApp() {
                   <BrandLoader label="" size={64} />
                 </div>
               ) : firstRun ? (
-                /* First-run — the user has no wheels yet. Guide them in (decision 2b). */
-                <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center max-w-md mx-auto">
-                  <div
-                    className="w-20 h-20 orb-wheel animate-orb-spin"
-                    style={{ boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
-                  />
-                  <div>
-                    <p className="text-2xl font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>
-                      Make your first wheel
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Start from a sample to spin right away, or build your own from scratch.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2.5 w-full max-w-xs">
-                    <button
-                      onClick={() => createOpenerRef.current?.(true)}
-                      className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                        boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
-                        color: "white",
-                      }}
-                    >
-                      <Utensils size={15} /> Start from a sample
-                    </button>
-                    <button
-                      onClick={() => createOpenerRef.current?.(false)}
-                      className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:bg-white/5"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        color: "var(--foreground)",
-                      }}
-                    >
-                      <Plus size={15} /> Create a blank wheel
-                    </button>
-                  </div>
-                </div>
+                /* First-run — no wheels yet. Nearby search IS the onboarding:
+                   locate, pick real places, spin. The old card's two buttons both
+                   opened the seven-field create dialog, and its "fast" path seeded
+                   fictional restaurants — see OnboardingFlow. Anyone who declines
+                   to share their location falls through to that same dialog. */
+                <OnboardingFlow
+                  onCreated={(wheelId) => {
+                    utils.wheels.list.invalidate();
+                    utils.wheels.bootstrap.invalidate();
+                    setSelectedWheelId(wheelId);
+                    setActiveTab("wheel");
+                    navigate(`/app/${wheelId}`, { replace: true });
+                  }}
+                  onManualCreate={() => createOpenerRef.current?.(false)}
+                />
               ) : (
                 /* Empty state — has wheels, none selected */
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
