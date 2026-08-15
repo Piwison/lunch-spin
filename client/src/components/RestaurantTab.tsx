@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3 } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3, Search, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import {
@@ -16,8 +16,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
-import { matchCuisineTag } from "@shared/cuisineTag";
 import { formatWalk } from "@shared/nearby";
+import { providerAlert } from "@/lib/placesError";
+import { GeoError, requestCoords } from "@/lib/geo";
+import { matchCuisineTag } from "@shared/cuisineTag";
 import { filterRestaurantsByDistance } from "@shared/filter";
 import FilterBar from "@/components/FilterBar";
 import { toast } from "sonner";
@@ -70,6 +72,21 @@ interface RestaurantForm {
 }
 
 const EMPTY_FORM: RestaurantForm = { name: "", notes: "", tagIds: [], mapUrl: "", placeId: null };
+
+/** The subset of a places.searchNearby row the add-form's name search shows. */
+type SearchedPlace = {
+  placeId: string;
+  name: string;
+  walkMinutes: number;
+  walkSource: "route" | "estimate";
+  cuisine: string | null;
+  address: string | null;
+};
+
+/** Deep link stored on a searched place, so "DIRECTIONS" works after a spin. */
+function placeSearchMapUrl(placeId: string, name: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}&query_place_id=${placeId}`;
+}
 
 export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, distanceEnabled, originLabel }: RestaurantTabProps) {
   const [showAdd, setShowAdd] = useState(false);
@@ -178,6 +195,56 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
 
   // Paste a Google Maps link → look the place up → prefill the name (and a
   // matching cuisine tag). The write still goes through restaurants.add.
+  // ── Find a restaurant by name, from inside the add form ───────────────────
+  // Same places.searchNearby the ADD NEARBY dialog uses, with the typed name as
+  // the keyword: one Nearby Search request, only ever on an explicit tap.
+  const [nameGeoError, setNameGeoError] = useState<string | null>(null);
+  const [locatingForName, setLocatingForName] = useState(false);
+  const nameSearch = trpc.places.searchNearby.useMutation();
+  const nameResults = (nameSearch.data?.places ?? []) as SearchedPlace[];
+  const nameAlert = providerAlert(nameSearch.error);
+  const nameSearchBusy = locatingForName || nameSearch.isPending;
+
+  const searchByName = async () => {
+    const keyword = form.name.trim();
+    if (!keyword) return;
+    setNameGeoError(null);
+    setFormError(null);
+    setLocatingForName(true);
+    try {
+      // Reuses this session's fix (lib/geo) — no second permission prompt if
+      // ADD NEARBY or first-run already asked.
+      const at = await requestCoords();
+      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword });
+    } catch (err) {
+      const kind = err instanceof GeoError ? err.kind : "failed";
+      setNameGeoError(
+        kind === "unsupported"
+          ? "This device can't share its location, so search isn't available — type the name and add it."
+          : kind === "denied"
+            ? "Search needs your location to find places near you. You can still add the name by hand."
+            : "Couldn't get your location. Try again, or add the name by hand.",
+      );
+    } finally {
+      setLocatingForName(false);
+    }
+  };
+
+  /** Fill the form from a searched place, the way "Look up" does for a link. */
+  const pickSearchedPlace = (p: SearchedPlace) => {
+    const tag = matchCuisineTag(p.cuisine, tags ?? []);
+    setForm((f) => ({
+      ...f,
+      name: p.name,
+      // The place id is what lets the saved row fetch opening hours later.
+      placeId: p.placeId,
+      mapUrl: f.mapUrl.trim() || placeSearchMapUrl(p.placeId, p.name),
+      tagIds: tag && !f.tagIds.includes(tag.id) ? [...f.tagIds, tag.id] : f.tagIds,
+    }));
+    nameSearch.reset();
+    setNameGeoError(null);
+  };
+
   const resolveLink = trpc.places.resolveLink.useMutation({
     onSuccess: ({ place }) => {
       setForm((f) => {
@@ -346,19 +413,24 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* NEARBY is the primary action and ADD is the ghost, not the other
+              way round: one tap here yields ten real places sorted by walking
+              time, while typing a restaurant's name by hand is the rare case.
+              The label stays visible on mobile — an unlabelled 40px icon is
+              what kept the best thing in the app hidden. */}
           <button
             onClick={() => setShowNearby(true)}
             title="Add nearby restaurants"
-            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            className="flex items-center justify-center gap-2 h-10 px-3.5 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
             style={{
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              color: "var(--muted-foreground)",
+              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+              color: "white",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
+              boxShadow: "0 0 16px oklch(from var(--brand) l c h / 0.35)",
             }}
           >
-            <Navigation size={14} /> <span className="hidden sm:inline">NEARBY</span>
+            <Navigation size={14} /> NEARBY
           </button>
           <button
             onClick={() => { setImportText(""); setShowImport(true); }}
@@ -377,13 +449,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title="Add restaurant"
-            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
+            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
             style={{
-              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-              color: "white",
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              color: "var(--muted-foreground)",
               fontFamily: "var(--font-display)",
               letterSpacing: "0.06em",
-              boxShadow: "0 0 16px oklch(from var(--brand) l c h / 0.35)",
             }}
           >
             <Plus size={14} /> <span className="hidden sm:inline">ADD</span>
@@ -543,29 +615,50 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           ))}
         </div>
       ) : restaurants?.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+        /* Empty state leads with nearby search, not the manual form. Filling a
+           wheel one typed name at a time is the slowest path we offer, and it
+           was the only one this state suggested. */
+        <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
           <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
-            style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+            className="w-16 h-16 rounded-2xl flex items-center justify-center"
+            style={{ background: "oklch(from var(--brand) l c h / 0.12)" }}
           >
-            🍜
+            <MapPin size={26} style={{ color: "var(--brand)" }} />
           </div>
           <div>
-            <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>NO RESTAURANTS YET</p>
-            <p className="text-sm text-muted-foreground">Add your first place to get started</p>
+            <p className="font-semibold text-foreground/70 mb-1" style={{ fontFamily: "var(--font-display)" }}>NO RESTAURANTS YET</p>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              Find real places near you, sorted by walking time — or add them yourself.
+            </p>
           </div>
-          <button
-            onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110 mt-1"
-            style={{
-              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-              color: "white",
-              fontFamily: "var(--font-display)",
-              letterSpacing: "0.06em",
-            }}
-          >
-            <Plus size={14} /> ADD FIRST RESTAURANT
-          </button>
+          <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
+            <button
+              onClick={() => setShowNearby(true)}
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
+              style={{
+                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
+                color: "white",
+                fontFamily: "var(--font-display)",
+                letterSpacing: "0.06em",
+                boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.3)",
+              }}
+            >
+              <Navigation size={14} /> ADD NEARBY
+            </button>
+            <button
+              onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:bg-white/5"
+              style={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                color: "var(--foreground)",
+                fontFamily: "var(--font-display)",
+                letterSpacing: "0.06em",
+              }}
+            >
+              <Plus size={13} /> ADD ONE BY HAND
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -785,12 +878,82 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
-            <Input
-              placeholder="Restaurant name"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="bg-secondary/50 border-border/50"
-            />
+            {/* Name + search. Typing a name and tapping search runs the same
+                nearby lookup ADD NEARBY uses, so you can find a place from here
+                instead of pasting a Maps link — picking one fills in the name,
+                its place id (which is what makes opening hours work) and its
+                cuisine tag. */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Restaurant name"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && form.name.trim()) {
+                      e.preventDefault();
+                      searchByName();
+                    }
+                  }}
+                  className="bg-secondary/50 border-border/50 flex-1"
+                />
+                <Button
+                  type="button"
+                  onClick={searchByName}
+                  disabled={!form.name.trim() || nameSearchBusy}
+                  title="Search for this restaurant near you"
+                  className="flex-shrink-0"
+                  style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+                >
+                  {nameSearchBusy
+                    ? <Loader2 size={15} className="animate-spin" />
+                    : <Search size={15} />}
+                </Button>
+              </div>
+
+              {nameGeoError && (
+                <p className="text-[11px] px-1" style={{ color: "var(--destructive)" }}>{nameGeoError}</p>
+              )}
+              {nameAlert && (
+                <p
+                  className="text-[11px] px-1 leading-relaxed"
+                  style={{ color: nameAlert.quota ? "var(--brand)" : "var(--destructive)" }}
+                >
+                  {nameAlert.message}
+                </p>
+              )}
+              {nameSearch.data && nameResults.length === 0 && !nameSearchBusy && (
+                <p className="text-[11px] text-muted-foreground px-1">
+                  Nothing matching that near you — type the name and add it anyway.
+                </p>
+              )}
+
+              {nameResults.length > 0 && (
+                <div
+                  className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-xl p-1"
+                  style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+                >
+                  {nameResults.map((p) => (
+                    <button
+                      key={p.placeId}
+                      type="button"
+                      onClick={() => pickSearchedPlace(p)}
+                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors hover:bg-white/5"
+                    >
+                      <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand)" }} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-semibold truncate">{p.name}</span>
+                        <span className="block text-[10px] text-muted-foreground truncate">
+                          {formatWalk(p.walkMinutes, p.walkSource !== "route")}
+                          {p.cuisine ? ` · ${p.cuisine}` : ""}
+                          {p.address ? ` · ${p.address}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <Textarea
               placeholder="Notes (optional)"
               value={form.notes}

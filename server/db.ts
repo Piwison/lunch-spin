@@ -254,18 +254,50 @@ export async function createCustomTag(
 export async function getRestaurantsByWheel(wheelId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rests = await db.select().from(restaurants).where(eq(restaurants.wheelId, wheelId));
-  if (rests.length === 0) return [];
-  const restIds = rests.map((r) => r.id);
-  const rtags = await db
-    .select({ restaurantId: restaurantTags.restaurantId, tagId: restaurantTags.tagId, tagName: tags.name, tagColor: tags.color, tagCategory: tags.category })
-    .from(restaurantTags)
-    .innerJoin(tags, eq(restaurantTags.tagId, tags.id))
-    .where(inArray(restaurantTags.restaurantId, restIds));
-  return rests.map((r) => ({
-    ...r,
-    tags: rtags.filter((t) => t.restaurantId === r.id).map((t) => ({ id: t.tagId, name: t.tagName, color: t.tagColor, category: t.tagCategory })),
-  }));
+  // ONE query, not two. This sits on the app-entry critical path (both
+  // restaurants.list and wheels.bootstrap call it), and the previous shape —
+  // the restaurants, then a second query for their tags — paid two *sequential*
+  // round trips, each at full latency to a cluster that may be cold. A pair of
+  // LEFT JOINs fans each restaurant out over its tags in a single trip and we
+  // regroup in memory. LEFT (not INNER) so an untagged restaurant still comes
+  // back, with one all-null tag row that the grouping drops.
+  const rows = await db
+    .select({
+      restaurant: restaurants,
+      tagId: tags.id,
+      tagName: tags.name,
+      tagColor: tags.color,
+      tagCategory: tags.category,
+    })
+    .from(restaurants)
+    .leftJoin(restaurantTags, eq(restaurantTags.restaurantId, restaurants.id))
+    .leftJoin(tags, eq(restaurantTags.tagId, tags.id))
+    .where(eq(restaurants.wheelId, wheelId))
+    // The join makes row order arbitrary, and this list is what the wheel
+    // renders — order by id so segments keep their stable insertion order.
+    .orderBy(restaurants.id);
+
+  const byId = new Map<number, ReturnType<typeof shapeRestaurant>>();
+  for (const row of rows) {
+    let entry = byId.get(row.restaurant.id);
+    if (!entry) {
+      entry = shapeRestaurant(row.restaurant);
+      byId.set(row.restaurant.id, entry);
+    }
+    if (row.tagId != null) {
+      entry.tags.push({ id: row.tagId, name: row.tagName!, color: row.tagColor!, category: row.tagCategory! });
+    }
+  }
+  return Array.from(byId.values());
+}
+
+/** The tag fields callers read off a restaurant. Derived from the schema so the
+ *  LEFT JOIN's nullable columns can't silently widen what consumers see. */
+type RestaurantTag = Pick<Tag, "id" | "name" | "color" | "category">;
+
+/** A restaurant row with the empty tag list `getRestaurantsByWheel` fills in. */
+function shapeRestaurant(r: typeof restaurants.$inferSelect) {
+  return { ...r, tags: [] as RestaurantTag[] };
 }
 
 // Optional located-place fields carried when a restaurant originates from the
@@ -337,6 +369,83 @@ export async function getWheelPlaceIds(wheelId: number): Promise<Set<string>> {
 
 // Bulk-insert restaurants by name only (used by paste import). Returns the
 // number of rows created.
+/** One provider-sourced restaurant for `addProviderRestaurants`. */
+export interface ProviderRestaurantInput {
+  name: string;
+  mapUrl: string | null;
+  /** Already-resolved tag ids; the first becomes the primary tag. */
+  tagIds: number[];
+  place: PlaceFields;
+}
+
+/**
+ * Bulk-add provider-sourced restaurants to a wheel in THREE round trips
+ * (insert the rows, read their ids back, insert their tags) no matter how many
+ * places there are. The per-place `addRestaurant` path costs two hops each,
+ * which is how "add these 8 nearby spots" would otherwise become a 16-hop
+ * request on the entry path.
+ *
+ * Ids are read back by placeId rather than derived from the batch insertId:
+ * TiDB allocates auto-increment values from per-node caches, so contiguity is
+ * not something to bet the tag rows on.
+ *
+ * Returns the created rows in input order; callers de-duplicate by placeId
+ * before calling (see `addNearbyPlaces` in routers.ts).
+ */
+export async function addProviderRestaurants(
+  wheelId: number,
+  addedBy: number,
+  rows: ProviderRestaurantInput[],
+): Promise<{ id: number; placeId: string }[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  if (rows.length === 0) return [];
+
+  await db.insert(restaurants).values(
+    rows.map((r) => ({
+      wheelId,
+      addedBy,
+      name: r.name,
+      notes: null,
+      mapUrl: r.mapUrl,
+      primaryTagId: r.tagIds[0] ?? null,
+      placeId: r.place.placeId,
+      // decimal columns take strings in drizzle-mysql; null stays null.
+      lat: r.place.lat == null ? null : String(r.place.lat),
+      lng: r.place.lng == null ? null : String(r.place.lng),
+      address: r.place.address,
+      priceLevel: r.place.priceLevel,
+      cuisine: r.place.cuisine,
+      openHours: r.place.openHours ?? null,
+      source: "provider" as const,
+    })),
+  );
+
+  const inserted = await db
+    .select({ id: restaurants.id, placeId: restaurants.placeId })
+    .from(restaurants)
+    .where(
+      and(
+        eq(restaurants.wheelId, wheelId),
+        inArray(restaurants.placeId, rows.map((r) => r.place.placeId)),
+      ),
+    );
+  const idByPlace = new Map(
+    inserted.flatMap((r) => (r.placeId ? [[r.placeId, r.id] as const] : [])),
+  );
+
+  const tagRows = rows.flatMap((r) => {
+    const id = idByPlace.get(r.place.placeId);
+    return id == null ? [] : r.tagIds.map((tagId) => ({ restaurantId: id, tagId }));
+  });
+  if (tagRows.length > 0) await db.insert(restaurantTags).values(tagRows);
+
+  return rows.flatMap((r) => {
+    const id = idByPlace.get(r.place.placeId);
+    return id == null ? [] : [{ id, placeId: r.place.placeId }];
+  });
+}
+
 export async function addRestaurants(wheelId: number, addedBy: number, names: string[]): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

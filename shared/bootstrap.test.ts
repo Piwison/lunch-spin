@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBootstrapWheelId } from "./bootstrap";
+import { resolveBootstrapWheelId, speculativeWheelId } from "./bootstrap";
 
 const ids = [7, 3, 9];
 
@@ -32,5 +32,44 @@ describe("resolveBootstrapWheelId", () => {
 
   it("treats an undefined request the same as null", () => {
     expect(resolveBootstrapWheelId(ids, undefined, undefined)).toBe(7);
+  });
+});
+
+describe("speculativeWheelId", () => {
+  it("guesses the explicitly requested wheel", () => {
+    expect(speculativeWheelId(9, 3)).toBe(9);
+  });
+
+  it("guesses the starred default when nothing was requested", () => {
+    expect(speculativeWheelId(null, 3)).toBe(3);
+  });
+
+  it("has nothing to guess for a first-time user", () => {
+    expect(speculativeWheelId(null, null)).toBeNull();
+    expect(speculativeWheelId(undefined, undefined)).toBeNull();
+  });
+
+  it("keeps a requested wheel of 0 rather than treating it as absent", () => {
+    // ?? not ||: id 0 is falsy but is still an explicit request.
+    expect(speculativeWheelId(0, 3)).toBe(0);
+  });
+
+  // The guard that makes the speculative read safe: it is only ever a
+  // prefetch, never an authorization decision. Whenever the guess names a
+  // wheel the user cannot actually see, it disagrees with the real resolver —
+  // so the caller's `guess === resolved` check discards it and re-reads.
+  it("disagrees with the resolver whenever the guess is not accessible", () => {
+    const guess = speculativeWheelId(999, 3);
+    const resolved = resolveBootstrapWheelId(ids, 999, 3);
+    expect(guess).toBe(999);
+    expect(resolved).toBe(3);
+    expect(guess).not.toBe(resolved);
+  });
+
+  it("agrees with the resolver on the paths worth prefetching", () => {
+    // Requested + accessible, and default + accessible: the two entry shapes
+    // that make up almost every real load.
+    expect(speculativeWheelId(9, 3)).toBe(resolveBootstrapWheelId(ids, 9, 3));
+    expect(speculativeWheelId(null, 3)).toBe(resolveBootstrapWheelId(ids, null, 3));
   });
 });

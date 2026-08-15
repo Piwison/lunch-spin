@@ -9,6 +9,7 @@ import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
+import OnboardingFlow from "@/components/OnboardingFlow";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
@@ -34,6 +35,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 type Tab = "wheel" | "restaurants" | "history";
+
+/** How many spins this browser has completed — drives the one-time exclusion tip. */
+const SPINS_SEEN_KEY = "lw:spinsSeen";
+/** Show the exclusion explainer on this many spins, then retire it. */
+const EXPLAINER_SPINS = 2;
 
 // Compact relative time for notification rows ("just now", "3m ago", "2d ago").
 function formatTimeAgo(d: Date): string {
@@ -62,6 +68,12 @@ type BootstrapPayload = RouterOutputs["wheels"]["bootstrap"];
  * the two paths can never seed different things.
  */
 function seedFromBootstrap(utils: ReturnType<typeof trpc.useUtils>, data: BootstrapPayload) {
+  // The user goes in FIRST, and it is the one that makes the persisted-cache
+  // path actually fast. Everything below only warms data queries, but the
+  // render gate waits on `useAuth().loading` — i.e. on auth.me — so seeding
+  // every wheel query and not this one left a returning user staring at
+  // "Warming up your wheel" for a full round trip anyway, cache or no cache.
+  utils.auth.me.setData(undefined, data.user);
   utils.wheels.list.setData(undefined, data.wheels);
   if (data.wheel && data.wheelId != null) {
     utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
@@ -93,6 +105,16 @@ export default function WheelApp() {
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
+  // Spins completed in this browser, read once. The exclusion explainer is for
+  // people who have never seen it; after a couple of spins it's noise.
+  const [spinsSeen, setSpinsSeen] = useState(() => {
+    try {
+      return Number(localStorage.getItem(SPINS_SEEN_KEY) || 0);
+    } catch {
+      return 0;
+    }
+  });
+  const isEarlySpin = spinsSeen <= EXPLAINER_SPINS;
 
   // PWA share-target
   useEffect(() => {
@@ -152,9 +174,16 @@ export default function WheelApp() {
   // spinner, while the request above revalidates in the background. useState's
   // initializer is the synchronous hook that runs early enough to do this.
   const [seeded, setSeeded] = useState(() => {
-    const cached = readBootCache<BootstrapPayload>();
-    if (!cached?.user) return false;
-    seedFromBootstrap(utils, cached);
+    // Two sources, checked in freshness order. The query cache wins: Home issues
+    // this exact query on "/" (same key), so arriving via the landing-page
+    // redirect brings the real payload with us — seeding from it here, during
+    // the first render, is what stops the app flashing an empty state for a
+    // frame before the effect below runs. Otherwise fall back to the payload
+    // persisted from last session.
+    const fresh = utils.wheels.bootstrap.getData({ wheelId: initialWheelId });
+    const payload = fresh?.user ? fresh : readBootCache<BootstrapPayload>();
+    if (!payload?.user) return false;
+    seedFromBootstrap(utils, payload);
     return true;
   });
 
@@ -462,6 +491,16 @@ export default function WheelApp() {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
+    // The counter that retires the one-time exclusion explainer.
+    setSpinsSeen((n) => {
+      const next = n + 1;
+      try {
+        localStorage.setItem(SPINS_SEEN_KEY, String(next));
+      } catch {
+        // private mode — the tip just shows a couple more times
+      }
+      return next;
+    });
     setTargetId(null);
     refetchRestaurants();
   };
@@ -552,9 +591,12 @@ export default function WheelApp() {
   // `!seeded` so this only covers first entry — `seeded` latches true, so nothing
   // later can bounce the whole app back to a fullscreen loader. `isLoading` is
   // false while the query is disabled or errored, so this can't hang either.
-  if (loading || (!seeded && bootstrapQuery.isLoading)) {
-    // Only reached on a cold load — with a persisted payload `seeded` is already
-    // true on the first render and the real app paints straight away.
+  if (!seeded && (loading || bootstrapQuery.isLoading)) {
+    // Only reached on a cold load. With a persisted payload `seeded` is already
+    // true on the first render — and since seeding now includes auth.me,
+    // `loading` is false there too — so the real app paints straight away.
+    // `loading` must stay INSIDE the `!seeded` guard: gating on it separately is
+    // what used to make the persisted cache worthless.
     return <BrandLoader fullscreen label="Warming up your wheel" />;
   }
 
@@ -765,47 +807,21 @@ export default function WheelApp() {
                   <BrandLoader label="" size={64} />
                 </div>
               ) : firstRun ? (
-                /* First-run — the user has no wheels yet. Guide them in (decision 2b). */
-                <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center max-w-md mx-auto">
-                  <div
-                    className="w-20 h-20 orb-wheel animate-orb-spin"
-                    style={{ boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
-                  />
-                  <div>
-                    <p className="text-2xl font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>
-                      Make your first wheel
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Start from a sample to spin right away, or build your own from scratch.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2.5 w-full max-w-xs">
-                    <button
-                      onClick={() => createOpenerRef.current?.(true)}
-                      className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                        boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
-                        color: "white",
-                      }}
-                    >
-                      <Utensils size={15} /> Start from a sample
-                    </button>
-                    <button
-                      onClick={() => createOpenerRef.current?.(false)}
-                      className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:bg-white/5"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        color: "var(--foreground)",
-                      }}
-                    >
-                      <Plus size={15} /> Create a blank wheel
-                    </button>
-                  </div>
-                </div>
+                /* First-run — no wheels yet. Nearby search IS the onboarding:
+                   locate, pick real places, spin. The old card's two buttons both
+                   opened the seven-field create dialog, and its "fast" path seeded
+                   fictional restaurants — see OnboardingFlow. Anyone who declines
+                   to share their location falls through to that same dialog. */
+                <OnboardingFlow
+                  onCreated={(wheelId) => {
+                    utils.wheels.list.invalidate();
+                    utils.wheels.bootstrap.invalidate();
+                    setSelectedWheelId(wheelId);
+                    setActiveTab("wheel");
+                    navigate(`/app/${wheelId}`, { replace: true });
+                  }}
+                  onManualCreate={() => createOpenerRef.current?.(false)}
+                />
               ) : (
                 /* Empty state — has wheels, none selected */
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
@@ -1237,6 +1253,27 @@ export default function WheelApp() {
                   </div>
                 );
               })()}
+              {/* The one teaching moment in the whole product. Exclusion used to
+                  be a dropdown in the create dialog, asked of someone who had
+                  never spun the wheel; here it's explained at the exact moment
+                  it becomes real, and only on the user's first couple of spins.
+                  After that it's just noise they've already read. */}
+              {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
+                <div
+                  className="flex items-start gap-2 text-xs mb-5 px-3 py-2.5 rounded-xl text-left"
+                  style={{
+                    background: "oklch(from var(--brand) l c h / 0.10)",
+                    border: "1px solid oklch(from var(--brand) l c h / 0.25)",
+                  }}
+                >
+                  <Clock size={13} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
+                  <span className="text-muted-foreground">
+                    We'll skip <span className="text-foreground font-semibold">{spinResult.label}</span> for the next{" "}
+                    {wheelData.exclusionDays} {wheelData.exclusionDays === 1 ? "day" : "days"} so you don't get it
+                    twice. Change that in wheel settings.
+                  </span>
+                </div>
+              )}
               {/* Post-spin capture — rate the winner right here (per-place rating). */}
               <div className="flex flex-col items-center gap-1.5 mb-6">
                 <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>
