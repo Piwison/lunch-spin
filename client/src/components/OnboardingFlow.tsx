@@ -21,7 +21,6 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { track } from "@/lib/analytics";
 import { providerAlert } from "@/lib/placesError";
 import { formatWalk } from "@shared/nearby";
 import {
@@ -100,7 +99,6 @@ export default function OnboardingFlow({
       const places = (data.places ?? []) as NearbyResult[];
       setSelected(new Set(preselectPlaceIds(places, DEFAULT_PICK_COUNT)));
       setStep("pick");
-      track("onboarding_places_found", { count: places.length });
     },
   });
 
@@ -119,7 +117,6 @@ export default function OnboardingFlow({
 
   const locate = useCallback(() => {
     setGeoError(null);
-    track("onboarding_started");
     if (!("geolocation" in navigator)) {
       setGeoError("This device can't share its location.");
       return;
@@ -173,7 +170,6 @@ export default function OnboardingFlow({
       { places },
       {
         onSuccess: (res) => {
-          track("onboarding_wheel_created", { places: res.added });
           onCreated(res.id);
         },
         // Back to the picker with their choices intact rather than a dead end.

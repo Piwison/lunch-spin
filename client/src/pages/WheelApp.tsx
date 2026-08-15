@@ -10,7 +10,6 @@ import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
 import OnboardingFlow from "@/components/OnboardingFlow";
-import { track } from "@/lib/analytics";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
@@ -492,7 +491,7 @@ export default function WheelApp() {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
-    // Activation metric, and the counter that retires the exclusion explainer.
+    // The counter that retires the one-time exclusion explainer.
     setSpinsSeen((n) => {
       const next = n + 1;
       try {
@@ -500,7 +499,6 @@ export default function WheelApp() {
       } catch {
         // private mode — the tip just shows a couple more times
       }
-      if (next === 1) track("first_spin_completed");
       return next;
     });
     setTargetId(null);
