@@ -62,6 +62,12 @@ type BootstrapPayload = RouterOutputs["wheels"]["bootstrap"];
  * the two paths can never seed different things.
  */
 function seedFromBootstrap(utils: ReturnType<typeof trpc.useUtils>, data: BootstrapPayload) {
+  // The user goes in FIRST, and it is the one that makes the persisted-cache
+  // path actually fast. Everything below only warms data queries, but the
+  // render gate waits on `useAuth().loading` — i.e. on auth.me — so seeding
+  // every wheel query and not this one left a returning user staring at
+  // "Warming up your wheel" for a full round trip anyway, cache or no cache.
+  utils.auth.me.setData(undefined, data.user);
   utils.wheels.list.setData(undefined, data.wheels);
   if (data.wheel && data.wheelId != null) {
     utils.wheels.get.setData({ id: data.wheelId }, data.wheel);
@@ -152,9 +158,16 @@ export default function WheelApp() {
   // spinner, while the request above revalidates in the background. useState's
   // initializer is the synchronous hook that runs early enough to do this.
   const [seeded, setSeeded] = useState(() => {
-    const cached = readBootCache<BootstrapPayload>();
-    if (!cached?.user) return false;
-    seedFromBootstrap(utils, cached);
+    // Two sources, checked in freshness order. The query cache wins: Home issues
+    // this exact query on "/" (same key), so arriving via the landing-page
+    // redirect brings the real payload with us — seeding from it here, during
+    // the first render, is what stops the app flashing an empty state for a
+    // frame before the effect below runs. Otherwise fall back to the payload
+    // persisted from last session.
+    const fresh = utils.wheels.bootstrap.getData({ wheelId: initialWheelId });
+    const payload = fresh?.user ? fresh : readBootCache<BootstrapPayload>();
+    if (!payload?.user) return false;
+    seedFromBootstrap(utils, payload);
     return true;
   });
 
@@ -552,9 +565,12 @@ export default function WheelApp() {
   // `!seeded` so this only covers first entry — `seeded` latches true, so nothing
   // later can bounce the whole app back to a fullscreen loader. `isLoading` is
   // false while the query is disabled or errored, so this can't hang either.
-  if (loading || (!seeded && bootstrapQuery.isLoading)) {
-    // Only reached on a cold load — with a persisted payload `seeded` is already
-    // true on the first render and the real app paints straight away.
+  if (!seeded && (loading || bootstrapQuery.isLoading)) {
+    // Only reached on a cold load. With a persisted payload `seeded` is already
+    // true on the first render — and since seeding now includes auth.me,
+    // `loading` is false there too — so the real app paints straight away.
+    // `loading` must stay INSIDE the `!seeded` guard: gating on it separately is
+    // what used to make the persisted cache worthless.
     return <BrandLoader fullscreen label="Warming up your wheel" />;
   }
 

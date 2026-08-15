@@ -449,14 +449,28 @@ async function createCustomTag(name, createdBy, wheelId, category = "custom") {
 async function getRestaurantsByWheel(wheelId) {
   const db = await getDb();
   if (!db) return [];
-  const rests = await db.select().from(restaurants).where(eq(restaurants.wheelId, wheelId));
-  if (rests.length === 0) return [];
-  const restIds = rests.map((r) => r.id);
-  const rtags = await db.select({ restaurantId: restaurantTags.restaurantId, tagId: restaurantTags.tagId, tagName: tags.name, tagColor: tags.color, tagCategory: tags.category }).from(restaurantTags).innerJoin(tags, eq(restaurantTags.tagId, tags.id)).where(inArray(restaurantTags.restaurantId, restIds));
-  return rests.map((r) => ({
-    ...r,
-    tags: rtags.filter((t2) => t2.restaurantId === r.id).map((t2) => ({ id: t2.tagId, name: t2.tagName, color: t2.tagColor, category: t2.tagCategory }))
-  }));
+  const rows = await db.select({
+    restaurant: restaurants,
+    tagId: tags.id,
+    tagName: tags.name,
+    tagColor: tags.color,
+    tagCategory: tags.category
+  }).from(restaurants).leftJoin(restaurantTags, eq(restaurantTags.restaurantId, restaurants.id)).leftJoin(tags, eq(restaurantTags.tagId, tags.id)).where(eq(restaurants.wheelId, wheelId)).orderBy(restaurants.id);
+  const byId = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    let entry = byId.get(row.restaurant.id);
+    if (!entry) {
+      entry = shapeRestaurant(row.restaurant);
+      byId.set(row.restaurant.id, entry);
+    }
+    if (row.tagId != null) {
+      entry.tags.push({ id: row.tagId, name: row.tagName, color: row.tagColor, category: row.tagCategory });
+    }
+  }
+  return Array.from(byId.values());
+}
+function shapeRestaurant(r) {
+  return { ...r, tags: [] };
 }
 async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = null, place = null) {
   const db = await getDb();
@@ -1842,6 +1856,9 @@ function resolveBootstrapWheelId(accessibleWheelIds, requestedWheelId, defaultWh
   if (defaultWheelId != null && accessible.has(defaultWheelId)) return defaultWheelId;
   return accessibleWheelIds[0] ?? null;
 }
+function speculativeWheelId(requestedWheelId, defaultWheelId) {
+  return requestedWheelId ?? defaultWheelId ?? null;
+}
 
 // shared/realtimeState.ts
 function push(map, key, value) {
@@ -2465,7 +2482,11 @@ var appRouter = router({
       if (!user) {
         return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
       }
-      const wheels2 = await getUserWheels(user.id);
+      const guessedWheelId = speculativeWheelId(input.wheelId, user.defaultWheelId);
+      const [wheels2, guessedWheel] = await Promise.all([
+        getUserWheels(user.id),
+        guessedWheelId == null ? void 0 : getWheelById(guessedWheelId)
+      ]);
       const wheelId = resolveBootstrapWheelId(
         wheels2.map((w) => w.id),
         input.wheelId,
@@ -2474,7 +2495,7 @@ var appRouter = router({
       if (wheelId == null) {
         return { user, wheels: wheels2, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
       }
-      const wheel = await getWheelById(wheelId);
+      const wheel = wheelId === guessedWheelId ? guessedWheel : await getWheelById(wheelId);
       if (!wheel) {
         return { user, wheels: wheels2, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
       }

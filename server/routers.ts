@@ -17,7 +17,7 @@ import { RATINGS } from "@shared/rating";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
 import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
-import { resolveBootstrapWheelId } from "@shared/bootstrap";
+import { resolveBootstrapWheelId, speculativeWheelId } from "@shared/bootstrap";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { mapProviderResults } from "@shared/placeMapping";
@@ -126,7 +126,19 @@ export const appRouter = router({
         if (!user) {
           return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
         }
-        const wheels = await getUserWheels(user.id);
+        // The wheel list and the wheel itself used to be two SEQUENTIAL reads,
+        // because picking the target needs the list. But the target is
+        // predictable from the request alone (URL wheel → starred default), so
+        // read that wheel speculatively alongside the list. A hit saves a whole
+        // round trip on the entry path; a miss costs one cheap single-row read
+        // that we throw away. `speculativeWheelId` is only ever a prefetch hint —
+        // authorization still comes from `resolveBootstrapWheelId` over the
+        // user's real membership list below.
+        const guessedWheelId = speculativeWheelId(input.wheelId, user.defaultWheelId);
+        const [wheels, guessedWheel] = await Promise.all([
+          getUserWheels(user.id),
+          guessedWheelId == null ? undefined : getWheelById(guessedWheelId),
+        ]);
         // Requested (if visible to them) → starred default → first wheel.
         const wheelId = resolveBootstrapWheelId(
           wheels.map((w) => w.id),
@@ -138,7 +150,10 @@ export const appRouter = router({
           return { user, wheels, wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
         }
 
-        const wheel = await getWheelById(wheelId);
+        // Only reuse the speculative row when it is the wheel we actually
+        // resolved; otherwise the guess named something this user can't see and
+        // we fall back to the ordinary read.
+        const wheel = wheelId === guessedWheelId ? guessedWheel : await getWheelById(wheelId);
         if (!wheel) {
           return { user, wheels, wheelId, wheel: null, restaurants: [], tags: [], ratings: [] };
         }

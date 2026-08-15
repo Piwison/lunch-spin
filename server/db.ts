@@ -254,18 +254,50 @@ export async function createCustomTag(
 export async function getRestaurantsByWheel(wheelId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rests = await db.select().from(restaurants).where(eq(restaurants.wheelId, wheelId));
-  if (rests.length === 0) return [];
-  const restIds = rests.map((r) => r.id);
-  const rtags = await db
-    .select({ restaurantId: restaurantTags.restaurantId, tagId: restaurantTags.tagId, tagName: tags.name, tagColor: tags.color, tagCategory: tags.category })
-    .from(restaurantTags)
-    .innerJoin(tags, eq(restaurantTags.tagId, tags.id))
-    .where(inArray(restaurantTags.restaurantId, restIds));
-  return rests.map((r) => ({
-    ...r,
-    tags: rtags.filter((t) => t.restaurantId === r.id).map((t) => ({ id: t.tagId, name: t.tagName, color: t.tagColor, category: t.tagCategory })),
-  }));
+  // ONE query, not two. This sits on the app-entry critical path (both
+  // restaurants.list and wheels.bootstrap call it), and the previous shape —
+  // the restaurants, then a second query for their tags — paid two *sequential*
+  // round trips, each at full latency to a cluster that may be cold. A pair of
+  // LEFT JOINs fans each restaurant out over its tags in a single trip and we
+  // regroup in memory. LEFT (not INNER) so an untagged restaurant still comes
+  // back, with one all-null tag row that the grouping drops.
+  const rows = await db
+    .select({
+      restaurant: restaurants,
+      tagId: tags.id,
+      tagName: tags.name,
+      tagColor: tags.color,
+      tagCategory: tags.category,
+    })
+    .from(restaurants)
+    .leftJoin(restaurantTags, eq(restaurantTags.restaurantId, restaurants.id))
+    .leftJoin(tags, eq(restaurantTags.tagId, tags.id))
+    .where(eq(restaurants.wheelId, wheelId))
+    // The join makes row order arbitrary, and this list is what the wheel
+    // renders — order by id so segments keep their stable insertion order.
+    .orderBy(restaurants.id);
+
+  const byId = new Map<number, ReturnType<typeof shapeRestaurant>>();
+  for (const row of rows) {
+    let entry = byId.get(row.restaurant.id);
+    if (!entry) {
+      entry = shapeRestaurant(row.restaurant);
+      byId.set(row.restaurant.id, entry);
+    }
+    if (row.tagId != null) {
+      entry.tags.push({ id: row.tagId, name: row.tagName!, color: row.tagColor!, category: row.tagCategory! });
+    }
+  }
+  return Array.from(byId.values());
+}
+
+/** The tag fields callers read off a restaurant. Derived from the schema so the
+ *  LEFT JOIN's nullable columns can't silently widen what consumers see. */
+type RestaurantTag = Pick<Tag, "id" | "name" | "color" | "category">;
+
+/** A restaurant row with the empty tag list `getRestaurantsByWheel` fills in. */
+function shapeRestaurant(r: typeof restaurants.$inferSelect) {
+  return { ...r, tags: [] as RestaurantTag[] };
 }
 
 // Optional located-place fields carried when a restaurant originates from the

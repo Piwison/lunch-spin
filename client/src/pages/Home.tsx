@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { readBootCache } from "@/lib/bootCache";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useLocation } from "wouter";
 import { Users, Clock, Tags, Sparkles, ArrowRight, ChevronDown, Utensils, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -40,6 +41,33 @@ export default function Home() {
   // it behind "we know this visitor is anonymous".
   const isGuest = !loading && !user;
 
+  // ── Don't make signed-in visitors pay for this page ───────────────────────
+  // Typing the domain lands here, not on /app — so this page, not /app, is the
+  // real front door. It used to block on auth.me and only *then* redirect, at
+  // which point WheelApp mounted and issued wheels.bootstrap: two serial round
+  // trips to a cold serverless function before anything rendered. Two fixes,
+  // one for each population.
+  //
+  // 1. A returning visitor has last session's payload in localStorage, so we
+  //    know they're signed in before the first paint. Redirect in a layout
+  //    effect and never render the marketing page at all.
+  const [hasStoredSession] = useState(() => readBootCache() !== null);
+  useLayoutEffect(() => {
+    if (hasStoredSession) navigate("/app", { replace: true });
+  }, [hasStoredSession, navigate]);
+
+  // 2. Everyone else: issue bootstrap HERE, in the same tick as useAuth's
+  //    auth.me, so httpBatchLink folds both into ONE request. By the time the
+  //    redirect below fires, WheelApp's entry payload is already in the cache
+  //    and it re-renders warm instead of starting a second round trip.
+  //    The `{ wheelId: null }` input must match WheelApp's query key exactly —
+  //    it freezes to null when the URL carries no wheel. That's also why the
+  //    redirect goes to "/app" and never "/app/<id>": a wheel-specific URL
+  //    would change the key and re-issue the request we just paid for.
+  //    Anonymous visitors cost nothing here — bootstrap returns user:null
+  //    without touching the database.
+  trpc.wheels.bootstrap.useQuery({ wheelId: null }, { staleTime: 30_000 });
+
   // Popular public wheels — guests can try one without signing in.
   const { data: popularWheels } = trpc.wheels.listPublic.useQuery(
     { limit: 6 },
@@ -50,7 +78,7 @@ export default function Home() {
   const alpha = (c: string, a: number) => `oklch(from ${c} l c h / ${a})`;
 
   useEffect(() => {
-    if (!loading && user) navigate("/app");
+    if (!loading && user) navigate("/app", { replace: true });
   }, [user, loading, navigate]);
 
   // Smooth magnetic cursor (guests only — see isGuest; also skipped for touch
@@ -215,6 +243,11 @@ export default function Home() {
       window.removeEventListener("mousemove", onMove);
     };
   }, [theme, isGuest]);
+
+  // Returning signed-in visitor: the layout effect above is already navigating
+  // to /app. Render nothing rather than flashing a marketing page they'll never
+  // read. (After every hook, so the hook order stays stable.)
+  if (hasStoredSession) return null;
 
   return (
     <div
