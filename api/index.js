@@ -2297,7 +2297,7 @@ var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch
 var DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 var PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
 var FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json";
-var PLACE_FIELDS = "place_id,name,geometry,formatted_address,types,price_level";
+var PLACE_FIELDS = "place_id,name,geometry,formatted_address,types";
 function isPlacesConfigured() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
 }
@@ -2379,8 +2379,7 @@ function mapGooglePlace(p) {
     lat: typeof loc?.lat === "number" ? loc.lat : null,
     lng: typeof loc?.lng === "number" ? loc.lng : null,
     address: p.formatted_address ?? null,
-    cuisine: cuisineFromTypes(p.types),
-    priceLevel: normalizePriceLevel(p.price_level)
+    cuisine: cuisineFromTypes(p.types)
   };
 }
 async function expandShortLink(url) {

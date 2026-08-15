@@ -10,7 +10,7 @@
  * env var directly rather than adding to `_core/env.ts`.
  */
 
-import { cuisineFromTypes, normalizePriceLevel, type ProviderPlace } from "@shared/placeMapping";
+import { cuisineFromTypes, type ProviderPlace } from "@shared/placeMapping";
 import { parseMapLink } from "@shared/mapLink";
 import type { MatrixElement } from "@shared/walkTime";
 
@@ -19,7 +19,23 @@ const NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysear
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 const PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
 const FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json";
-const PLACE_FIELDS = "place_id,name,geometry,formatted_address,types,price_level";
+/**
+ * Fields asked of Place Details / Find Place.
+ *
+ * DELIBERATELY ALL "Basic Data" tier. The legacy Places API bills a Details
+ * call by the most expensive tier any requested field belongs to, and
+ * `price_level` is Atmosphere Data — the priciest one. It used to be in this
+ * list and NOTHING read it: the link resolver's consumers use name, placeId,
+ * cuisine (from `types`) and coordinates only, so every resolve was billed at
+ * Atmosphere rates for a value that was thrown away. Restaurants that do show a
+ * price get it from Nearby Search, which returns it inside its own SKU at no
+ * extra field cost.
+ *
+ * Adding a Contact or Atmosphere field here re-tiers every one of these calls —
+ * check what actually consumes it first. (`fetchPlaceHours` is separate and is
+ * knowingly Contact tier: opening hours is the whole point of that call.)
+ */
+const PLACE_FIELDS = "place_id,name,geometry,formatted_address,types";
 
 export interface NearbySearchResponse {
   results?: ProviderPlace[];
@@ -174,7 +190,6 @@ export interface ResolvedPlace {
   lng: number | null;
   address: string | null;
   cuisine: string | null;
-  priceLevel: number | null;
 }
 
 // One Google place record (details result / find-place candidate).
@@ -182,7 +197,6 @@ interface GooglePlace {
   place_id?: string;
   name?: string;
   formatted_address?: string;
-  price_level?: number;
   types?: string[];
   geometry?: { location?: { lat?: number; lng?: number } };
 }
@@ -200,7 +214,6 @@ function mapGooglePlace(p: GooglePlace): ResolvedPlace | null {
     lng: typeof loc?.lng === "number" ? loc.lng : null,
     address: p.formatted_address ?? null,
     cuisine: cuisineFromTypes(p.types),
-    priceLevel: normalizePriceLevel(p.price_level),
   };
 }
 
