@@ -446,6 +446,78 @@ export async function addProviderRestaurants(
   });
 }
 
+/**
+ * Copy every restaurant from one wheel to another, provider data and all.
+ *
+ * Carries placeId, coordinates, address, price, cuisine, map link, cached
+ * opening hours AND `hoursUpdatedAt` — so the copy inherits the source's
+ * staleness window instead of looking brand-new and triggering a fresh round of
+ * Place Details calls for restaurants we already have hours for.
+ *
+ * walkSeconds is deliberately NOT copied: it is measured from the *source*
+ * wheel's origin, and the copy's origin is set independently. Leaving it null
+ * lets the caller recompute against the right point.
+ *
+ * Four round trips regardless of size (read rows, read their tags, insert rows,
+ * insert tags), same reasoning as addProviderRestaurants.
+ */
+export async function copyWheelRestaurants(
+  fromWheelId: number,
+  toWheelId: number,
+  addedBy: number,
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+
+  const source = await db.select().from(restaurants).where(eq(restaurants.wheelId, fromWheelId));
+  if (source.length === 0) return 0;
+
+  const sourceTags = await db
+    .select({ restaurantId: restaurantTags.restaurantId, tagId: restaurantTags.tagId })
+    .from(restaurantTags)
+    .where(inArray(restaurantTags.restaurantId, source.map((r) => r.id)));
+
+  await db.insert(restaurants).values(
+    source.map((r) => ({
+      wheelId: toWheelId,
+      addedBy,
+      name: r.name,
+      notes: r.notes,
+      mapUrl: r.mapUrl,
+      primaryTagId: r.primaryTagId,
+      placeId: r.placeId,
+      lat: r.lat,
+      lng: r.lng,
+      address: r.address,
+      priceLevel: r.priceLevel,
+      cuisine: r.cuisine,
+      openHours: r.openHours,
+      hoursUpdatedAt: r.hoursUpdatedAt,
+      utcOffsetMinutes: r.utcOffsetMinutes,
+      source: r.source,
+    })),
+  );
+
+  // Read the new rows back to map old id → new id for the tag join rows. Ordered
+  // by id so the pairing is positional and stable; placeId can't be the key here
+  // because hand-added restaurants don't have one.
+  const inserted = await db
+    .select({ id: restaurants.id })
+    .from(restaurants)
+    .where(eq(restaurants.wheelId, toWheelId))
+    .orderBy(restaurants.id);
+  if (inserted.length !== source.length) return inserted.length;
+
+  const newIdByOldId = new Map(source.map((r, i) => [r.id, inserted[i]!.id]));
+  const tagRows = sourceTags.flatMap((t) => {
+    const newId = newIdByOldId.get(t.restaurantId);
+    return newId == null ? [] : [{ restaurantId: newId, tagId: t.tagId }];
+  });
+  if (tagRows.length > 0) await db.insert(restaurantTags).values(tagRows);
+
+  return source.length;
+}
+
 export async function addRestaurants(wheelId: number, addedBy: number, names: string[]): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

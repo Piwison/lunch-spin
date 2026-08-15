@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, Check, Tag, ClipboardList, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3, Search, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Tag, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3, Search, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import {
@@ -97,9 +97,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   const [showTagCreate, setShowTagCreate] = useState(false);
   const [showAllCuisine, setShowAllCuisine] = useState(false);
   const [showAllFoodType, setShowAllFoodType] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   const [showNearby, setShowNearby] = useState(false);
-  const [importText, setImportText] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
@@ -158,18 +156,6 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   });
   const deleteRestaurant = trpc.restaurants.delete.useMutation({
     onSuccess: () => { invalidate(); toast.success("Restaurant removed"); },
-    onError: (e) => toast.error(e.message),
-  });
-  const importRestaurants = trpc.restaurants.addBulk.useMutation({
-    onSuccess: (res) => {
-      invalidate();
-      setShowImport(false);
-      setImportText("");
-      const extras: string[] = [];
-      if (res.skipped.duplicates) extras.push(`${res.skipped.duplicates} duplicate${res.skipped.duplicates > 1 ? "s" : ""} skipped`);
-      if (res.skipped.tooLong) extras.push(`${res.skipped.tooLong} too long`);
-      toast.success(`Added ${res.added} restaurant${res.added !== 1 ? "s" : ""}${extras.length ? ` (${extras.join(", ")})` : ""}`);
-    },
     onError: (e) => toast.error(e.message),
   });
   const createTag = trpc.tags.createCustom.useMutation({
@@ -432,20 +418,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           >
             <Navigation size={14} /> NEARBY
           </button>
-          <button
-            onClick={() => { setImportText(""); setShowImport(true); }}
-            title="Import"
-            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
-            style={{
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              color: "var(--muted-foreground)",
-              fontFamily: "var(--font-display)",
-              letterSpacing: "0.06em",
-            }}
-          >
-            <ClipboardList size={14} /> <span className="hidden sm:inline">IMPORT</span>
-          </button>
+          {/* IMPORT (paste a list of names) was removed: ADD NEARBY and the
+              name search in the add form cover the same ground with real place
+              data attached. The server's restaurants.addBulk stays — the
+              starter pack still uses it. */}
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title="Add restaurant"
@@ -1002,35 +978,6 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               {addRestaurant.isPending || updateRestaurant.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />{editId !== null ? "Saving..." : "Adding..."}</span>
               ) : editId !== null ? "Save Changes" : "Add Restaurant"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Bulk import dialog */}
-      <Dialog open={showImport} onOpenChange={(open) => { if (!open) { setShowImport(false); setImportText(""); } }}>
-        <DialogContent className="glass border-border/50 max-w-md">
-          <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>IMPORT RESTAURANTS</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 pt-2">
-            <p className="text-xs text-muted-foreground">
-              Paste a list — one name per line (or comma-separated). Duplicates are skipped. You can add tags afterward.
-            </p>
-            <Textarea
-              placeholder={"Ramen House\nSushi Bar\nPho Corner"}
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              className="bg-secondary/50 border-border/50 resize-none font-mono text-sm"
-              rows={8}
-              autoFocus
-            />
-            <Button
-              onClick={() => importText.trim() && importRestaurants.mutate({ wheelId, text: importText })}
-              disabled={!importText.trim() || importRestaurants.isPending}
-              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
-            >
-              {importRestaurants.isPending ? "Importing..." : "Import"}
             </Button>
           </div>
         </DialogContent>

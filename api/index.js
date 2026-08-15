@@ -551,6 +551,42 @@ async function addProviderRestaurants(wheelId, addedBy, rows) {
     return id == null ? [] : [{ id, placeId: r.place.placeId }];
   });
 }
+async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const source = await db.select().from(restaurants).where(eq(restaurants.wheelId, fromWheelId));
+  if (source.length === 0) return 0;
+  const sourceTags = await db.select({ restaurantId: restaurantTags.restaurantId, tagId: restaurantTags.tagId }).from(restaurantTags).where(inArray(restaurantTags.restaurantId, source.map((r) => r.id)));
+  await db.insert(restaurants).values(
+    source.map((r) => ({
+      wheelId: toWheelId,
+      addedBy,
+      name: r.name,
+      notes: r.notes,
+      mapUrl: r.mapUrl,
+      primaryTagId: r.primaryTagId,
+      placeId: r.placeId,
+      lat: r.lat,
+      lng: r.lng,
+      address: r.address,
+      priceLevel: r.priceLevel,
+      cuisine: r.cuisine,
+      openHours: r.openHours,
+      hoursUpdatedAt: r.hoursUpdatedAt,
+      utcOffsetMinutes: r.utcOffsetMinutes,
+      source: r.source
+    }))
+  );
+  const inserted = await db.select({ id: restaurants.id }).from(restaurants).where(eq(restaurants.wheelId, toWheelId)).orderBy(restaurants.id);
+  if (inserted.length !== source.length) return inserted.length;
+  const newIdByOldId = new Map(source.map((r, i) => [r.id, inserted[i].id]));
+  const tagRows = sourceTags.flatMap((t2) => {
+    const newId = newIdByOldId.get(t2.restaurantId);
+    return newId == null ? [] : [{ restaurantId: newId, tagId: t2.tagId }];
+  });
+  if (tagRows.length > 0) await db.insert(restaurantTags).values(tagRows);
+  return source.length;
+}
 async function addRestaurants(wheelId, addedBy, names) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -2256,6 +2292,7 @@ function parseMapLink(input) {
 }
 
 // server/places.ts
+var TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
 var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
 var DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
 var PLACE_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
@@ -2263,6 +2300,38 @@ var FIND_PLACE_URL = "https://maps.googleapis.com/maps/api/place/findplacefromte
 var PLACE_FIELDS = "place_id,name,geometry,formatted_address,types,price_level";
 function isPlacesConfigured() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
+}
+async function searchPlacesByText(query, bias) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
+  const url = new URL(TEXT_SEARCH_URL);
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("query", query);
+  if (bias) url.searchParams.set("location", `${bias.lat},${bias.lng}`);
+  if (bias) url.searchParams.set("radius", "50000");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8e3);
+  try {
+    const res = await fetch(url.toString(), { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Place text search failed (${res.status} ${res.statusText})`);
+    const data = await res.json();
+    const candidates = (data.results ?? []).flatMap((p) => {
+      const loc = p.geometry?.location;
+      if (!p.place_id || !p.name || typeof loc?.lat !== "number" || typeof loc?.lng !== "number") {
+        return [];
+      }
+      return [{
+        placeId: p.place_id,
+        name: p.name,
+        address: p.formatted_address ?? null,
+        lat: loc.lat,
+        lng: loc.lng
+      }];
+    });
+    return { candidates, status: data.status, errorMessage: data.error_message ?? null };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function searchNearbyRestaurants(lat, lng, radius, keyword) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -2782,13 +2851,76 @@ var appRouter = router({
         // Capped at the wheel's own segment ceiling — more than this can't be
         // rendered as a spinnable wheel anyway (shared/nearby).
         places: z3.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
-        name: z3.string().min(1).max(128).optional()
+        name: z3.string().min(1).max(128).optional(),
+        // The point the user searched from, when they picked a place (their
+        // office) rather than using raw geolocation. Persisted as the wheel's
+        // distance origin so walking times work immediately and the office is
+        // already filled in under wheel settings — the same thing they just
+        // told us, not a second setup step.
+        origin: z3.object({
+          lat: z3.number().min(-90).max(90),
+          lng: z3.number().min(-180).max(180),
+          label: z3.string().min(1).max(64)
+        }).nullable().optional()
       })
     ).mutation(async ({ ctx, input }) => {
       const name = input.name?.trim() || wheelNameForArea(deriveAreaName(input.places.map((p) => p.address)));
       const id = await createWheel(ctx.user.id, name, false, false);
+      if (input.origin) {
+        await setWheelOrigin(id, {
+          distanceEnabled: true,
+          originLat: input.origin.lat,
+          originLng: input.origin.lng,
+          originLabel: input.origin.label
+        });
+      }
       const { added, duplicates } = await addNearbyPlaces(id, ctx.user.id, input.places);
       return { id, name, added, duplicates };
+    }),
+    /**
+     * Duplicate a wheel — "same restaurants, different team".
+     *
+     * Copies rows directly rather than round-tripping the export JSON, which is
+     * lossy: that format carries only names, notes and tag names, so a wheel
+     * built from nearby search would come back without place ids, coordinates,
+     * map links or opening hours. Those would then have to be re-fetched from
+     * Google one Place Details call per restaurant, for data we already hold.
+     *
+     * Carried over: restaurants (including their provider identity and cached
+     * hours), their tags, the spin rules, and the office/distance origin.
+     * Deliberately NOT carried: members (the new team invites its own), ratings
+     * (a different team's opinions), and above all spin history — copying that
+     * would start the new wheel with restaurants already excluded.
+     *
+     * Any member can copy a wheel they can see; the copy is owned by whoever
+     * made it, and is private and unshared regardless of the source's settings.
+     */
+    copy: protectedProcedure.input(z3.object({ id: z3.number(), name: z3.string().min(1).max(128).optional() })).mutation(async ({ ctx, input }) => {
+      const source = await getWheelById(input.id);
+      if (!source) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.id, ctx.user.id);
+      if (!isMember && !source.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
+      const name = (input.name?.trim() || `${source.name} (copy)`).slice(0, 128);
+      const newId = await createWheel(
+        ctx.user.id,
+        name,
+        false,
+        false,
+        void 0,
+        source.exclusionDays,
+        source.fairnessMode,
+        source.rotateCuisines
+      );
+      if (source.distanceEnabled && source.originLat != null && source.originLng != null) {
+        await setWheelOrigin(newId, {
+          distanceEnabled: true,
+          originLat: Number(source.originLat),
+          originLng: Number(source.originLng),
+          originLabel: source.originLabel ?? "Office"
+        });
+      }
+      const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
+      return { id: newId, name, restaurants: copied };
     }),
     update: protectedProcedure.input(z3.object({
       id: z3.number(),
@@ -3200,13 +3332,67 @@ var appRouter = router({
       );
       return { added, duplicates };
     }),
+    /**
+     * Free-text place lookup for "where am I eating from" — an office, a
+     * station, a landmark. Not a restaurant search: it backs the location
+     * picker's "search for a place" mode, which exists because browser
+     * geolocation is refused or unavailable often enough that it can't be the
+     * only way to say where you are.
+     *
+     * Public-safe but sign-in gated, and unauthenticated by wheel on purpose:
+     * first-run uses it BEFORE any wheel exists. Costs one Places Text Search
+     * per call and only ever runs on an explicit press.
+     */
+    searchPlaces: protectedProcedure.input(
+      z3.object({
+        query: z3.string().min(1).max(200),
+        // Optional bias toward a known position, when we have one.
+        lat: z3.number().min(-90).max(90).nullable().optional(),
+        lng: z3.number().min(-180).max(180).nullable().optional()
+      })
+    ).mutation(async ({ input }) => {
+      if (!isPlacesConfigured()) {
+        throw new TRPCError3({
+          code: "PRECONDITION_FAILED",
+          message: "Place search isn't configured on this server."
+        });
+      }
+      let res;
+      try {
+        const bias = input.lat != null && input.lng != null ? { lat: input.lat, lng: input.lng } : null;
+        res = await searchPlacesByText(input.query, bias);
+      } catch {
+        throw new TRPCError3({
+          code: "BAD_GATEWAY",
+          message: "Couldn't reach the place provider. Try again in a moment."
+        });
+      }
+      const failure = classifyPlacesStatus(res.status, res.errorMessage);
+      if (failure) {
+        if (failure.quota) {
+          console.error(`[places] QUOTA EXHAUSTED on searchPlaces (status=${res.status})`);
+        }
+        throw new TRPCError3({ code: failure.code, message: failure.message });
+      }
+      return { places: res.candidates.slice(0, 8) };
+    }),
     // Resolve a pasted Google Maps link into a nameable place (Place Details /
     // Find Place, expanding short links). Read-only proposal — the client
     // prefills the add form and the user confirms; the write still goes through
     // restaurants.add. Member-gated; degrades like searchNearby when unconfigured.
-    resolveLink: protectedProcedure.input(z3.object({ wheelId: z3.number(), url: z3.string().min(1).max(2048) })).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+    resolveLink: protectedProcedure.input(
+      z3.object({
+        // Nullable for the same reason as searchNearby: the location picker
+        // resolves links during first run, before any wheel exists. With a
+        // wheel, the membership check is unchanged.
+        wheelId: z3.number().nullable().optional(),
+        url: z3.string().min(1).max(2048)
+      })
+    ).mutation(async ({ ctx, input }) => {
+      if (input.wheelId != null) {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      }
       if (!isPlacesConfigured()) {
         throw new TRPCError3({
           code: "PRECONDITION_FAILED",

@@ -33,20 +33,36 @@ export function saveBootCache(payload: unknown): void {
 }
 
 /**
- * Read the cached payload. Returns null when absent, unreadable, or written by a
- * different user than the one we expect.
+ * Read the cached payload. Returns null when absent, unreadable, or — when the
+ * caller knows who is expected — written by a different user.
+ *
+ * The docstring here used to claim it discarded another user's payload while the
+ * code did no such check. That was survivable while this only seeded *data*
+ * queries, but it now seeds `auth.me` too, so an unverified payload would let
+ * the app render as the previous account (wrong name, wrong avatar, and
+ * ownership checks like the wheel-settings gear silently failing) until the
+ * network corrected it. `expectedUserId` makes the promise real wherever the
+ * caller has an id to check against.
  */
-export function readBootCache<T extends { user?: { id: number } | null }>(): T | null {
+export function readBootCache<T extends { user?: { id: number } | null }>(
+  expectedUserId?: number | null,
+): T | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = superjson.parse<T>(raw);
     // A payload with no user is useless (and would seed an empty app).
     if (!parsed || !parsed.user) return null;
+    if (expectedUserId != null && parsed.user.id !== expectedUserId) return null;
     return parsed;
   } catch {
     return null;
   }
+}
+
+/** The user id a cached payload belongs to, or null when there's no usable cache. */
+export function cachedUserId(): number | null {
+  return readBootCache<{ user?: { id: number } | null }>()?.user?.id ?? null;
 }
 
 /** Drop the cache — called on sign-out so the next user can't see these wheels. */
