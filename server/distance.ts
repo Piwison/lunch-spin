@@ -44,8 +44,35 @@ export async function recomputeWheelDistances(
 ): Promise<{ computed: number; unlocatable: number; matrixFailed: boolean }> {
   const origin = await activeOrigin(wheelId);
   if (!origin) return { computed: 0, unlocatable: 0, matrixFailed: false };
+  return computeAgainstOrigin(origin, await getRestaurantsByWheel(wheelId));
+}
 
-  const restaurants = await getRestaurantsByWheel(wheelId);
+/**
+ * Distances for a SPECIFIC set of restaurants — for a batch add.
+ *
+ * Calling `maybeComputeOneDistance` in a loop costs one Distance Matrix request
+ * per restaurant, and the API takes up to 25 destinations per request; adding
+ * eight nearby places was therefore paying 8x what it needed to. This does the
+ * same work in one request per 25. No-op when distance mode is off, so callers
+ * don't have to check.
+ */
+export async function computeDistancesFor(
+  wheelId: number,
+  restaurantIds: number[],
+): Promise<{ computed: number; unlocatable: number; matrixFailed: boolean }> {
+  if (restaurantIds.length === 0) return { computed: 0, unlocatable: 0, matrixFailed: false };
+  const origin = await activeOrigin(wheelId);
+  if (!origin) return { computed: 0, unlocatable: 0, matrixFailed: false };
+  const wanted = new Set(restaurantIds);
+  const all = await getRestaurantsByWheel(wheelId);
+  return computeAgainstOrigin(origin, all.filter((r) => wanted.has(r.id)));
+}
+
+/** Shared core: geocode what needs it, then batch the matrix requests. */
+async function computeAgainstOrigin(
+  origin: { lat: number; lng: number },
+  restaurants: Parameters<typeof partitionForDistance>[0],
+): Promise<{ computed: number; unlocatable: number; matrixFailed: boolean }> {
   const { ready, needsGeocode, unlocatable } = partitionForDistance(restaurants);
 
   for (const r of needsGeocode) {
@@ -80,7 +107,7 @@ export async function recomputeWheelDistances(
     } catch (error) {
       // This batch's walkSeconds stay whatever they were — stale, not wrong —
       // but the caller needs to know it wasn't just "nothing to compute".
-      console.error(`[distance] walkingMatrix failed for wheel ${wheelId} (${batch.length} destinations):`, error instanceof Error ? error.message : error);
+      console.error(`[distance] walkingMatrix failed (${batch.length} destinations):`, error instanceof Error ? error.message : error);
       matrixFailed = true;
     }
   }

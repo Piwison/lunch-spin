@@ -22,6 +22,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { track } from "@/lib/analytics";
+import { providerAlert } from "@/lib/placesError";
 import { formatWalk } from "@shared/nearby";
 import {
   DEFAULT_PICK_COUNT,
@@ -181,8 +182,7 @@ export default function OnboardingFlow({
     );
   };
 
-  const searchFailed = search.isError;
-  const notConfigured = search.error?.data?.code === "PRECONDITION_FAILED";
+  const alert = providerAlert(search.error);
 
   // ── Building ──────────────────────────────────────────────────────────────
   if (step === "building") {
@@ -367,11 +367,14 @@ export default function OnboardingFlow({
         </div>
 
         {geoError && <ErrorNote>{geoError}</ErrorNote>}
-        {searchFailed && (
-          <ErrorNote>
-            {notConfigured
-              ? "Nearby search isn't available on this server yet — add your places by hand instead."
-              : search.error?.message}
+        {alert && (
+          // A spent map quota is a limit, not a crash: calmer styling, no retry
+          // affordance, and a nudge to the path that still works.
+          <ErrorNote tone={alert.quota ? "warn" : "error"}>
+            {alert.message}
+            {/* The quota copy already names the fallback; only the config case
+                needs pointing at it. */}
+            {alert.config && <> Pick “I'll add places myself” below.</>}
           </ErrorNote>
         )}
 
@@ -425,18 +428,19 @@ function Shell({ children, scroll = false }: { children: React.ReactNode; scroll
   );
 }
 
-function ErrorNote({ children }: { children: React.ReactNode }) {
+function ErrorNote({ children, tone = "error" }: { children: React.ReactNode; tone?: "error" | "warn" }) {
+  const token = tone === "warn" ? "--brand" : "--destructive";
   return (
     <div
-      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs w-full max-w-xs"
+      className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-xs w-full max-w-xs"
       style={{
-        background: "oklch(from var(--destructive) l c h / 0.10)",
-        border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
-        color: "var(--destructive)",
+        background: `oklch(from var(${token}) l c h / 0.10)`,
+        border: `1px solid oklch(from var(${token}) l c h / 0.25)`,
+        color: `var(${token})`,
       }}
     >
-      <AlertTriangle size={13} className="flex-shrink-0" />
-      <span className="text-left">{children}</span>
+      <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+      <span className="text-left leading-relaxed">{children}</span>
     </div>
   );
 }

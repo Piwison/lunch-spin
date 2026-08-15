@@ -1936,6 +1936,50 @@ function wheelNameForArea(area) {
   return name.length > MAX_WHEEL_NAME ? name.slice(0, MAX_WHEEL_NAME) : name;
 }
 
+// shared/placesError.ts
+var PLACES_QUOTA_MESSAGE = "Map search has hit its usage limit for now. Existing wheels and spins still work \u2014 you can add restaurants by name in the meantime.";
+function scrub(message) {
+  return message.replace(/\b(?:key=)?AIza[0-9A-Za-z_-]{10,}/g, "[redacted]");
+}
+function classifyPlacesStatus(status, errorMessage) {
+  if (!status || status === "OK" || status === "ZERO_RESULTS") return null;
+  const detail = errorMessage ? scrub(errorMessage) : null;
+  switch (status) {
+    // The key's quota (or its billing cap) is spent. Not retryable: another
+    // request just spends another call to be told the same thing.
+    case "OVER_QUERY_LIMIT":
+    case "OVER_DAILY_LIMIT":
+      return { code: "TOO_MANY_REQUESTS", message: PLACES_QUOTA_MESSAGE, quota: true, retryable: false };
+    // Key invalid, API not enabled on it, referrer/IP restriction, or billing
+    // not set up. An operator problem — Google's own text is the useful part.
+    case "REQUEST_DENIED":
+      return {
+        code: "PRECONDITION_FAILED",
+        message: detail ? `Map search is misconfigured on this server: ${detail}` : "Map search is misconfigured on this server.",
+        quota: false,
+        retryable: false
+      };
+    // We sent something malformed — our bug, not the provider's.
+    case "INVALID_REQUEST":
+    case "MAX_ELEMENTS_EXCEEDED":
+    case "MAX_DIMENSIONS_EXCEEDED":
+      return {
+        code: "BAD_REQUEST",
+        message: detail ? `Map search rejected that request: ${detail}` : "Map search rejected that request.",
+        quota: false,
+        retryable: false
+      };
+    // Google's own transient failure, and anything we don't recognise.
+    default:
+      return {
+        code: "BAD_GATEWAY",
+        message: detail ? `Map search is having trouble: ${detail}` : "Map search is having trouble right now. Try again in a moment.",
+        quota: false,
+        retryable: true
+      };
+  }
+}
+
 // shared/nearby.ts
 var MIN_SEGMENTS = 6;
 var MAX_SEGMENTS = 12;
@@ -2410,7 +2454,17 @@ async function activeOrigin(wheelId) {
 async function recomputeWheelDistances(wheelId) {
   const origin = await activeOrigin(wheelId);
   if (!origin) return { computed: 0, unlocatable: 0, matrixFailed: false };
-  const restaurants2 = await getRestaurantsByWheel(wheelId);
+  return computeAgainstOrigin(origin, await getRestaurantsByWheel(wheelId));
+}
+async function computeDistancesFor(wheelId, restaurantIds) {
+  if (restaurantIds.length === 0) return { computed: 0, unlocatable: 0, matrixFailed: false };
+  const origin = await activeOrigin(wheelId);
+  if (!origin) return { computed: 0, unlocatable: 0, matrixFailed: false };
+  const wanted = new Set(restaurantIds);
+  const all = await getRestaurantsByWheel(wheelId);
+  return computeAgainstOrigin(origin, all.filter((r) => wanted.has(r.id)));
+}
+async function computeAgainstOrigin(origin, restaurants2) {
   const { ready, needsGeocode, unlocatable } = partitionForDistance(restaurants2);
   for (const r of needsGeocode) {
     try {
@@ -2440,7 +2494,7 @@ async function recomputeWheelDistances(wheelId) {
         if (seconds[i] != null) computed++;
       }
     } catch (error) {
-      console.error(`[distance] walkingMatrix failed for wheel ${wheelId} (${batch.length} destinations):`, error instanceof Error ? error.message : error);
+      console.error(`[distance] walkingMatrix failed (${batch.length} destinations):`, error instanceof Error ? error.message : error);
       matrixFailed = true;
     }
   }
@@ -2499,7 +2553,10 @@ async function refreshWheelHours(wheelId) {
           await setRestaurantPlaceId(t2.id, placeId);
         }
       }
-      if (!placeId) continue;
+      if (!placeId) {
+        await setRestaurantHours(t2.id, null, null);
+        continue;
+      }
       const hours = await fetchPlaceHours(placeId);
       await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
       updated += 1;
@@ -2567,12 +2624,10 @@ async function addNearbyPlaces(wheelId, userId, places) {
       };
     })
   );
-  await Promise.allSettled(
-    rows.flatMap((r) => [
-      maybeFetchOneRestaurantHours(r.id, r.placeId),
-      maybeComputeOneDistance(wheelId, r.id)
-    ])
-  );
+  await Promise.allSettled([
+    ...rows.map((r) => maybeFetchOneRestaurantHours(r.id, r.placeId)),
+    computeDistancesFor(wheelId, rows.map((r) => r.id))
+  ]);
   return { added: rows.length, duplicates, ids: rows.map((r) => r.id) };
 }
 var appRouter = router({
@@ -3035,11 +3090,12 @@ var appRouter = router({
           message: "Couldn't reach the place provider. Try again in a moment."
         });
       }
-      if (res.status && res.status !== "OK" && res.status !== "ZERO_RESULTS") {
-        throw new TRPCError3({
-          code: "BAD_GATEWAY",
-          message: `Place provider error: ${res.status}`
-        });
+      const failure = classifyPlacesStatus(res.status, res.error_message);
+      if (failure) {
+        if (failure.quota) {
+          console.error(`[places] QUOTA EXHAUSTED on searchNearby (status=${res.status})`);
+        }
+        throw new TRPCError3({ code: failure.code, message: failure.message });
       }
       const origin = { lat: input.lat, lng: input.lng };
       const mapped = mapProviderResults(res.results ?? [], origin);

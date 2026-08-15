@@ -54,7 +54,18 @@ export async function refreshWheelHours(wheelId: number): Promise<HoursRefreshRe
           await setRestaurantPlaceId(t.id, placeId);
         }
       }
-      if (!placeId) continue; // nothing to look up — stays "unknown", stays on the wheel
+      if (!placeId) {
+        // The saved link resolves to nothing Google knows about. Stamp the row
+        // anyway so it backs off for the staleness window: without this it stays
+        // permanently "needing hours" and EVERY refresh re-pays a Place Details
+        // (or Find Place, plus a short-link expansion) call for it, forever.
+        // Hours stay unknown, which keeps the restaurant on the wheel.
+        // Note this is only reached when resolvePlaceLink *returned* nothing — a
+        // provider error throws instead, and the catch below leaves the row
+        // un-stamped so a transient failure isn't cached for a week.
+        await setRestaurantHours(t.id, null, null);
+        continue;
+      }
       const hours = await fetchPlaceHours(placeId);
       // A place with genuinely no published hours: stamp hoursUpdatedAt anyway so
       // we don't re-request it on every spin, but leave the periods null/unknown.

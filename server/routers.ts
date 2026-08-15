@@ -19,6 +19,7 @@ import { buildTasteProfile } from "@shared/tasteProfile";
 import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
 import { resolveBootstrapWheelId, speculativeWheelId } from "@shared/bootstrap";
 import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
+import { classifyPlacesStatus } from "@shared/placesError";
 import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
@@ -27,7 +28,7 @@ import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
 import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, walkingMatrix } from "./places";
-import { maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
+import { computeDistancesFor, maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
 import { maybeFetchOneRestaurantHours, refreshWheelHours } from "./openHours";
 import {
   clearRoundAll,
@@ -149,16 +150,20 @@ async function addNearbyPlaces(
     }),
   );
 
-  // Enrichment is per-restaurant and independent, so run the whole batch
-  // concurrently rather than paying provider latency once per place. Every one
-  // of these is already best-effort — allSettled keeps one bad lookup from
-  // failing an add that has otherwise succeeded.
-  await Promise.allSettled(
-    rows.flatMap((r) => [
-      maybeFetchOneRestaurantHours(r.id, r.placeId),
-      maybeComputeOneDistance(wheelId, r.id),
-    ]),
-  );
+  // Enrichment, best-effort — allSettled keeps one bad lookup from failing an
+  // add that has otherwise succeeded.
+  //
+  // Opening hours are one Place Details call per place; Google has no batch
+  // endpoint for them, so N places genuinely cost N calls. They run
+  // concurrently rather than serially.
+  //
+  // Distances are NOT per-place: Distance Matrix takes 25 destinations per
+  // request, so the whole batch is one call via computeDistancesFor. Looping
+  // maybeComputeOneDistance here would have billed one request per restaurant.
+  await Promise.allSettled([
+    ...rows.map((r) => maybeFetchOneRestaurantHours(r.id, r.placeId)),
+    computeDistancesFor(wheelId, rows.map((r) => r.id)),
+  ]);
 
   return { added: rows.length, duplicates, ids: rows.map((r) => r.id) };
 }
@@ -769,11 +774,16 @@ export const appRouter = router({
             message: "Couldn't reach the place provider. Try again in a moment.",
           });
         }
-        if (res.status && res.status !== "OK" && res.status !== "ZERO_RESULTS") {
-          throw new TRPCError({
-            code: "BAD_GATEWAY",
-            message: `Place provider error: ${res.status}`,
-          });
+        // Google answers HTTP 200 for quota walls and key problems alike — the
+        // real outcome is in `status`. This used to surface as a flat
+        // "Place provider error: OVER_QUERY_LIMIT", which reads to a user like
+        // a bug and tells an operator nothing about the bill.
+        const failure = classifyPlacesStatus(res.status, res.error_message);
+        if (failure) {
+          if (failure.quota) {
+            console.error(`[places] QUOTA EXHAUSTED on searchNearby (status=${res.status})`);
+          }
+          throw new TRPCError({ code: failure.code, message: failure.message });
         }
 
         const origin = { lat: input.lat, lng: input.lng };

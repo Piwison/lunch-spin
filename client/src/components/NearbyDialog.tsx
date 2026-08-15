@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { formatWalk, DEFAULT_RADIUS_M } from "@shared/nearby";
 import { Navigation, Footprints, Loader2, Check, Plus, AlertTriangle, MapPin, Search } from "lucide-react";
 import { toast } from "sonner";
+import { providerAlert } from "@/lib/placesError";
+import { GeoError, cachedCoords, requestCoords, type Coords } from "@/lib/geo";
 
 interface NearbyDialogProps {
   wheelId: number;
@@ -14,8 +16,6 @@ interface NearbyDialogProps {
   /** Called after a place is added so the parent can refresh its list. */
   onAdded: () => void;
 }
-
-type Coords = { lat: number; lng: number };
 
 // A place row as returned by places.searchNearby.
 type NearbyResult = {
@@ -39,16 +39,8 @@ function placeMapUrl(placeId: string, name: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}&query_place_id=${placeId}`;
 }
 
-/**
- * Last resolved position, kept for the page session so re-opening the dialog
- * doesn't re-prompt for geolocation (and re-pay the fix). Deliberately module
- * scope and deliberately not persisted — it's a convenience for the current
- * visit, not stored location data.
- */
-const lastKnown: { coords: Coords | null } = { coords: null };
-
 export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: NearbyDialogProps) {
-  const [coords, setCoords] = useState<Coords | null>(lastKnown.coords);
+  const [coords, setCoords] = useState<Coords | null>(cachedCoords());
   const [geoError, setGeoError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [keyword, setKeyword] = useState("");
@@ -66,31 +58,27 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
     );
   };
 
-  const locateAndSearch = () => {
+  const locateAndSearch = async () => {
     setGeoError(null);
-    if (!("geolocation" in navigator)) {
-      setGeoError("This device can't share its location.");
-      return;
-    }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        lastKnown.coords = at;
-        setCoords(at);
-        runSearch(at, radius);
-      },
-      (err) => {
-        setLocating(false);
-        setGeoError(
-          err.code === err.PERMISSION_DENIED
+    try {
+      // Shared across the app for this session (lib/geo) — the add-restaurant
+      // name search reuses the same fix instead of prompting again.
+      const at = await requestCoords();
+      setCoords(at);
+      runSearch(at, radius);
+    } catch (err) {
+      const kind = err instanceof GeoError ? err.kind : "failed";
+      setGeoError(
+        kind === "unsupported"
+          ? "This device can't share its location."
+          : kind === "denied"
             ? "Location permission was denied. Enable it to find nearby spots."
             : "Couldn't get your location. Try again.",
-        );
-      },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
-    );
+      );
+    } finally {
+      setLocating(false);
+    }
   };
 
   const widen = () => {
@@ -157,12 +145,12 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
     setAdded(new Set());
     setSelected(new Set());
     search.reset();
-    // `coords` deliberately survives — see lastKnown. Re-opening the
-    // dialog shouldn't re-prompt for a location we already have.
+    // `coords` deliberately survives — lib/geo caches this session's fix, so
+    // re-opening the dialog shouldn't re-prompt for a location we already have.
   };
 
   const results = (search.data?.places ?? []) as NearbyResult[];
-  const notConfigured = search.error?.data?.code === "PRECONDITION_FAILED";
+  const alert = providerAlert(search.error);
 
   return (
     <Dialog
@@ -226,18 +214,23 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             </div>
           )}
 
-          {/* Provider/config errors */}
-          {search.error && (
+          {/* Provider errors. A spent map quota gets calmer, brand-toned styling
+              and no retry nudge — it's a limit, not a crash, and retrying just
+              spends another call to be told the same thing. */}
+          {alert && (
             <div
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs"
+              className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-xs"
               style={{
-                background: "oklch(from var(--destructive) l c h / 0.10)",
-                border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
-                color: "var(--destructive)",
+                background: `oklch(from var(${alert.quota ? "--brand" : "--destructive"}) l c h / 0.10)`,
+                border: `1px solid oklch(from var(${alert.quota ? "--brand" : "--destructive"}) l c h / 0.25)`,
+                color: `var(${alert.quota ? "--brand" : "--destructive"})`,
               }}
             >
-              <AlertTriangle size={13} className="flex-shrink-0" />
-              {notConfigured ? "Nearby search isn't available on this server yet." : search.error.message}
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <span className="leading-relaxed">
+                {alert.message}
+                {alert.config && <> Use ADD to enter a restaurant by name instead.</>}
+              </span>
             </div>
           )}
 
