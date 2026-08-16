@@ -410,7 +410,40 @@ async function setWheelOrigin(id, data) {
 async function deleteWheel(id) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  const owned = await db.select({ id: restaurants.id }).from(restaurants).where(eq(restaurants.wheelId, id));
+  const restaurantIds = owned.map((r) => r.id);
+  if (restaurantIds.length > 0) {
+    await db.delete(restaurantTags).where(inArray(restaurantTags.restaurantId, restaurantIds));
+    await db.delete(restaurantRatings).where(inArray(restaurantRatings.restaurantId, restaurantIds));
+  }
+  await db.delete(restaurants).where(eq(restaurants.wheelId, id));
+  await db.delete(spinHistory).where(eq(spinHistory.wheelId, id));
+  await db.delete(roundMarks).where(eq(roundMarks.wheelId, id));
+  await db.delete(wheelPresence).where(eq(wheelPresence.wheelId, id));
+  await db.delete(notifications).where(eq(notifications.wheelId, id));
+  await db.delete(wheelMembers).where(eq(wheelMembers.wheelId, id));
+  await db.delete(tags).where(eq(tags.wheelId, id));
   await db.delete(wheels).where(eq(wheels.id, id));
+  await db.update(users).set({ defaultWheelId: null }).where(eq(users.defaultWheelId, id));
+}
+async function deleteUserAccount(userId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const owned = await db.select({ id: wheels.id }).from(wheels).where(eq(wheels.ownerId, userId));
+  for (const wheel of owned) await deleteWheel(wheel.id);
+  const joinedRestaurants = await db.select({ id: restaurants.id }).from(restaurants).innerJoin(wheelMembers, eq(wheelMembers.wheelId, restaurants.wheelId)).where(eq(wheelMembers.userId, userId));
+  const ratedIds = Array.from(new Set(joinedRestaurants.map((r) => r.id)));
+  if (ratedIds.length > 0) {
+    await db.delete(restaurantRatings).where(
+      and(eq(restaurantRatings.userId, userId), inArray(restaurantRatings.restaurantId, ratedIds))
+    );
+  }
+  await db.delete(roundMarks).where(eq(roundMarks.userId, userId));
+  await db.delete(wheelPresence).where(eq(wheelPresence.userId, userId));
+  await db.delete(notifications).where(eq(notifications.actorUserId, userId));
+  await db.delete(wheelMembers).where(eq(wheelMembers.userId, userId));
+  await db.delete(users).where(eq(users.id, userId));
+  return { wheelsDeleted: owned.length };
 }
 async function isWheelMember(wheelId, userId) {
   const db = await getDb();
@@ -2706,6 +2739,22 @@ var appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
+    }),
+    /**
+     * Erase the account. Not a soft delete and not recoverable — the wheels this
+     * user owns go with them (see deleteUserAccount for exactly what survives on
+     * wheels they only joined).
+     *
+     * The session cookie is cleared in the same response, using the same options
+     * as logout: the user row is gone the moment this returns, so leaving the
+     * cookie in place would just produce a signed-in-looking browser whose every
+     * request resolves to nobody.
+     */
+    deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
+      const result = await deleteUserAccount(ctx.user.id);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true, ...result };
     })
   }),
   // ─── Wheels ─────────────────────────────────────────────────────────────────

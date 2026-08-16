@@ -188,10 +188,82 @@ export async function setWheelOrigin(
   }).where(eq(wheels.id, id));
 }
 
+/**
+ * Delete a wheel and everything hanging off it.
+ *
+ * There are no foreign keys in this schema (see drizzle/*.sql — every child
+ * table just carries a plain `wheelId` int), so nothing cascades on its own.
+ * Dropping only the `wheels` row left the restaurants, spin history, ratings,
+ * membership and presence rows behind forever: invisible, since every read
+ * scopes by a wheelId that no longer resolves, but still stored. The UI now
+ * promises deletion is permanent, so make it actually permanent.
+ *
+ * Order matters for the two tables keyed by restaurant rather than wheel — read
+ * the restaurant ids while the restaurants still exist.
+ */
 export async function deleteWheel(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  const owned = await db.select({ id: restaurants.id }).from(restaurants).where(eq(restaurants.wheelId, id));
+  const restaurantIds = owned.map((r) => r.id);
+  if (restaurantIds.length > 0) {
+    await db.delete(restaurantTags).where(inArray(restaurantTags.restaurantId, restaurantIds));
+    await db.delete(restaurantRatings).where(inArray(restaurantRatings.restaurantId, restaurantIds));
+  }
+  await db.delete(restaurants).where(eq(restaurants.wheelId, id));
+  await db.delete(spinHistory).where(eq(spinHistory.wheelId, id));
+  await db.delete(roundMarks).where(eq(roundMarks.wheelId, id));
+  await db.delete(wheelPresence).where(eq(wheelPresence.wheelId, id));
+  await db.delete(notifications).where(eq(notifications.wheelId, id));
+  await db.delete(wheelMembers).where(eq(wheelMembers.wheelId, id));
+  await db.delete(tags).where(eq(tags.wheelId, id));
   await db.delete(wheels).where(eq(wheels.id, id));
+  // A starred default pointing at a deleted wheel makes bootstrap resolve a
+  // wheel that 404s on the very next read — clear it for everyone who had it.
+  await db.update(users).set({ defaultWheelId: null }).where(eq(users.defaultWheelId, id));
+}
+
+/**
+ * Delete a user and everything that is theirs alone.
+ *
+ * "Theirs alone" is the whole judgment here. Wheels they OWN go completely —
+ * including any teammates' access, because there is no ownership transfer in
+ * this app and an ownerless wheel is unreachable anyway. Wheels they merely
+ * JOINED survive; only their own membership, marks, presence and ratings are
+ * pulled out of them.
+ *
+ * Deliberately left alone: spin_history rows on other people's wheels. They are
+ * what the team's exclusion window is computed from, so removing them would
+ * silently un-exclude places the team ate this week. `spunBy` becomes a dangling
+ * id, which every read already tolerates (history renders an unknown spinner as
+ * "someone"), and the personal detail — the name — leaves with the users row.
+ */
+export async function deleteUserAccount(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const owned = await db.select({ id: wheels.id }).from(wheels).where(eq(wheels.ownerId, userId));
+  for (const wheel of owned) await deleteWheel(wheel.id);
+
+  // Their footprint on wheels they only joined.
+  const joinedRestaurants = await db
+    .select({ id: restaurants.id })
+    .from(restaurants)
+    .innerJoin(wheelMembers, eq(wheelMembers.wheelId, restaurants.wheelId))
+    .where(eq(wheelMembers.userId, userId));
+  // Array.from, not [...set]: this file compiles under a pre-ES2015 target where
+  // spreading a Set is a TS2802 (same trip-up as shared/areaName.ts).
+  const ratedIds = Array.from(new Set(joinedRestaurants.map((r) => r.id)));
+  if (ratedIds.length > 0) {
+    await db.delete(restaurantRatings).where(
+      and(eq(restaurantRatings.userId, userId), inArray(restaurantRatings.restaurantId, ratedIds)),
+    );
+  }
+  await db.delete(roundMarks).where(eq(roundMarks.userId, userId));
+  await db.delete(wheelPresence).where(eq(wheelPresence.userId, userId));
+  await db.delete(notifications).where(eq(notifications.actorUserId, userId));
+  await db.delete(wheelMembers).where(eq(wheelMembers.userId, userId));
+  await db.delete(users).where(eq(users.id, userId));
+  return { wheelsDeleted: owned.length };
 }
 
 export async function isWheelMember(wheelId: number, userId: number) {

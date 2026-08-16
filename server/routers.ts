@@ -47,6 +47,7 @@ import {
   createWheel,
   deleteRestaurant,
   acceptSpin,
+  deleteUserAccount,
   deleteWheel,
   getExclusions,
   getNotificationsForUser,
@@ -177,6 +178,23 @@ export const appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
+    }),
+
+    /**
+     * Erase the account. Not a soft delete and not recoverable — the wheels this
+     * user owns go with them (see deleteUserAccount for exactly what survives on
+     * wheels they only joined).
+     *
+     * The session cookie is cleared in the same response, using the same options
+     * as logout: the user row is gone the moment this returns, so leaving the
+     * cookie in place would just produce a signed-in-looking browser whose every
+     * request resolves to nobody.
+     */
+    deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
+      const result = await deleteUserAccount(ctx.user.id);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true as const, ...result };
     }),
   }),
 

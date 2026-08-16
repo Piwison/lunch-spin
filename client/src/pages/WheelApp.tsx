@@ -15,15 +15,17 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
+import { nextWheelToOpen } from "@shared/bootstrap";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { formatWalk } from "@shared/nearby";
 import { ErrorChip } from "@/components/StatusChip";
+import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
   DropdownMenu,
@@ -105,6 +107,7 @@ export default function WheelApp() {
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
   // Spins completed in this browser, read once. The exclusion explainer is for
   // people who have never seen it; after a couple of spins it's noise.
   const [spinsSeen, setSpinsSeen] = useState(() => {
@@ -255,17 +258,42 @@ export default function WheelApp() {
     }
   );
 
+  /** Wheels this session has proven are gone — deleted, or access revoked. Both
+   *  the eject effect below and the auto-open effect further down read it, so
+   *  they can't hold opposite opinions about the same wheel (see
+   *  `nextWheelToOpen`). A ref, not state: it only ever gates an effect that a
+   *  setState in the same tick already re-runs. */
+  const unavailableWheelIds = useRef<Set<number>>(new Set());
+
   // A wheel that definitively can't be loaded (deleted, or a stale/bad link)
   // would strand the app on erroring queries — fall back to the wheel picker.
   // Transient/network errors are retried above and don't eject the user.
   useEffect(() => {
     const code = wheelError?.data?.code;
     if (code !== "NOT_FOUND" && code !== "FORBIDDEN") return;
+    // Record it BEFORE dropping the selection: the entry payload still names
+    // this wheel, and without this the auto-open effect hands it straight back.
+    if (selectedWheelId != null) unavailableWheelIds.current.add(selectedWheelId);
     toast.error("That wheel isn't available anymore.");
     setSelectedWheelId(null);
     navigate("/app", { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wheelError]);
+
+  // Erasing the account invalidates this browser's session too — the server
+  // clears the cookie in the same response — so wipe every local trace before
+  // leaving. A hard navigation, not navigate(): the in-memory React Query caches
+  // still hold the deleted user's wheels, and the persisted boot cache would
+  // otherwise seed them straight back on the landing page.
+  const deleteAccount = trpc.auth.deleteAccount.useMutation({
+    onSuccess: () => {
+      clearBootCache();
+      utils.auth.me.setData(undefined, null);
+      setConfirmDeleteAccount(false);
+      window.location.href = "/";
+    },
+    onError: (e) => toast.error(`Couldn't delete your account: ${e.message}`),
+  });
 
   const createSpin = trpc.spins.create.useMutation();
   const acceptSpin = trpc.spins.accept.useMutation({
@@ -338,9 +366,12 @@ export default function WheelApp() {
   // decided this in the same response that carried the wheel's data, so there's
   // no extra round trip to find out which wheel to show. First-run users (zero
   // wheels) still get the guided create card.
+  // The payload is a snapshot, so it can still name a wheel that has since been
+  // deleted — nextWheelToOpen drops those instead of re-opening a dead wheel the
+  // eject effect above would immediately close again (React #185).
   useEffect(() => {
     if (params.wheelId || selectedWheelId) return;
-    const resolved = bootstrapQuery.data?.wheelId;
+    const resolved = nextWheelToOpen(bootstrapQuery.data?.wheelId, unavailableWheelIds.current);
     if (resolved == null) return;
     setSelectedWheelId(resolved);
     navigate(`/app/${resolved}`, { replace: true });
@@ -736,16 +767,57 @@ export default function WheelApp() {
               >
                 <LogOut size={14} /> Sign out
               </DropdownMenuItem>
+              {/* Deliberately below Sign out and behind a type-to-confirm: it is
+                  the one action in the app with no undo at all. */}
+              <DropdownMenuItem
+                onClick={() => setConfirmDeleteAccount(true)}
+                variant="destructive"
+                className="gap-2.5"
+              >
+                <Trash2 size={14} /> Delete account
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </header>
+
+      <ConfirmDangerDialog
+        open={confirmDeleteAccount}
+        onOpenChange={(open) => { if (!open && !deleteAccount.isPending) setConfirmDeleteAccount(false); }}
+        title="DELETE ACCOUNT"
+        confirmWord="DELETE"
+        confirmLabel="Delete my account"
+        pending={deleteAccount.isPending}
+        onConfirm={() => deleteAccount.mutate()}
+        body={
+          <>
+            <p>
+              This deletes <strong className="text-foreground">{user.email || user.name}</strong>, every wheel you
+              created, and all of their restaurants and spin history.
+            </p>
+            <p>
+              Wheels you were <em>invited</em> to stay with their owner — you're just removed from the team. Signing in
+              again later creates a brand-new, empty account.
+            </p>
+            <p style={{ color: "var(--destructive)" }}>This cannot be undone.</p>
+          </>
+        }
+      />
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* ── WHEEL SWITCHER (desktop rail · mobile pill+sheet) ── */}
         <WheelSelector
           selectedWheelId={selectedWheelId}
           onSelect={(id: number) => { setSelectedWheelId(id); navigate(`/app/${id}`); }}
+          onDeleted={(id: number) => {
+            // Mark it dead before releasing the selection: the refreshed entry
+            // payload may not have landed yet, and the auto-open effect would
+            // otherwise re-open the wheel that was just deleted.
+            unavailableWheelIds.current.add(id);
+            if (id !== selectedWheelId) return;
+            setSelectedWheelId(null);
+            navigate("/app", { replace: true });
+          }}
           registerCreateOpener={registerCreateOpener}
           registerSettingsOpener={registerSettingsOpener}
         />
@@ -851,16 +923,17 @@ export default function WheelApp() {
 
                     {/* Settings shortcut — same dialog as the sidebar's kebab menu
                         (registerSettingsOpener), just faster once you're already
-                        on the wheel. Owner-only, same gate as that menu item.
+                        on the wheel. Open to members too, same as that menu item:
+                        the dialog itself is read-only for them.
                         Desktop only: on mobile this would sit in its own empty
                         row above Team/Round, so the gear lives in the
                         wheel-picker pill row instead (WheelSelector.tsx). */}
-                    {isOwner && selectedWheelId && (
+                    {selectedWheelId && (
                       <div className="hidden md:flex w-full justify-end -mb-2">
                         <button
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
                           aria-label="Wheel settings"
-                          title="Wheel settings"
+                          title={isOwner ? "Wheel settings" : "Wheel settings (view only)"}
                           className="flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors active:scale-90"
                         >
                           <Settings size={16} />
@@ -920,15 +993,19 @@ export default function WheelApp() {
 
                     {/* ── WHEEL + SPIN CTA ── */}
                     {restaurantsLoading ? (
-                      /* A spinning brand orb sits where the wheel will land, so the
-                         wait reads as "the wheel is coming" rather than a gray blob;
-                         the pill below stands in for the SPIN button. */
-                      <div className="flex flex-col items-center gap-6 py-8 w-full">
-                        <div
-                          className="orb-wheel animate-orb-spin"
-                          style={{ width: "min(72vw, 18rem)", height: "min(72vw, 18rem)", animationDuration: "1.4s", boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.35)" }}
-                        />
-                        <div className="h-14 w-48 rounded-full bg-white/5 animate-pulse" />
+                      /* The same "Warming up your wheel" loader as the entry gate,
+                         so a wheel switch reads as a continuation of that state
+                         rather than a new one. It used to be a bare orb blown up
+                         to 72vw with no label — at that size the brand mark stops
+                         reading as a spinner and just looks like a broken wheel
+                         that failed to draw its labels. The pill below stands in
+                         for the SPIN button. */
+                      <div className="flex flex-col items-center gap-8 py-16 w-full">
+                        <BrandLoader label="Warming up your wheel" size={72} />
+                        {/* Token background, not bg-white/5: on the light theme a
+                            5%-white pill over a near-white page is invisible, so
+                            the SPIN placeholder simply wasn't there. */}
+                        <div className="h-14 w-48 rounded-full animate-pulse" style={{ background: "var(--muted)" }} />
                       </div>
                     ) : restaurantsError ? (
                       <div className="flex flex-col items-center gap-4 py-12 text-center">
