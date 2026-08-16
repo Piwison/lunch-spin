@@ -42,3 +42,28 @@ export function speculativeWheelId(
 ): number | null {
   return requestedWheelId ?? defaultWheelId ?? null;
 }
+
+/**
+ * Whether the client may actually open the wheel the entry payload resolved.
+ *
+ * The entry payload is a *snapshot*: it names the wheel that was right when the
+ * request was issued. Delete that wheel and the snapshot is instantly wrong,
+ * but it stays in the query cache until it refetches — long enough for the
+ * client's "nothing selected, open the resolved wheel" rule and its "this wheel
+ * 404s, drop the selection" rule to disagree forever. Each one undoes the other
+ * every render, which React ends by throwing #185 (Maximum update depth
+ * exceeded), taking the whole app down with it.
+ *
+ * So the two rules share one fact instead of holding opposite opinions: a wheel
+ * that has already answered NOT_FOUND/FORBIDDEN this session is unavailable, and
+ * `null` here means "show the picker" rather than "try that dead wheel again".
+ * Not a permission check — the server still decides who may see what.
+ */
+export function nextWheelToOpen(
+  resolvedWheelId: number | null | undefined,
+  unavailableWheelIds: Iterable<number>,
+): number | null {
+  if (resolvedWheelId == null) return null;
+  const unavailable = unavailableWheelIds instanceof Set ? unavailableWheelIds : new Set(unavailableWheelIds);
+  return unavailable.has(resolvedWheelId) ? null : resolvedWheelId;
+}

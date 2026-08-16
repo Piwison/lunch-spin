@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBootstrapWheelId, speculativeWheelId } from "./bootstrap";
+import { nextWheelToOpen, resolveBootstrapWheelId, speculativeWheelId } from "./bootstrap";
 
 const ids = [7, 3, 9];
 
@@ -71,5 +71,39 @@ describe("speculativeWheelId", () => {
     // that make up almost every real load.
     expect(speculativeWheelId(9, 3)).toBe(resolveBootstrapWheelId(ids, 9, 3));
     expect(speculativeWheelId(null, 3)).toBe(resolveBootstrapWheelId(ids, null, 3));
+  });
+});
+
+describe("nextWheelToOpen", () => {
+  it("opens the wheel the entry payload resolved", () => {
+    expect(nextWheelToOpen(9, [])).toBe(9);
+  });
+
+  it("has nothing to open for a first-run user", () => {
+    expect(nextWheelToOpen(null, [])).toBeNull();
+    expect(nextWheelToOpen(undefined, [])).toBeNull();
+  });
+
+  it("refuses a wheel already proven gone this session", () => {
+    // The regression this exists for: deleting the open wheel made wheels.get
+    // 404, the app dropped the selection, and the still-cached entry payload —
+    // resolved BEFORE the delete — immediately re-proposed the same dead id.
+    // The two effects then ping-ponged until React threw #185 (Maximum update
+    // depth exceeded) and the error boundary swallowed the whole app.
+    expect(nextWheelToOpen(9, [9])).toBeNull();
+  });
+
+  it("still opens a surviving wheel once the payload refreshes", () => {
+    expect(nextWheelToOpen(3, [9])).toBe(3);
+  });
+
+  it("accepts a Set, which is what the caller actually holds", () => {
+    expect(nextWheelToOpen(9, new Set([7, 9]))).toBeNull();
+    expect(nextWheelToOpen(9, new Set([7]))).toBe(9);
+  });
+
+  it("treats wheel id 0 as a real wheel, not as absent", () => {
+    expect(nextWheelToOpen(0, [])).toBe(0);
+    expect(nextWheelToOpen(0, [0])).toBeNull();
   });
 });

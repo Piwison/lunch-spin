@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, Trash2, Share2, Copy, CopyPlus, Settings, MoreVertical, Check, ChevronDown, Star, MapPin, Users } from "lucide-react";
+import { Plus, Globe, Lock, Trash2, Share2, Copy, CopyPlus, Settings, MoreVertical, Check, ChevronDown, Star, MapPin, Users, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -18,12 +18,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorChip } from "@/components/StatusChip";
+import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import LocationPicker from "@/components/LocationPicker";
 import { STARTER_RESTAURANTS } from "@shared/starter";
 
 interface WheelSelectorProps {
   selectedWheelId: number | null;
   onSelect: (id: number) => void;
+  /**
+   * A wheel was deleted from here. The parent owns `selectedWheelId`, so it —
+   * not this component — decides where to go next. Without this the only signal
+   * was the deleted wheel's own query starting to 404, which reads to the parent
+   * as a broken link and greets a deliberate delete with "that wheel isn't
+   * available anymore".
+   */
+  onDeleted: (id: number) => void;
   /**
    * Lets a parent (e.g. WheelApp's first-run card) open the create dialog. The
    * registered opener takes the desired starter-pack state: `true` = "start from a
@@ -134,7 +143,7 @@ function WheelActionsMenu({
   );
 }
 
-export default function WheelSelector({ selectedWheelId, onSelect, registerCreateOpener, registerSettingsOpener }: WheelSelectorProps) {
+export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, registerCreateOpener, registerSettingsOpener }: WheelSelectorProps) {
   const { user } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -165,6 +174,9 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  /** The wheel awaiting a delete confirmation. Held here rather than inside the
+   *  kebab menu so the confirmation outlives the menu that launched it. */
+  const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
 
   const utils = trpc.useUtils();
   const { data: wheels } = trpc.wheels.list.useQuery();
@@ -259,10 +271,25 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
   });
   const deleteWheel = trpc.wheels.delete.useMutation({
     onSuccess: (_data, vars) => {
+      // Tell the parent FIRST, so it drops the selection before anything can
+      // refetch the wheel we just deleted. Doing it the other way round meant
+      // the app learned about its own delete from a 404 and announced it as a
+      // broken link.
+      onDeleted(vars.id);
       utils.wheels.list.invalidate();
-      // Refetching the deleted wheel 404s, which tells WheelApp to drop the
-      // selection instead of sitting on a dead wheel.
-      utils.wheels.get.invalidate({ id: vars.id });
+      // The entry payload was resolved before this delete and can still name the
+      // wheel we just removed; refetch it so the app opens a surviving wheel
+      // instead of being ejected off a dead one it was just handed.
+      utils.wheels.bootstrap.invalidate();
+      // The deleted wheel's own `wheels.get` entry is deliberately NOT touched.
+      // onDeleted has already disabled that query, but React hasn't re-rendered
+      // yet, so both invalidate() and reset() would catch it while it is still
+      // active and fire one last request at a wheel we know is gone (a 404 in
+      // the console on every delete). Left alone it simply goes inactive and is
+      // garbage-collected; auto-increment ids are never reused, so nothing will
+      // ever read it again.
+      setConfirmDelete(null);
+      setEditWheel(null);
       toast.success("Wheel deleted");
     },
     onError: (e) => toast.error(`Failed to delete wheel: ${e.message}`),
@@ -465,7 +492,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             onCopyPublic={() => copyPublicLink(wheel.id)}
             onCopyWheel={() => copyWheel.mutate({ id: wheel.id })}
             onSettings={() => openSettingsFor(wheel)}
-            onDelete={() => { if (confirm(`Delete "${wheel.name}"?`)) deleteWheel.mutate({ id: wheel.id }); }}
+            onDelete={() => setConfirmDelete({ id: wheel.id, name: wheel.name })}
           />
         </div>
       </div>
@@ -529,11 +556,15 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
             </div>
           </SheetContent>
         </Sheet>
-        {isSelectedWheelOwner && selectedWheel && (
+        {/* Shown to members too, not just the owner: the office and the spin
+            rules are things a teammate needs to be able to look up. Everything
+            inside is read-only for them (see `canEdit`), and the dialog says so
+            at the top. */}
+        {selectedWheel && (
           <button
             onClick={() => openSettingsFor(selectedWheel)}
             aria-label="Wheel settings"
-            title="Wheel settings"
+            title={isSelectedWheelOwner ? "Wheel settings" : "Wheel settings (view only)"}
             className="flex-shrink-0 flex items-center justify-center h-14 w-14 rounded-2xl glass-nav text-muted-foreground hover:text-foreground transition-transform active:scale-95"
           >
             <Settings size={18} />
@@ -652,6 +683,18 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                the origin input, the locate button and the status lines rendered on
                top of each other. */
             <div className="space-y-4 px-5 pb-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
+              {/* Members can open this dialog, so say why nothing responds
+                  BEFORE they try. The footer note alone came too late — it sits
+                  past everything they just failed to change. */}
+              {!canEdit && (
+                <div className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-secondary/30 px-3 py-2.5">
+                  <Eye size={14} className="flex-shrink-0 mt-0.5 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    <strong className="text-foreground">View only.</strong> Only the wheel's creator can change these
+                    settings — ask them if something needs updating.
+                  </p>
+                </div>
+              )}
               <SettingsSection>Basics</SettingsSection>
               <Input
                 placeholder="Wheel name"
@@ -700,18 +743,25 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                             <Share2 size={14} />
                           </Button>
                         </div>
-                        <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
-                          Regenerate link (invalidates the old one)
-                        </button>
+                        {/* Members may pass the existing link on — that's how a
+                            team grows — but issuing a NEW token is owner-only on
+                            the server, so don't offer a button that 403s. */}
+                        {canEdit && (
+                          <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                            Regenerate link (invalidates the old one)
+                          </button>
+                        )}
                         <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                       </>
-                    ) : (
+                    ) : canEdit ? (
                       <>
                         <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
                           <Share2 size={14} /> Generate invite link
                         </Button>
                         <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                       </>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">No invite link yet — ask the wheel's creator to generate one.</p>
                     )}
                   </div>
                 );
@@ -869,6 +919,28 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
                 )}
               </div>
 
+              {/* Danger zone — owner only, and last, so it can't be reached by
+                  accident on the way to anything else. */}
+              {canEdit && (
+                <>
+                  <SettingsSection>Danger zone</SettingsSection>
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm">Delete this wheel</span>
+                      <span className="text-[11px] text-muted-foreground">Permanent — restaurants and history go with it.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete({ id: editWheel.id, name: editWheel.name })}
+                      className="flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors hover:bg-destructive/15"
+                      style={{ color: "var(--destructive)", border: "1px solid oklch(from var(--destructive) l c h / 0.4)" }}
+                    >
+                      <Trash2 size={13} /> Delete
+                    </button>
+                  </div>
+                </>
+              )}
+
             </div>
           )}
           {/* Pinned footer — outside the scroll area, so Save (and any error) is
@@ -903,6 +975,26 @@ export default function WheelSelector({ selectedWheelId, onSelect, registerCreat
         </DialogContent>
       </Dialog>
 
+      {/* Delete confirmation — one dialog for both entry points (the row kebab
+          and the settings danger zone), rendered here at the root so neither of
+          those can unmount it mid-decision. */}
+      <ConfirmDangerDialog
+        open={!!confirmDelete}
+        onOpenChange={(open) => { if (!open && !deleteWheel.isPending) setConfirmDelete(null); }}
+        title="DELETE WHEEL"
+        confirmLabel="Delete wheel"
+        pending={deleteWheel.isPending}
+        onConfirm={() => confirmDelete && deleteWheel.mutate({ id: confirmDelete.id })}
+        body={
+          <>
+            <p>
+              Delete <strong className="text-foreground">{confirmDelete?.name}</strong> and everything on it — its
+              restaurants, spin history and, on a shared wheel, the team's access.
+            </p>
+            <p style={{ color: "var(--destructive)" }}>This cannot be undone.</p>
+          </>
+        }
+      />
     </>
   );
 }
