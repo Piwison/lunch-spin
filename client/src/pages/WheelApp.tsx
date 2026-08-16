@@ -760,21 +760,27 @@ export default function WheelApp() {
                 {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/* Neutral, not destructive. Signing out is routine and reversible;
+                  painting it the same red as account deletion made the everyday
+                  action look dangerous AND made the dangerous one look ordinary. */}
               <DropdownMenuItem
                 onClick={() => logout().then(() => navigate("/"))}
-                variant="destructive"
                 className="gap-2.5"
               >
                 <LogOut size={14} /> Sign out
               </DropdownMenuItem>
-              {/* Deliberately below Sign out and behind a type-to-confirm: it is
-                  the one action in the app with no undo at all. */}
+              {/* Its own rule and an extra gap below Sign out: this is the only
+                  action in the app with no undo, and on a phone it otherwise sits
+                  a thumb-width under the button people press every day. Quiet by
+                  design — smaller, dimmer, firming up only on hover/focus — so the
+                  common actions stay the visual centre of the menu. */}
+              <DropdownMenuSeparator className="mt-1.5" />
               <DropdownMenuItem
                 onClick={() => setConfirmDeleteAccount(true)}
                 variant="destructive"
-                className="gap-2.5"
+                className="gap-2.5 mt-0.5 text-xs opacity-65 transition-opacity focus:opacity-100 [&_svg]:size-3.5"
               >
-                <Trash2 size={14} /> Delete account
+                <Trash2 /> Delete account
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
