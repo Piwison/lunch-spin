@@ -42,7 +42,23 @@ describe("resolvePlaceLink", () => {
   it("resolves a place-id link via Place Details", async () => {
     routeFetch();
     const p = await resolvePlaceLink("https://www.google.com/maps/search/?api=1&query=Rintaro&query_place_id=ChIJ123");
-    expect(p).toMatchObject({ placeId: "ChIJ123", name: "Rintaro", cuisine: "Japanese", priceLevel: 3, lat: 37.769 });
+    expect(p).toMatchObject({ placeId: "ChIJ123", name: "Rintaro", cuisine: "Japanese", lat: 37.769 });
+  });
+
+  // Cost guard, not a style preference. The legacy Places API bills a Details
+  // call at the tier of the most expensive field requested, and price_level is
+  // Atmosphere — the priciest. It was in the field list while nothing read it,
+  // so every link resolve was billed at Atmosphere rates for a discarded value.
+  // If someone re-adds a Contact/Atmosphere field here, this fails first.
+  it("only ever asks Google for Basic-tier fields", async () => {
+    const fn = routeFetch();
+    await resolvePlaceLink("https://www.google.com/maps/search/?api=1&query=Rintaro&query_place_id=ChIJ123");
+    const detailsCall = fn.mock.calls.map((c) => String(c[0])).find((u) => u.includes("/place/details/json"));
+    expect(detailsCall).toBeDefined();
+    const fields = new URL(detailsCall!).searchParams.get("fields")!.split(",");
+    // Contact + Atmosphere field names that would re-tier this call.
+    const billable = ["price_level", "rating", "user_ratings_total", "reviews", "opening_hours", "formatted_phone_number", "website"];
+    expect(fields.filter((f) => billable.includes(f))).toEqual([]);
   });
 
   it("resolves a text link via Find Place", async () => {
