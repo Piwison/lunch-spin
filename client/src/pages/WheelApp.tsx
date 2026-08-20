@@ -648,8 +648,7 @@ export default function WheelApp() {
     <div className="min-h-screen flex flex-col" style={{ background: "var(--ground)" }}>
       {/* ── HEADER ── */}
       <header
-        className="border-b border-border/40 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
-        style={{ background: "oklch(from var(--background) l c h / 0.85)", backdropFilter: "blur(20px)" }}
+        className="glass-bar glass-bar--bottom px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
       >
         <div className="flex items-center gap-3">
           <div

@@ -116,11 +116,25 @@
   --info: #7a5b33;               /* info / notice text */
 
   /* Glass surfaces — see the four named recipes below. */
-  --glass-bg: rgb(255 255 255 / 0.62);
-  --glass-border: rgb(255 255 255 / 0.95);
-  --glass-nav-bg: rgb(255 255 255 / 0.55);
-  --glass-nav-border: rgb(255 255 255 / 0.9);
-  --glass-nav-shadow: 0 18px 40px rgb(20 22 28 / 0.14);
+  /* Four glass surfaces, and only four (spec §2). Every recipe is a token so no
+     component ever hand-rolls a backdrop-filter. */
+  --glass-bar-bg: rgb(255 255 255 / 0.55);
+  --glass-bar-blur: blur(28px) saturate(1.4);
+  --glass-bar-border: rgb(255 255 255 / 0.9);
+
+  --glass-sheet-bg: rgb(255 255 255 / 0.72);
+  --glass-sheet-blur: blur(34px) saturate(1.4);
+  --glass-sheet-border: rgb(255 255 255 / 0.95);
+
+  --glass-card-bg: rgb(255 255 255 / 0.62);
+  --glass-card-blur: blur(28px);
+  --glass-card-border: rgb(255 255 255 / 0.95);
+  --glass-card-shadow: 0 18px 40px rgb(20 22 28 / 0.14);
+
+  --glass-chip-bg: rgb(255 255 255 / 0.62);
+  --glass-chip-blur: blur(24px);
+  --glass-chip-border: rgb(255 255 255 / 0.95);
+
   --glass-highlight: rgb(255 255 255 / 0.55);
   --glass-opaque: #fbf7f2;
 }
@@ -165,11 +179,25 @@
   --ok: #6fbf95;
   --info: #c9a97a;
 
-  --glass-bg: rgb(255 255 255 / 0.08);
-  --glass-border: rgb(255 255 255 / 0.12);
-  --glass-nav-bg: rgb(255 255 255 / 0.08);
-  --glass-nav-border: rgb(255 255 255 / 0.12);
-  --glass-nav-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
+  --glass-bar-bg: rgb(255 255 255 / 0.08);
+  --glass-bar-blur: blur(28px);
+  --glass-bar-border: rgb(255 255 255 / 0.12);
+
+  --glass-sheet-bg: rgb(255 255 255 / 0.1);
+  --glass-sheet-blur: blur(34px);
+  --glass-sheet-border: rgb(255 255 255 / 0.14);
+
+  --glass-card-bg: rgb(255 255 255 / 0.08);
+  --glass-card-blur: blur(28px);
+  --glass-card-border: rgb(255 255 255 / 0.12);
+  --glass-card-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
+
+  /* Dark chips carry no blur: the spec lists a fill and a border only, and on
+     charcoal an 8% white wash already separates without paying for a filter. */
+  --glass-chip-bg: rgb(255 255 255 / 0.08);
+  --glass-chip-blur: none;
+  --glass-chip-border: rgb(255 255 255 / 0.12);
+
   --glass-highlight: rgb(255 255 255 / 0.08);
   --glass-opaque: #1e2127;
 }
@@ -329,32 +357,94 @@
   background-clip: text;
 }
 
-/* ─── Glass Card ────────────────────────────────────────────────────────────── */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-}
+/* ─── Glass ───────────────────────────────────────────────────────────────────
+   Four surfaces, four classes, one place that writes backdrop-filter. Glass is
+   for floating chrome and overlays only — dock, chips, sheets, hub, result card.
+   The ground stays flat paper (see body, above) and never blurs.
 
-/* ─── Liquid Glass navigation layer ──────────────────────────────────────────
-   The floating chrome — rails, tab bars, picker pills — above content. A
-   translucent, light-refracting lens (top highlight + float shadow). */
-.glass-nav {
-  background: var(--glass-nav-bg);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid var(--glass-nav-border);
+   `.glass` and `.glass-nav` are the names the app already uses across the
+   header, dropdowns, tab bar and picker pills; they stay as thin aliases of the
+   card and bar recipes so every existing call site re-skins without being
+   touched. New work should use the components in components/ui/glass.tsx. */
+.glass-bar {
+  background: var(--glass-bar-bg);
+  backdrop-filter: var(--glass-bar-blur);
+  -webkit-backdrop-filter: var(--glass-bar-blur);
+  border: 1px solid var(--glass-bar-border);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
-    var(--glass-nav-shadow);
+    var(--glass-card-shadow);
+}
+
+.glass-sheet {
+  background: var(--glass-sheet-bg);
+  backdrop-filter: var(--glass-sheet-blur);
+  -webkit-backdrop-filter: var(--glass-sheet-blur);
+  border: 1px solid var(--glass-sheet-border);
+  border-radius: var(--radius-sheet);
+}
+
+.glass-card {
+  background: var(--glass-card-bg);
+  backdrop-filter: var(--glass-card-blur);
+  -webkit-backdrop-filter: var(--glass-card-blur);
+  border: 1px solid var(--glass-card-border);
+  box-shadow: var(--glass-card-shadow);
+  border-radius: var(--radius-card);
+}
+
+.glass-chip {
+  background: var(--glass-chip-bg);
+  backdrop-filter: var(--glass-chip-blur);
+  -webkit-backdrop-filter: var(--glass-chip-blur);
+  border: 1px solid var(--glass-chip-border);
+  border-radius: var(--radius-chip);
+}
+
+.glass {
+  background: var(--glass-card-bg);
+  backdrop-filter: var(--glass-card-blur);
+  -webkit-backdrop-filter: var(--glass-card-blur);
+  border: 1px solid var(--glass-card-border);
+}
+
+.glass-nav {
+  background: var(--glass-bar-bg);
+  backdrop-filter: var(--glass-bar-blur);
+  -webkit-backdrop-filter: var(--glass-bar-blur);
+  border: 1px solid var(--glass-bar-border);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    var(--glass-card-shadow);
+}
+
+/* A bar that meets content on one edge only — the sticky app header — keeps the
+   recipe's fill and blur but draws its hairline on the bottom and stays square. */
+.glass-bar--bottom {
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+/* Stacking limit, enforced rather than documented. Two blurred layers is the
+   budget; a glass surface nested three deep drops its own blur and rides the
+   one above it. Costs nothing when the rule is obeyed and silently protects the
+   frame rate when a future layout nests one sheet too many. */
+:is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Accessibility: when the user asks for less transparency, drop the see-through
    glass for a near-opaque surface (Liquid Glass legibility fallback). */
 @media (prefers-reduced-transparency: reduce) {
   .glass,
-  .glass-nav {
+  .glass-nav,
+  .glass-bar,
+  .glass-sheet,
+  .glass-card,
+  .glass-chip {
     background: var(--glass-opaque);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
