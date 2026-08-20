@@ -1,0 +1,17 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 390, "h": 760, "title": "Current build" },
+    { "file": "OptionA-Numbered.dc.html", "x": 470, "y": 0, "w": 390, "h": 800, "title": "A · Numbered + legend" },
+    { "file": "OptionB-Pointer.dc.html", "x": 940, "y": 0, "w": 390, "h": 760, "title": "B · Pointer names one" },
+    { "file": "OptionC-Radial.dc.html", "x": 1410, "y": 0, "w": 390, "h": 760, "title": "C · Radial labels" },
+    { "file": "OptionD-ArcList.dc.html", "x": 1880, "y": 0, "w": 390, "h": 760, "title": "D · Arc + list" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -210, "w": 390, "text": "THE PROBLEM\nHorizontal labels in every pane stop working past ~10 restaurants. Two rounds of geometry took the worst case 40px -> 59px and it still reads badly: 66px at twelve places is ~8 characters, so names still truncate, and staggering puts two labels one above the other near 12 and 6 o'clock where they read as one name.\n\nEvery artboard has count (8/12) and dark tweaks - flip them." },
+    { "id": "note-a", "x": 470, "y": -210, "w": 390, "text": "A - NUMBERED + LEGEND\nPanes carry a numeral; names live in a two-column list keyed to it.\n\nWhy: a numeral is one or two glyphs, so it never truncates at any count - 8, 12 or 20. Names get full width in the list.\n\nCost: two places to look. The wheel no longer tells you what is on it by itself." },
+    { "id": "note-b", "x": 940, "y": -210, "w": 390, "text": "B - POINTER NAMES ONE\nPanes are blank glass; only the pane at the pointer is named, in screen-title type above the disc.\n\nWhy: matches what the spin zoom already does - one name at a time, large. Completely count-independent.\n\nCost: at rest you cannot see what else is in play without spinning." },
+    { "id": "note-c", "x": 1410, "y": -210, "w": 390, "text": "C - RADIAL LABELS\nLabels run hub-to-rim along the pane bisector, flipped upright on the left half.\n\nWhy: every label gets the full radial span (~150px) regardless of count. The only form that fits real names at 12+.\n\nCost: breaks the handoff's own rule - labels horizontal, never rotated - and reads more fairground than Ember glass." },
+    { "id": "note-d", "x": 1880, "y": -210, "w": 390, "text": "D - ARC + LIST\nThe list is the subject; the wheel is a thick glass arc breaking the right edge.\n\nWhy: names are never constrained by geometry at all, at any count. The circle motif survives as the arc.\n\nCost: the wheel stops being the hero of the screen - the biggest departure from the Ember drawings." }
+  ],
+  "launch": { "view": "canvas" }
+}
