@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  EASE_DECAY,
+  EASE_EXIT,
+  EASE_SETTLE,
+  EASE_STANDARD,
   SPIN_TIMELINE,
   SPIN_TOTAL_MS,
   labelBlurPx,
@@ -13,6 +17,7 @@ import {
   restingLabelRadiusPx,
   signedAngleDeg,
   visibleLabels,
+  cubicBezier,
 } from "./wheelGeometry";
 
 const POINTER = 180; // resting pointer sits on the left of the disc
@@ -315,5 +320,42 @@ describe("labelFrameWidthPx", () => {
   it("is symmetric about the disc centre", () => {
     const w = (deg: number) => labelFrameWidthPx(deg, 100, 200, 400);
     expect(w(0)).toBeCloseTo(w(180), 6);
+  });
+});
+
+describe("cubicBezier", () => {
+  const curves = [EASE_STANDARD, EASE_EXIT, EASE_SETTLE, EASE_DECAY];
+
+  it("is pinned at both ends", () => {
+    for (const e of curves) {
+      expect(e(0)).toBe(0);
+      expect(e(1)).toBe(1);
+      expect(e(-0.5)).toBe(0);
+      expect(e(1.5)).toBe(1);
+    }
+  });
+
+  it("matches linear when the control points are linear", () => {
+    const linear = cubicBezier(1 / 3, 1 / 3, 2 / 3, 2 / 3);
+    for (const p of [0.1, 0.25, 0.5, 0.75, 0.9]) expect(linear(p)).toBeCloseTo(p, 4);
+  });
+
+  it("makes settle the only curve that overshoots", () => {
+    let peak = 0;
+    for (let p = 0; p <= 1; p += 0.005) peak = Math.max(peak, EASE_SETTLE(p));
+    expect(peak).toBeGreaterThan(1);
+
+    for (const e of [EASE_STANDARD, EASE_EXIT, EASE_DECAY]) {
+      for (let p = 0; p <= 1; p += 0.005) expect(e(p)).toBeLessThanOrEqual(1.0001);
+    }
+  });
+
+  it("decays: most of the distance is covered early, then a long tail", () => {
+    expect(EASE_DECAY(0.5)).toBeGreaterThan(0.85);
+    expect(EASE_DECAY(0.25)).toBeGreaterThan(0.55);
+  });
+
+  it("exits: slow to start, so the wind-up reads as loading up", () => {
+    expect(EASE_EXIT(0.25)).toBeLessThan(0.2);
   });
 });

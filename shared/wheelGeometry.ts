@@ -276,3 +276,46 @@ export function labelFrameWidthPx(
   const room = Math.min(x - padPx, frameWidthPx - padPx - x);
   return Math.max(0, 2 * room);
 }
+
+
+/**
+ * A cubic-bezier easing function, matching the CSS timing function of the same
+ * control points.
+ *
+ * The spin is driven from a rAF loop rather than a CSS transition, because the
+ * travel phase has to stretch while the server is still choosing a winner. That
+ * means the curves in index.css and the curves the wheel actually moves along
+ * would be two separate sources of truth unless the loop evaluates the very same
+ * control points — so it does.
+ *
+ * Solves x(t) = p for t by bisection. Cheap enough at 60fps (a handful of
+ * iterations against a monotonic function) and exact to well under a pixel.
+ */
+export function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
+  const curve = (a: number, b: number, t: number) => {
+    const u = 1 - t;
+    return 3 * u * u * t * a + 3 * u * t * t * b + t * t * t;
+  };
+  return (p: number): number => {
+    if (p <= 0) return 0;
+    if (p >= 1) return 1;
+    let lo = 0;
+    let hi = 1;
+    let t = p;
+    for (let i = 0; i < 24; i++) {
+      const x = curve(x1, x2, t);
+      if (Math.abs(x - p) < 1e-6) break;
+      if (x < p) lo = t;
+      else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return curve(y1, y2, t);
+  };
+}
+
+/** The four curves from index.css, evaluated the same way the CSS would. */
+export const EASE_STANDARD = cubicBezier(0.2, 0.9, 0.1, 1);
+export const EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
+/** Overshoots past 1 before settling — the only curve allowed to bounce. */
+export const EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
+export const EASE_DECAY = cubicBezier(0.08, 0.82, 0.17, 1);
