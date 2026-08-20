@@ -57,16 +57,20 @@ const SHARP_DEG = 22.5;
 const FAR_DEG = 60;
 const MAX_BLUR_PX = 6;
 
-/** The two colourless glass fills. Alternating them is what separates panes. */
-const FILL_HEAVY = 0.78;
-const FILL_LIGHT = 0.4;
-
 export interface Pane {
   index: number;
   startDeg: number;
   endDeg: number;
-  /** Alpha of the white conic fill for this pane. */
-  fillAlpha: number;
+  /**
+   * Which of the two colourless glass fills this pane takes. Alternating them is
+   * what separates one pane from the next.
+   *
+   * Deliberately a choice, not a colour: the light recipe is white at 78%/40%
+   * and the dark one is white at 12%/6%, so the actual values belong in CSS
+   * where they follow the theme. Baking the light alphas in here is what made
+   * the first dark render look like opaque grey card instead of glass.
+   */
+  heavy: boolean;
 }
 
 export function normalizeDeg(deg: number): number {
@@ -102,8 +106,7 @@ export function panes(count: number): Pane[] {
     index,
     startDeg: index * sweep,
     endDeg: (index + 1) * sweep,
-    fillAlpha:
-      odd && index === count - 1 ? FILL_LIGHT : index % 2 === 0 ? FILL_HEAVY : FILL_LIGHT,
+    heavy: odd && index === count - 1 ? false : index % 2 === 0,
   }));
 }
 
@@ -185,6 +188,14 @@ export function landingRotationDeg({
 /** Breathing room between a label's far corner and the rim. */
 const RIM_PAD_PX = 6;
 
+/** Clear space between two labels sitting level with each other. Without it the
+ *  budget lets neighbours meet exactly, and two names at the top of the disc read
+ *  as one run-on phrase. */
+const LABEL_GUTTER_PX = 12;
+
+/** Clear space between a label and the edge of the visible frame. */
+const FRAME_PAD_PX = 8;
+
 /**
  * Where resting labels sit, as a fraction of the disc radius.
  *
@@ -235,7 +246,33 @@ export function labelMaxWidthPx(
 
   const chord = 2 * radiusPx * Math.sin(Math.PI / count);
   const neighbourLimit =
-    chord > lineHeightPx ? Math.sqrt(chord * chord - lineHeightPx * lineHeightPx) : 0;
+    chord > lineHeightPx
+      ? Math.sqrt(chord * chord - lineHeightPx * lineHeightPx) - LABEL_GUTTER_PX
+      : 0;
 
   return Math.max(0, Math.min(rimLimit, neighbourLimit));
+}
+
+/**
+ * How wide a label may be before it leaves the visible frame.
+ *
+ * The disc is oversized and deliberately breaks one edge of its container — that
+ * is the signature motif — but item 5's gate is "no clipped label", so the disc
+ * running past the frame must not take a name with it. This bounds a label by
+ * the frame the same way labelMaxWidthPx bounds it by the disc; the caller takes
+ * whichever is smaller.
+ *
+ * `discCenterXPx` is the disc's centre measured in frame coordinates, so it is
+ * usually larger than half the frame width.
+ */
+export function labelFrameWidthPx(
+  centerDeg: number,
+  radiusPx: number,
+  discCenterXPx: number,
+  frameWidthPx: number,
+  padPx = FRAME_PAD_PX
+): number {
+  const x = discCenterXPx + radiusPx * Math.cos((centerDeg * Math.PI) / 180);
+  const room = Math.min(x - padPx, frameWidthPx - padPx - x);
+  return Math.max(0, 2 * room);
 }

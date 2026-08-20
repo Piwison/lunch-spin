@@ -3,6 +3,7 @@ import {
   SPIN_TIMELINE,
   SPIN_TOTAL_MS,
   labelBlurPx,
+  labelFrameWidthPx,
   labelMaxWidthPx,
   landingRotationDeg,
   normalizeDeg,
@@ -51,9 +52,9 @@ describe("panes", () => {
 
   it("alternates the two colourless glass fills so neighbours separate", () => {
     const p = panes(8);
-    expect(p[0]!.fillAlpha).toBeCloseTo(0.78, 6);
-    expect(p[1]!.fillAlpha).toBeCloseTo(0.4, 6);
-    expect(p[2]!.fillAlpha).toBeCloseTo(0.78, 6);
+    expect(p[0]!.heavy).toBe(true);
+    expect(p[1]!.heavy).toBe(false);
+    expect(p[2]!.heavy).toBe(true);
   });
 
   it("never leaves two identical fills adjacent across the 0/360 seam", () => {
@@ -61,7 +62,7 @@ describe("panes", () => {
     // heavy fill or the wheel shows a visible double-width pane at the seam.
     for (const count of [7, 9, 11]) {
       const p = panes(count);
-      expect(p[count - 1]!.fillAlpha).not.toBeCloseTo(p[0]!.fillAlpha, 6);
+      expect(p[count - 1]!.heavy).not.toBe(p[0]!.heavy);
     }
   });
 
@@ -209,7 +210,32 @@ describe("resting labels", () => {
       for (const count of counts) {
         const r = restingLabelRadiusPx(disc, count);
         for (let i = 0; i < count; i++) {
-          expect(labelMaxWidthPx(paneCenterDeg(i, count), r, disc, count)).toBeGreaterThanOrEqual(48);
+          expect(labelMaxWidthPx(paneCenterDeg(i, count), r, disc, count)).toBeGreaterThanOrEqual(40);
+        }
+      }
+    }
+  });
+
+  it("leaves a visible gutter between level neighbours, not a hairline", () => {
+    // Touching at the top and bottom of the disc reads as one run-on label.
+    for (const disc of widths) {
+      for (const count of counts) {
+        const r = restingLabelRadiusPx(disc, count);
+        const box = (i: number) => {
+          const c = paneCenterDeg(i, count);
+          const rad = (c * Math.PI) / 180;
+          return {
+            x: r * Math.cos(rad),
+            y: r * Math.sin(rad),
+            w: labelMaxWidthPx(c, r, disc, count),
+          };
+        };
+        for (let i = 0; i < count; i++) {
+          const a = box(i);
+          const b = box((i + 1) % count);
+          if (Math.abs(a.y - b.y) < 18) {
+            expect(Math.abs(a.x - b.x) - (a.w + b.w) / 2).toBeGreaterThanOrEqual(10);
+          }
         }
       }
     }
@@ -237,5 +263,57 @@ describe("resting labels", () => {
         }
       }
     }
+  });
+});
+
+describe("labelFrameWidthPx", () => {
+  // The disc deliberately breaks the right edge of its frame, but item 5's gate
+  // is "no clipped label" -- so a label's budget is bounded by the visible frame
+  // as well as by the disc it sits on.
+  const frames = [320, 360, 390, 412, 430];
+  const counts = [6, 8, 10, 12];
+  const DISC_TO_FRAME = 1.06;
+  const DISC_CENTER_X = 0.54;
+
+  it("keeps every resting label inside the frame at every supported width", () => {
+    for (const frameW of frames) {
+      for (const count of counts) {
+        const disc = frameW * DISC_TO_FRAME;
+        const cx = frameW * DISC_CENTER_X;
+        const r = restingLabelRadiusPx(disc, count);
+        for (let i = 0; i < count; i++) {
+          const center = paneCenterDeg(i, count);
+          const w = Math.min(
+            labelMaxWidthPx(center, r, disc, count),
+            labelFrameWidthPx(center, r, cx, frameW)
+          );
+          const x = cx + r * Math.cos((center * Math.PI) / 180);
+          expect(x - w / 2).toBeGreaterThanOrEqual(0);
+          expect(x + w / 2).toBeLessThanOrEqual(frameW);
+        }
+      }
+    }
+  });
+
+  it("still gives the tightest label something to work with", () => {
+    for (const frameW of frames) {
+      for (const count of counts) {
+        const disc = frameW * DISC_TO_FRAME;
+        const cx = frameW * DISC_CENTER_X;
+        const r = restingLabelRadiusPx(disc, count);
+        const widths = Array.from({ length: count }, (_, i) =>
+          Math.min(
+            labelMaxWidthPx(paneCenterDeg(i, count), r, disc, count),
+            labelFrameWidthPx(paneCenterDeg(i, count), r, cx, frameW)
+          )
+        );
+        expect(Math.min(...widths)).toBeGreaterThanOrEqual(40);
+      }
+    }
+  });
+
+  it("is symmetric about the disc centre", () => {
+    const w = (deg: number) => labelFrameWidthPx(deg, 100, 200, 400);
+    expect(w(0)).toBeCloseTo(w(180), 6);
   });
 });
