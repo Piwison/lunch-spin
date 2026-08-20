@@ -241,6 +241,45 @@
   }
 }
 
+/* ─── Motion ──────────────────────────────────────────────────────────────────
+   Transform and opacity only. No animated width, height or shadow anywhere.
+   Blur animates in exactly one place — the spin zoom's per-label blur — and is
+   capped there. One moving thing at a time: the spin and the result are the only
+   moments allowed to be dramatic; everything else is a confirmation the user
+   barely notices, and nothing loops. */
+:root {
+  --dur-tap: 120ms;
+  --dur-toggle: 160ms;
+  --dur-view: 200ms;
+  --dur-toast-in: 260ms;
+  --dur-sheet-in: 320ms;
+  --dur-sheet-out: 240ms;
+
+  /* Four curves, no more (spec §3). */
+  --ease-standard: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-settle: cubic-bezier(0.34, 1.26, 0.64, 1); /* overshoot: settle only, nothing else bounces */
+  --ease-decay: cubic-bezier(0.08, 0.82, 0.17, 1);
+
+  --move-enter: 18px;
+  --press-scale: 0.97;
+  --stagger: 60ms;
+
+  /* The spin, end to end (spec §3). Declared here so the CSS-driven half of the
+     sequence and the rAF-driven half read the same numbers — SPIN_TIMELINE in
+     shared/wheelGeometry.ts mirrors these and its test asserts the total. */
+  --dur-windup: 180ms;
+  --dur-travel: 2600ms;
+  --dur-settle: 220ms;
+  --dur-recede: 320ms;
+  --dur-unroll: 460ms;
+
+  /* The zoom camera is the one deliberate fifth curve: §4 names it explicitly
+     for the push into the wheel, distinct from the four-curve UI language. */
+  --dur-zoom: 420ms;
+  --ease-zoom: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 /* ─── Bricolage Grotesque — self-hosted ───────────────────────────────────────
    One variable file per subset. Google serves the SAME woff2 for weight 500 and
    600 (the wght axis is in the file), so "preload 500 and 600" is one request,
