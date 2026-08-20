@@ -11,6 +11,7 @@ import {
   paneCenterDeg,
   panes,
   restingLabelRadiusPx,
+  visibleLabels,
 } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
@@ -29,6 +30,17 @@ interface SpinWheelProps {
   isSpinning: boolean;
   onSpinStart: () => void;
   targetId?: number | null;
+  /**
+   * Whether the camera is pushed into the wheel.
+   *
+   * Owned by the parent, not inferred here: the zoom starts on spin and HOLDS
+   * through the landed result until Lock it in or Respin, so it spans two states
+   * the wheel does not know about. One owner, one fact — AGENTS.md failure mode
+   * 14 is what happens when two effects each decide this for themselves.
+   */
+  zoomed?: boolean;
+  /** The pane that won, once the wheel has landed. Takes the persimmon wash. */
+  winnerId?: number | null;
 }
 
 /** Resting pointer sits on the left rim, pointing in. 0° is 3 o'clock. */
@@ -71,6 +83,15 @@ const SETTLE_DEG = 12;
  *  spins.create would leave no room to slow down and the wheel would stop dead. */
 const MIN_DECAY_MS = 1200;
 
+/** Zoomed disc diameter, as a multiple of the frame width (spec §4). */
+const ZOOM_DISC_TO_FRAME = 1.9;
+
+/** Label ring in the zoomed state: 250px on a 740px disc. */
+const ZOOM_LABEL_RATIO = 250 / 370;
+
+/** Where the pointer sits once the camera has pushed in — top centre. */
+const ZOOM_POINTER_Y = 44;
+
 /**
  * The Ember wheel.
  *
@@ -84,13 +105,24 @@ const MIN_DECAY_MS = 1200;
  *
  * Labels stay horizontal here. Rotation is scoped to the zoomed state only.
  */
-export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }: SpinWheelProps) {
+export default function SpinWheel({
+  segments,
+  onSpinEnd,
+  isSpinning,
+  targetId,
+  zoomed = false,
+  winnerId = null,
+}: SpinWheelProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const rotRef = useRef<HTMLDivElement>(null);
   const [frameW, setFrameW] = useState(0);
   const angleRef = useRef(0);
   const rafRef = useRef(0);
   const lastRef = useRef(0);
+  const speedRef = useRef(0);
+  const zoomedRef = useRef(zoomed);
+  const zoomScaleRef = useRef(1);
+  const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const reducedMotion = useReducedMotion();
 
   // Latest props mirrored into refs so the spin loop can read them without
@@ -113,10 +145,49 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
     return () => ro.disconnect();
   }, []);
 
-  /** The single write that turns the wheel. */
+  /**
+   * The single write that turns the wheel.
+   *
+   * One custom property drives the disc, the label ring and every label's
+   * counter-rotation. In the zoomed state it also repaints the per-label blur —
+   * but only for the handful of labels within ±60° of the pointer, because
+   * everything else is not in the DOM's way at all.
+   */
   const applyRotation = (deg: number) => {
     angleRef.current = deg;
     rotRef.current?.style.setProperty("--rot", `${deg}deg`);
+    if (zoomedRef.current) paintLabelBlur(deg);
+  };
+
+  /**
+   * Per-label motion blur, by angular distance from the pointer.
+   *
+   * Never applied to the layer: the name under the pointer is always the
+   * sharpest thing on screen while the rim smears. Written straight to the DOM
+   * rather than through state, because this runs every frame.
+   *
+   * Blur and type are both inside the scaled camera, so the on-screen 6px the
+   * spec asks for is 6/scale locally.
+   */
+  const paintLabelBlur = (deg: number) => {
+    const count = segmentsRef.current.length;
+    if (!count) return;
+    const speedFactor = Math.max(0, Math.min(speedRef.current / FREE_SPIN_SPEED, 1));
+    const shown = new Map(
+      visibleLabels(count, deg, POINTER_DEG, speedFactor).map((l) => [l.index, l])
+    );
+    const scale = zoomScaleRef.current || 1;
+    for (let i = 0; i < count; i++) {
+      const el = labelRefs.current[i];
+      if (!el) continue;
+      const l = shown.get(i);
+      if (!l) {
+        el.style.visibility = "hidden";
+        continue;
+      }
+      el.style.visibility = "visible";
+      el.style.filter = l.blurPx > 0.01 ? `blur(${l.blurPx / scale}px)` : "none";
+    }
   };
 
   useEffect(() => {
@@ -175,6 +246,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
       }
 
       if (phase === "free") {
+        speedRef.current = FREE_SPIN_SPEED;
         applyRotation(angleRef.current + FREE_SPIN_SPEED * (now - lastRef.current));
         lastRef.current = now;
         if (targetIdRef.current != null) beginDecay(now);
@@ -184,9 +256,12 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
 
       if (phase === "decay") {
         const p = Math.min((now - decayFrom) / decayMs, 1);
-        applyRotation(
-          decayFromAngle + (settleFromAngle - decayFromAngle) * EASE_DECAY(p)
-        );
+        const next = decayFromAngle + (settleFromAngle - decayFromAngle) * EASE_DECAY(p);
+        // Real angular speed, so the blur ramps down with the wheel instead of
+        // switching off at the end.
+        speedRef.current = Math.abs(next - angleRef.current) / Math.max(now - lastRef.current, 1);
+        lastRef.current = now;
+        applyRotation(next);
         if (p >= 1) {
           phase = "settle";
           decayFrom = now;
@@ -195,6 +270,7 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
         return;
       }
 
+      speedRef.current = 0;
       const p = Math.min((now - decayFrom) / SPIN_TIMELINE.settleMs, 1);
       // EASE_SETTLE is the one curve allowed past 1: the disc nudges beyond the
       // pointer and comes back, which is what makes the stop feel physical.
@@ -243,26 +319,83 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
   // names become legible (headline-sized, one at a time).
   const labelSize = count <= 8 ? 15 : count <= 10 ? 13 : 12;
 
+  /**
+   * The camera.
+   *
+   * On spin the wheel stops being an object on screen and becomes something the
+   * camera pushes into. Rather than re-deriving every position for a second
+   * layout, the whole disc takes one transform whose origin is the pointer
+   * contact — the rim point the pane is read at, which is exactly the point that
+   * must not move.
+   *
+   * The 90° rotation is what puts the pointer at top centre without touching the
+   * geometry: POINTER_DEG stays 180 everywhere, and the camera turns the frame
+   * so that the disc's left becomes the screen's top. The disc centre lands
+   * directly below the pointer, which is what makes the hub read as the count
+   * sinking below the fold.
+   *
+   * Scale is against the FRAME width, not the viewport, so a tablet's wheel
+   * column zooms against its own column (item 14) rather than the whole screen.
+   */
+  const zoomScale = discPx > 0 ? (frameW * ZOOM_DISC_TO_FRAME) / discPx : 1;
+  const contactX = centerX - discPx / 2;
+  const contactY = discPx / 2;
+  const active = zoomed && !reducedMotion;
+  const camera = active
+    ? `translate(${frameW / 2 - contactX}px, ${ZOOM_POINTER_Y - contactY}px) rotate(90deg) scale(${zoomScale})`
+    : "none";
+  const zoomLabelRadius = (discPx / 2) * ZOOM_LABEL_RATIO;
+
+  const winnerIndex = winnerId == null ? -1 : segments.findIndex((s) => s.id === winnerId);
+  const winnerSweep = count ? 360 / count : 0;
+  const winnerStartDeg = winnerIndex >= 0 ? winnerIndex * winnerSweep : 0;
+  const winnerEndDeg = winnerStartDeg + winnerSweep;
+
+  useEffect(() => {
+    zoomedRef.current = active;
+    zoomScaleRef.current = zoomScale;
+    // Leaving the zoom returns every label to full size and no blur; entering it
+    // culls immediately rather than waiting for the next animation frame.
+    if (active) paintLabelBlur(angleRef.current);
+    else
+      labelRefs.current.forEach((el) => {
+        if (!el) return;
+        el.style.visibility = "visible";
+        el.style.filter = "none";
+      });
+  });
+
   // Alternating colourless glass panes. Two stops per pane so each is a hard
   // edge, plus a hairline of separation drawn between them.
+  // `from 90deg` reconciles two different zeroes: CSS conic-gradient starts at
+  // 12 o'clock, while the geometry (and every CSS rotate() here) puts 0° at 3
+  // o'clock. Without it the panes sit 90° round from their own labels — which
+  // hides at 4, 6, 8 and 12 places, where 90° is a whole number of panes, and
+  // shows up as a winner wash landing nowhere near the pointer at every count.
   const conic = count
-    ? `conic-gradient(${panes(count)
+    ? `conic-gradient(from 90deg, ${panes(count)
         .map(
           (p) =>
             `var(${p.heavy ? "--pane-heavy" : "--pane-light"}) ${p.startDeg}deg ${p.endDeg}deg`
         )
         .join(", ")})`
-    : "conic-gradient(var(--pane-light) 0deg 360deg)";
+    : "conic-gradient(from 90deg, var(--pane-light) 0deg 360deg)";
 
   const separators = count
-    ? `repeating-conic-gradient(var(--wheel-hairline) 0deg 0.35deg, transparent 0.35deg ${360 / count}deg)`
+    ? `repeating-conic-gradient(from 90deg, var(--wheel-hairline) 0deg 0.35deg, transparent 0.35deg ${360 / count}deg)`
     : "none";
 
   return (
     <div
       ref={frameRef}
       className="relative w-full"
-      style={{ height: discPx || undefined, ["--disc" as string]: `${discPx}px` }}
+      style={{
+        height: discPx || undefined,
+        // The disc breaks the frame on purpose; the PAGE must not scroll because
+        // of it. Clipping here also gives the zoom its "hub sinking below the
+        // fold" read instead of spilling the whole disc over the content below.
+        overflow: "clip",
+      }}
     >
       {frameW > 0 && (
         <>
@@ -273,8 +406,12 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
             style={{
               width: discPx,
               height: discPx,
-              left: centerX - discPx / 2,
+              left: contactX,
               ["--rot" as string]: "0deg",
+              transform: camera,
+              transformOrigin: "0% 50%",
+              transition: `transform var(--dur-zoom) var(--ease-zoom)`,
+              willChange: active ? "transform" : undefined,
             }}
           >
             <div
@@ -286,6 +423,21 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
                 boxShadow: "var(--wheel-shadow), inset 0 0 0 1px var(--glass-card-border)",
               }}
             />
+
+            {/* The winning pane takes the persimmon wash on landing, its two
+                edges lit. Drawn as its own conic so it rides --rot with the disc
+                and needs no second source of truth for where the pane is. */}
+            {winnerIndex >= 0 && (
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 rounded-full pointer-events-none"
+                style={{
+                  transform: "rotate(var(--rot))",
+                  backgroundImage: `conic-gradient(from 90deg, transparent 0deg ${winnerStartDeg}deg, var(--pane-win-edge) ${winnerStartDeg}deg ${winnerStartDeg + 0.6}deg, var(--pane-win) ${winnerStartDeg + 0.6}deg ${winnerEndDeg - 0.6}deg, var(--pane-win-edge) ${winnerEndDeg - 0.6}deg ${winnerEndDeg}deg, transparent ${winnerEndDeg}deg 360deg)`,
+                  transition: "opacity var(--dur-view) var(--ease-standard)",
+                }}
+              />
+            )}
 
             {/* Warm highlight. A lighting effect on the frame, not on the disc,
                 so it stays put while the wheel turns underneath it. */}
@@ -310,16 +462,33 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
                 return (
                   <div
                     key={seg.id}
+                    ref={(el) => {
+                      labelRefs.current[i] = el;
+                    }}
                     className="absolute left-1/2 top-1/2"
                     style={{
-                      transform: `rotate(${centerDeg}deg) translateX(${labelRadius}px) rotate(${-centerDeg}deg) rotate(calc(-1 * var(--rot)))`,
+                      // Rotation is scoped to the zoomed state. At rest the label
+                      // cancels the disc's turn and stays horizontal; zoomed it
+                      // runs along the arc, which the camera's own 90° then
+                      // brings upright under the pointer — so the name being read
+                      // is level and the ones further round rake away.
+                      transform: active
+                        ? `rotate(${centerDeg}deg) translateX(${zoomLabelRadius}px) rotate(90deg)`
+                        : `rotate(${centerDeg}deg) translateX(${labelRadius}px) rotate(${-centerDeg}deg) rotate(calc(-1 * var(--rot)))`,
+                      transition: `transform var(--dur-zoom) var(--ease-zoom)`,
                     }}
                   >
                     <span
                       className="block -translate-x-1/2 -translate-y-1/2 text-center whitespace-nowrap overflow-hidden text-ellipsis"
                       style={{
-                        maxWidth,
-                        fontSize: labelSize,
+                        // Zoomed type is 28px on screen; the camera scale gets it
+                        // there, so the local size barely moves.
+                        // Zoomed, the name under the pointer is the most
+                        // important text on screen and must not be cut by the
+                        // frame the disc deliberately breaks. Bounded to the
+                        // frame in local units, since the camera scales it up.
+                        maxWidth: active ? (frameW - 32) / zoomScale : maxWidth,
+                        fontSize: active ? 28 / zoomScale : labelSize,
                         fontWeight: 700,
                         letterSpacing: "-0.02em",
                         color: "var(--foreground)",
@@ -334,8 +503,18 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
 
             {/* Hub — glass, with the count that is actually in play. */}
             <div
-              className="glass-chip absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex flex-col items-center justify-center"
-              style={{ width: discPx * 0.26, height: discPx * 0.26 }}
+              className="glass-chip absolute left-1/2 top-1/2 rounded-full flex flex-col items-center justify-center"
+              style={{
+                width: discPx * 0.26,
+                height: discPx * 0.26,
+                // Counter-rotates the camera's 90°: the hub is pinned to the disc
+                // centre, but the count is meant to stay readable, not tip over
+                // with the world.
+                transform: active
+                  ? "translate(-50%, -50%) rotate(-90deg)"
+                  : "translate(-50%, -50%)",
+                transition: "transform var(--dur-zoom) var(--ease-zoom)",
+              }}
             >
               <span
                 style={{ fontSize: discPx * 0.1, fontWeight: 600, letterSpacing: "-0.04em", lineHeight: 1, color: "var(--ink-strong)" }}
@@ -353,8 +532,10 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
             aria-hidden="true"
             className="absolute pointer-events-none"
             style={{
-              left: centerX - discPx / 2,
-              top: discPx / 2,
+              opacity: active ? 0 : 1,
+              transition: "opacity var(--dur-view) var(--ease-standard)",
+              left: contactX,
+              top: contactY,
               width: discPx * 0.2,
               height: 64,
               transform: "translateY(-50%)",
@@ -365,7 +546,12 @@ export default function SpinWheel({ segments, onSpinEnd, isSpinning, targetId }:
           />
           <div
             className="absolute z-20"
-            style={{ left: Math.max(centerX - discPx / 2, 2), top: discPx / 2, transform: "translateY(-50%)" }}
+            style={{
+              left: active ? frameW / 2 : Math.max(contactX, 2),
+              top: active ? ZOOM_POINTER_Y : contactY,
+              transform: active ? "translate(-50%, -50%) rotate(90deg)" : "translateY(-50%)",
+              transition: "left var(--dur-zoom) var(--ease-zoom), top var(--dur-zoom) var(--ease-zoom)",
+            }}
           >
             <svg width="30" height="26" viewBox="0 0 30 26" fill="none" aria-hidden="true">
               <path

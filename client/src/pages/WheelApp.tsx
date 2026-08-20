@@ -5,6 +5,7 @@ import { cachedUserId, clearBootCache, readBootCache, saveBootCache } from "@/li
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
@@ -101,6 +102,7 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -620,6 +622,10 @@ export default function WheelApp() {
     () => new Set((restaurants ?? []).flatMap((r) => r.tags.map((t) => t.id))),
     [restaurants],
   );
+  // The camera is in from the first frame of the spin until the result clears.
+  // Reduced motion never pushes in, so the chrome never recedes either.
+  const cameraIn = (isSpinning || showResult) && !prefersReducedMotion;
+
   const cuisineTags = (tags ?? []).filter((t) => t.category === "cuisine" && usedTagIds.has(t.id));
   const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
@@ -649,6 +655,15 @@ export default function WheelApp() {
       {/* ── HEADER ── */}
       <header
         className="glass-bar glass-bar--bottom px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
+        style={{
+          // Everything except the wheel recedes while the camera is pushed in.
+          transform: cameraIn ? "translateY(-12px)" : "none",
+          filter: cameraIn ? "blur(1.6px)" : "none",
+          opacity: cameraIn ? 0.5 : 1,
+          transition:
+            "transform var(--dur-windup) var(--ease-standard), filter var(--dur-windup) var(--ease-standard), opacity var(--dur-windup) var(--ease-standard)",
+          pointerEvents: cameraIn ? "none" : undefined,
+        }}
       >
         <div className="flex items-center gap-3">
           <div
@@ -1031,13 +1046,18 @@ export default function WheelApp() {
                       </div>
                     ) : (
                       <div className="w-full flex flex-col items-center gap-5">
-                        {/* Wheel canvas */}
+                        {/* The wheel. The camera holds its zoom from the moment
+                            the spin starts until Lock it in or Respin clears the
+                            result — one owner for that fact, passed down, rather
+                            than the wheel inferring it from its own state. */}
                         <SpinWheel
                           segments={wheelSegments}
                           onSpinEnd={handleSpinEnd}
                           isSpinning={isSpinning}
                           onSpinStart={handleSpin}
                           targetId={targetId}
+                          zoomed={isSpinning || showResult}
+                          winnerId={spinResult?.id ?? null}
                         />
 
                         {(restaurants?.length ?? 0) === 0 ? (

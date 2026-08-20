@@ -150,6 +150,8 @@
     oklch(from var(--brand) l c h / 0.07)
   );
   --wheel-shadow: 0 24px 60px rgb(20 22 28 / 0.18);
+  --pane-win: oklch(from var(--brand) l c h / 0.22);
+  --pane-win-edge: oklch(from var(--brand) l c h / 0.75);
 }
 
 /* ── Dark: same system at inverted value ──
@@ -226,6 +228,8 @@
     oklch(from var(--brand) l c h / 0.12)
   );
   --wheel-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+  --pane-win: oklch(from var(--brand) l c h / 0.3);
+  --pane-win-edge: oklch(from var(--brand) l c h / 0.85);
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────────────────── */
