@@ -5,12 +5,10 @@ import {
   EASE_SETTLE,
   EASE_STANDARD,
   SPIN_TIMELINE,
-  labelFrameWidthPx,
-  labelMaxWidthPx,
   landingRotationDeg,
   paneCenterDeg,
   panes,
-  restingLabelRadiusPx,
+  restingLabelLayout,
   visibleLabels,
 } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
@@ -315,12 +313,11 @@ export default function SpinWheel({
   const count = segments.length;
   const discPx = Math.max(frameW * DISC_TO_FRAME, 1);
   const centerX = frameW * DISC_CENTER_X;
-  const labelRadius = restingLabelRadiusPx(discPx, Math.max(count, 1));
-  // Spec sets the resting label at 15px. Narrower wedges get a smaller size so a
-  // name keeps a few more characters before the ellipsis — at 12 places the
-  // wedge simply is not wide enough for a full name, and the zoom is where the
-  // names become legible (headline-sized, one at a time).
-  const labelSize = count <= 8 ? 15 : count <= 10 ? 13 : 12;
+  // Radius, width budget and which way each label grows, solved together —
+  // staggered onto two rings from nine panes up, and each box grown into the
+  // room it actually has rather than centred on its anchor.
+  const labelLayout = count ? restingLabelLayout(count, discPx, frameW, centerX) : [];
+  const labelSize = count <= 8 ? 15 : count <= 10 ? 14 : 13;
 
   /**
    * The camera.
@@ -491,13 +488,10 @@ export default function SpinWheel({
             {/* Labels ride the same --rot and counter-rotate to stay horizontal. */}
             <div className="absolute inset-0" style={{ ...promote, transform: "rotate(var(--rot))" }}>
               {segments.map((seg, i) => {
-                const centerDeg = paneCenterDeg(i, count);
-                // Bounded by the disc it sits on AND by the visible frame the
-                // disc runs past — whichever bites first.
-                const maxWidth = Math.min(
-                  labelMaxWidthPx(centerDeg, labelRadius, discPx, count),
-                  labelFrameWidthPx(centerDeg, labelRadius, centerX, frameW)
-                );
+                const lay = labelLayout[i]!;
+                const centerDeg = lay.centerDeg;
+                const labelRadius = lay.radiusPx;
+                const maxWidth = lay.maxWidthPx;
                 return (
                   <div
                     key={seg.id}
@@ -513,7 +507,7 @@ export default function SpinWheel({
                       // is level and the ones further round rake away.
                       transform: active
                         ? `rotate(${centerDeg}deg) translateX(${zoomLabelRadius}px) rotate(90deg)`
-                        : `rotate(${centerDeg}deg) translateX(${labelRadius}px) rotate(${-centerDeg}deg) rotate(calc(-1 * var(--rot)))`,
+                        : `rotate(${centerDeg}deg) translateX(${labelRadius}px) rotate(${-centerDeg}deg) rotate(calc(-1 * var(--rot))) translateX(${lay.offsetXPx}px)`,
                       transition: `transform var(--dur-zoom) var(--ease-zoom)`,
                     }}
                   >

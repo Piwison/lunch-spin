@@ -319,3 +319,129 @@ export const EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
 /** Overshoots past 1 before settling — the only curve allowed to bounce. */
 export const EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
 export const EASE_DECAY = cubicBezier(0.08, 0.82, 0.17, 1);
+
+/** The hub is 26% of the disc across, so its edge sits at 13% of the diameter. */
+const HUB_RATIO = 0.13;
+const HUB_PAD_PX = 8;
+
+/** Above this many panes a single ring of horizontal labels stops fitting. */
+const STAGGER_FROM = 9;
+
+/** Ring radii as a fraction of the disc radius. */
+const SINGLE_RING = 0.62;
+const OUTER_RING = 0.81;
+const INNER_RING = 0.49;
+
+export interface RestingLabel {
+  index: number;
+  centerDeg: number;
+  radiusPx: number;
+  maxWidthPx: number;
+  /**
+   * How far to shift the label box off its anchor, in disc-x.
+   *
+   * Zero near 12 and 6 o'clock, where there is equal room either side. Negative
+   * on the right of the disc, where the box grows inward instead of straddling
+   * its anchor and running into the frame the disc deliberately breaks.
+   */
+  offsetXPx: number;
+}
+
+/**
+ * Where every resting label sits, how wide it may be, and which way it grows.
+ *
+ * Labels stay horizontal at rest, which is what makes dense wheels hard. Two
+ * things were costing width, and the smaller one was the obvious one:
+ *
+ * 1. On a single ring, near 12 and 6 o'clock adjacent labels sit at almost the
+ *    same height, so the binding constraint is the neighbour and the gap is
+ *    2·r·sin(π/count). At twelve places that left ~44px — two or three
+ *    characters. From nine panes up the labels now alternate between two rings,
+ *    so neighbours are at different radii and are no longer level.
+ *
+ * 2. The bigger one: every label was centred on its anchor, so its budget was
+ *    twice the SMALLER of the room either side. On the right of the disc — which
+ *    is the side that breaks the frame — that halved a generous left-hand gap
+ *    because of a tiny right-hand one. Labels now grow into the room they
+ *    actually have, and the box is centred in what is available rather than on
+ *    the anchor. That alone is worth more than the staggering, and it is why the
+ *    disc can keep its full offset instead of trading the motif for legibility.
+ *
+ * Measured worst case across 320–430px and 9/10/11/12/14 panes: 40px centred on
+ * one ring, 49px staggered, 48px inward, 59px with both.
+ *
+ * Staggering has a cost worth being explicit about: once labels are on two
+ * rings, the label that threatens a given label is no longer necessarily the
+ * pane next door — an inner label can end up level with one several panes round.
+ * So the budget is solved against EVERY other label. That is O(count²) on a
+ * wheel of a few dozen panes, computed once per layout rather than per frame.
+ */
+export function restingLabelLayout(
+  count: number,
+  discPx: number,
+  frameWidthPx: number,
+  discCenterXPx: number,
+  lineHeightPx = 18,
+  hubRadiusPx = discPx * HUB_RATIO
+): RestingLabel[] {
+  const R = discPx / 2;
+  const rimR = R - RIM_PAD_PX;
+  const staggered = count >= STAGGER_FROM;
+
+  const placed = Array.from({ length: count }, (_, index) => {
+    const centerDeg = paneCenterDeg(index, count);
+    const ratio = staggered ? (index % 2 === 0 ? OUTER_RING : INNER_RING) : SINGLE_RING;
+    const radiusPx = R * ratio;
+    const rad = (centerDeg * Math.PI) / 180;
+    return {
+      index,
+      centerDeg,
+      radiusPx,
+      x: radiusPx * Math.cos(rad),
+      y: radiusPx * Math.sin(rad),
+    };
+  });
+
+  return placed.map((p) => {
+    const span = rimR * rimR - p.y * p.y;
+    const rimHalf = span <= 0 ? 0 : Math.sqrt(span);
+    const absX = discCenterXPx + p.x;
+
+    let left = Math.min(p.x + rimHalf, absX - FRAME_PAD_PX);
+    let right = Math.min(rimHalf - p.x, frameWidthPx - FRAME_PAD_PX - absX);
+
+    // The hub. An anchor outside it is not enough once labels grow inward — a
+    // box anchored clear of the hub can still be drawn straight across the
+    // count, which is exactly what "Banh Mi Bros" did at 3 o'clock.
+    if (Math.abs(p.y) < hubRadiusPx) {
+      const halfChord = Math.sqrt(hubRadiusPx * hubRadiusPx - p.y * p.y);
+      if (p.x >= 0) left = Math.min(left, p.x - halfChord - HUB_PAD_PX);
+      else right = Math.min(right, -p.x - halfChord - HUB_PAD_PX);
+    }
+
+    // Half the gap each, so a colliding pair keeps the full gutter between them
+    // however the two boxes end up shifted.
+    for (const q of placed) {
+      if (q.index === p.index) continue;
+      if (Math.abs(p.y - q.y) >= lineHeightPx) continue;
+      const gap = (Math.abs(p.x - q.x) - LABEL_GUTTER_PX) / 2;
+      if (q.x < p.x) left = Math.min(left, gap);
+      else right = Math.min(right, gap);
+    }
+
+    left = Math.max(0, left);
+    right = Math.max(0, right);
+
+    // A label with room in every direction still should not sprawl across half
+    // the wheel; two pane-chords is as wide as a name ever needs to be.
+    const sprawl = 4 * p.radiusPx * Math.sin(Math.PI / count);
+
+    return {
+      index: p.index,
+      centerDeg: p.centerDeg,
+      radiusPx: p.radiusPx,
+      maxWidthPx: Math.max(0, Math.min(left + right, sprawl)),
+      offsetXPx: (right - left) / 2,
+    };
+  });
+}

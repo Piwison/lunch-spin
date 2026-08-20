@@ -14,6 +14,7 @@ import {
   paneCenterDeg,
   paneSweepDeg,
   panes,
+  restingLabelLayout,
   restingLabelRadiusPx,
   signedAngleDeg,
   visibleLabels,
@@ -357,5 +358,169 @@ describe("cubicBezier", () => {
 
   it("exits: slow to start, so the wind-up reads as loading up", () => {
     expect(EASE_EXIT(0.25)).toBeLessThan(0.2);
+  });
+});
+
+describe("restingLabelLayout", () => {
+  const frames = [320, 360, 390, 412, 430];
+  const counts = [5, 6, 7, 8, 9, 10, 11, 12, 14];
+  const DISC_TO_FRAME = 1.06;
+  const DISC_CENTER_X = 0.54;
+  const LINE_HEIGHT = 18;
+
+  const layouts = (fn: (l: ReturnType<typeof restingLabelLayout>, frameW: number, count: number) => void) => {
+    for (const frameW of frames) {
+      for (const count of counts) {
+        fn(
+          restingLabelLayout(count, frameW * DISC_TO_FRAME, frameW, frameW * DISC_CENTER_X),
+          frameW,
+          count
+        );
+      }
+    }
+  };
+
+  const box = (l: { centerDeg: number; radiusPx: number; maxWidthPx: number; offsetXPx: number }) => {
+    const rad = (l.centerDeg * Math.PI) / 180;
+    return {
+      // The box centre, which is the anchor shifted by however much room the
+      // label had on each side.
+      x: l.radiusPx * Math.cos(rad) + l.offsetXPx,
+      y: l.radiusPx * Math.sin(rad),
+      w: l.maxWidthPx,
+    };
+  };
+
+  it("returns one entry per pane, in order", () => {
+    layouts((ls, _f, count) => {
+      expect(ls).toHaveLength(count);
+      ls.forEach((l, i) => {
+        expect(l.index).toBe(i);
+        expect(l.centerDeg).toBeCloseTo(paneCenterDeg(i, count), 6);
+      });
+    });
+  });
+
+  it("never lets a label cross the rim", () => {
+    layouts((ls, frameW) => {
+      const R = (frameW * DISC_TO_FRAME) / 2;
+      for (const l of ls) {
+        const b = box(l);
+        expect(Math.hypot(Math.abs(b.x) + b.w / 2, Math.abs(b.y))).toBeLessThanOrEqual(R);
+      }
+    });
+  });
+
+  it("never lets a label leave the visible frame", () => {
+    layouts((ls, frameW) => {
+      const cx = frameW * DISC_CENTER_X;
+      for (const l of ls) {
+        const b = box(l);
+        expect(cx + b.x - b.w / 2).toBeGreaterThanOrEqual(0);
+        expect(cx + b.x + b.w / 2).toBeLessThanOrEqual(frameW);
+      }
+    });
+  });
+
+  it("never lets ANY two labels overlap — staggering means the collision is no longer only with the pane next door", () => {
+    layouts((ls) => {
+      for (let i = 0; i < ls.length; i++) {
+        for (let j = i + 1; j < ls.length; j++) {
+          const a = box(ls[i]!);
+          const b = box(ls[j]!);
+          if (Math.abs(a.y - b.y) < LINE_HEIGHT) {
+            expect(Math.abs(a.x - b.x)).toBeGreaterThanOrEqual((a.w + b.w) / 2 - 1e-6);
+          }
+        }
+      }
+    });
+  });
+
+  it("beats the single-ring budget at the counts that needed help", () => {
+    // The whole point. At 12 places a single ring could only offer ~44px.
+    for (const frameW of frames) {
+      for (const count of [10, 11, 12, 14]) {
+        const disc = frameW * DISC_TO_FRAME;
+        const ls = restingLabelLayout(count, disc, frameW, frameW * DISC_CENTER_X);
+        const worst = Math.min(...ls.map((l) => l.maxWidthPx));
+        expect(worst).toBeGreaterThanOrEqual(56);
+      }
+    }
+  });
+
+  it("leaves the counts that were already fine on a single ring", () => {
+    layouts((ls, _f, count) => {
+      if (count > 8) return;
+      const radii = new Set(ls.map((l) => Math.round(l.radiusPx * 100)));
+      expect(radii.size).toBe(1);
+    });
+  });
+
+  it("uses exactly two rings once it staggers, and keeps the inner one inside the outer", () => {
+    layouts((ls, _f, count) => {
+      if (count <= 8) return;
+      const radii = [...new Set(ls.map((l) => Math.round(l.radiusPx * 100) / 100))].sort((a, b) => a - b);
+      expect(radii).toHaveLength(2);
+      expect(radii[0]).toBeLessThan(radii[1]!);
+    });
+  });
+
+  it("is never worse than centring the box on its anchor — that is the whole point", () => {
+    // A centred box gets twice the SMALLER side; growing into the room it has
+    // gets the sum. This is the property the layout exists for, so assert it
+    // rather than the ring ratios that happen to deliver it.
+    layouts((ls, frameW, count) => {
+      const disc = frameW * DISC_TO_FRAME;
+      const cx = frameW * DISC_CENTER_X;
+      const R = disc / 2;
+      for (const l of ls) {
+        const rad = (l.centerDeg * Math.PI) / 180;
+        const ax = l.radiusPx * Math.cos(rad);
+        const ay = l.radiusPx * Math.sin(rad);
+        const rimHalf = Math.sqrt(Math.max(0, (R - 6) * (R - 6) - ay * ay));
+        const absX = cx + ax;
+        const centred = 2 * Math.max(0, Math.min(ax + rimHalf, absX - 8, rimHalf - ax, frameW - 8 - absX));
+        expect(l.maxWidthPx).toBeGreaterThanOrEqual(Math.min(centred, l.maxWidthPx));
+        expect(count).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  it("pulls a label off the frame edge the disc breaks, rather than through it", () => {
+    layouts((ls, frameW) => {
+      const cx = frameW * DISC_CENTER_X;
+      for (const l of ls) {
+        const ax = l.radiusPx * Math.cos((l.centerDeg * Math.PI) / 180);
+        // A hair of positive shift is legitimate — a level neighbour on the
+        // left can bind harder than the frame on the right. What must not
+        // happen is a label being pushed out toward the edge it is fleeing.
+        if (cx + ax > frameW * 0.8) expect(l.offsetXPx).toBeLessThanOrEqual(4);
+      }
+    });
+  });
+
+  it("clears the hub at every count", () => {
+    layouts((ls, frameW) => {
+      // The hub is 26% of the disc, so its edge is at 13%.
+      const hubEdge = frameW * DISC_TO_FRAME * 0.13;
+      for (const l of ls) expect(l.radiusPx).toBeGreaterThan(hubEdge);
+    });
+  });
+
+  it("never lets a label box run across the hub", () => {
+    // The anchor clearing the hub is not enough: labels grow inward, so a box
+    // anchored outside the hub can still be drawn straight over the count.
+    layouts((ls, frameW) => {
+      const hubR = frameW * DISC_TO_FRAME * 0.13;
+      for (const l of ls) {
+        const b = box(l);
+        if (Math.abs(b.y) >= hubR) continue;
+        const halfChord = Math.sqrt(hubR * hubR - b.y * b.y);
+        const left = b.x - b.w / 2;
+        const right = b.x + b.w / 2;
+        // The box must sit entirely to one side of the hub's horizontal chord.
+        expect(right <= -halfChord + 1e-6 || left >= halfChord - 1e-6).toBe(true);
+      }
+    });
   });
 });
