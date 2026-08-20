@@ -399,25 +399,6 @@
   max-width: 1280px;
 }
 
-/* ─── Glow Utilities ─────────────────────────────────────────────────────────
-   Reserved for the joyful hero moments (wheel / SPIN / result). Glow intensity
-   follows --brand-glow so light mode stays calm and dark mode keeps its punch. */
-.glow-orange {
-  box-shadow:
-    0 0 20px oklch(from var(--brand) l c h / var(--brand-glow)),
-    0 0 60px oklch(from var(--brand) l c h / calc(var(--brand-glow) * 0.4));
-}
-.glow-purple {
-  box-shadow:
-    0 0 20px oklch(from var(--brand-2) l c h / var(--brand-glow)),
-    0 0 60px oklch(from var(--brand-2) l c h / calc(var(--brand-glow) * 0.4));
-}
-.glow-text {
-  text-shadow:
-    0 0 30px oklch(from var(--brand) l c h / calc(var(--brand-glow) + 0.3)),
-    0 0 60px oklch(from var(--brand) l c h / var(--brand-glow));
-}
-
 /* ─── Appetizing Gradient Text ──────────────────────────────────────────────── */
 .gradient-text {
   background: linear-gradient(135deg, var(--brand-2), var(--brand));
@@ -523,27 +504,7 @@
 }
 
 /* ─── Animations ────────────────────────────────────────────────────────────── */
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
-}
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-@keyframes spin-result {
-  0% { transform: scale(0.8) rotate(-5deg); opacity: 0; }
-  60% { transform: scale(1.05) rotate(2deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
-}
-@keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
-}
 
-.animate-float { animation: float 3s ease-in-out infinite; }
-.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
-.animate-spin-result { animation: spin-result 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
 
 /* ─── Motion primitives ─────────────────────────────────────────────────────────
    These back the animation classes used across the app (reveal, fade-in,
@@ -554,19 +515,18 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes orb-spin { to { transform: rotate(360deg); } }
-@keyframes ring-rotate { to { transform: rotate(1turn); } }
 @keyframes tab-enter {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes cta-pulse {
-  0%, 100% { box-shadow: 0 0 22px oklch(from var(--brand) l c h / var(--brand-glow)), 0 4px 20px oklch(0.30 0.04 40 / 0.25); }
-  50%      { box-shadow: 0 0 40px oklch(from var(--brand) l c h / calc(var(--brand-glow) + 0.15)), 0 0 64px oklch(from var(--brand-2) l c h / calc(var(--brand-glow) * 0.5)), 0 4px 20px oklch(0.30 0.04 40 / 0.25); }
-}
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .reveal { opacity: 0; animation: reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.animate-orb-spin { animation: orb-spin 28s linear infinite; }
+/* The one loading indicator in the app (see components/BrandLoader.tsx). It used
+   to default to 28s because it doubled as ambient rotation in the header and
+   hero; those are gone for the 0-idle-frames budget, and at 28s the three
+   remaining loading orbs were turning too slowly to read as moving at all. */
+.animate-orb-spin { animation: orb-spin 1.4s linear infinite; }
 
 /* The brand mark: a miniature lunch wheel. Eight hard-stop slices from the
    segment palette (client/src/lib/palette.ts) around a theme-colored hub, so
@@ -587,9 +547,7 @@
       #e2674f 315deg 360deg
     );
 }
-.animate-ring-rotate { animation: ring-rotate 12s linear infinite; }
 .tab-enter { animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
-.cta-pulse { animation: cta-pulse 2.6s ease-in-out infinite; }
 .fade-in { animation: fade-in 0.25s ease-out; }
 
 /* The winning pane unrolling into display type. Transform and opacity only,
@@ -611,9 +569,7 @@
 
 /* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate,
-  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in, .animate-spin-result,
-  .animate-unroll {
+  .reveal, .animate-orb-spin, .tab-enter, .fade-in, .animate-unroll {
     animation: none !important;
   }
   /* Under reduced motion the result appears; it does not unroll. */

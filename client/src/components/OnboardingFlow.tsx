@@ -333,7 +333,7 @@ export default function OnboardingFlow({
     <Shell>
       <div className="flex flex-col items-center gap-6 text-center w-full">
         <div
-          className="w-20 h-20 orb-wheel animate-orb-spin"
+          className="w-20 h-20 orb-wheel"
           style={{ boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
         />
         <div className="flex flex-col gap-2">

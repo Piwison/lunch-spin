@@ -169,7 +169,7 @@ export default function GuestWheel() {
               onClick={handleSpin}
               disabled={isSpinning || segments.length === 0}
               className={`relative overflow-hidden px-12 py-4 rounded-full font-black text-base tracking-[0.15em] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 ${
-                !isSpinning ? "cta-pulse hover:-translate-y-1 hover:brightness-110" : ""
+                !isSpinning ? "hover:-translate-y-1 hover:brightness-110" : ""
               }`}
               style={{
                 fontFamily: "var(--font-display)",

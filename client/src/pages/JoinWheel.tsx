@@ -92,7 +92,7 @@ export default function JoinWheel() {
   if (joined) {
     return (
       <Centered>
-        <div className="text-6xl animate-float">🎉</div>
+        <div className="text-6xl">🎉</div>
         <div>
           <h1 className="text-3xl font-black mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--brand)" }}>
             JOINED!

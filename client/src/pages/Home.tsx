@@ -90,9 +90,9 @@ export default function Home() {
     const moveCursor = (e: MouseEvent) => {
       targetPos.current = { x: e.clientX, y: e.clientY };
       setMousePos({ x: e.clientX, y: e.clientY });
+      // The easing loop parks itself once it has caught up; wake it here.
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(animateCursor);
     };
-    window.addEventListener("mousemove", moveCursor);
-
     const animateCursor = () => {
       const dx = targetPos.current.x - cursorPos.current.x;
       const dy = targetPos.current.y - cursorPos.current.y;
@@ -104,8 +104,16 @@ export default function Home() {
       if (cursorDotRef.current) {
         cursorDotRef.current.style.transform = `translate(${targetPos.current.x - 3}px, ${targetPos.current.y - 3}px)`;
       }
+      // Stop once the trailing cursor has caught up. This loop used to run for
+      // the lifetime of the page, easing a gap that was already zero — a frame
+      // every 16ms to move nothing. moveCursor restarts it on the next motion.
+      if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+        rafRef.current = 0;
+        return;
+      }
       rafRef.current = requestAnimationFrame(animateCursor);
     };
+    window.addEventListener("mousemove", moveCursor);
     rafRef.current = requestAnimationFrame(animateCursor);
 
     return () => {
@@ -301,10 +309,10 @@ export default function Home() {
         {/* Floating orb */}
         <div className="mb-10 flex justify-center reveal" style={{ animationDelay: "40ms" }}>
           <div ref={orbRef} style={{ transition: "transform 0.4s cubic-bezier(0.23, 1, 0.32, 1)" }}>
-            <div className="relative animate-float">
+            <div className="relative">
               {/* Outer glow rings */}
               <div
-                className="absolute rounded-full animate-ring-rotate"
+                className="absolute rounded-full"
                 style={{
                   inset: "-16px",
                   background: "conic-gradient(from 0deg, transparent 0%, oklch(from var(--brand) l c h / 0.5) 25%, transparent 50%, oklch(from var(--brand-2) l c h / 0.4) 75%, transparent 100%)",
@@ -328,7 +336,7 @@ export default function Home() {
               </div>
               {/* Wheel face — real palette segments, so the hero IS the product */}
               <div
-                className="w-36 h-36 orb-wheel animate-orb-spin"
+                className="w-36 h-36 orb-wheel"
                 style={{
                   boxShadow: "0 0 60px oklch(from var(--brand) l c h / 0.5), 0 0 120px oklch(from var(--brand-2) l c h / 0.25), inset 0 0 0 2px rgba(255,255,255,0.1)",
                 }}
@@ -436,7 +444,7 @@ export default function Home() {
         {/* Scroll hint */}
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 reveal" style={{ animationDelay: "700ms" }}>
           <span className="text-xs tracking-widest text-muted-foreground" style={{ fontFamily: "var(--font-display)" }}>SCROLL</span>
-          <ChevronDown size={14} className="text-muted-foreground animate-bounce" />
+          <ChevronDown size={14} className="text-muted-foreground" />
         </div>
       </section>
 

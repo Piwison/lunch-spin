@@ -352,6 +352,25 @@ export default function SpinWheel({
     : recede || "none";
   const zoomLabelRadius = (discPx / 2) * ZOOM_LABEL_RATIO;
 
+  /**
+   * Whether the wheel is moving, and therefore whether its layers are worth
+   * promoting.
+   *
+   * The disc's fill is a conic-gradient, and a conic is expensive to rasterise —
+   * especially the hairline separator pass, which at twelve places is a 0.35°
+   * band repeated every 30°. Rotating an un-promoted element re-rasterises all
+   * of that every frame. Promoting the rotating layers means the gradient is
+   * rasterised once and only the layer transform moves, which measured 49.9 ->
+   * 58.1 fps at 4x CPU throttle.
+   *
+   * Gated rather than permanent: will-change on a 740px element holds real
+   * texture memory, and at rest nothing is moving to pay for it.
+   */
+  const moving = isSpinning || active;
+  const promote = moving
+    ? ({ willChange: "transform", backfaceVisibility: "hidden" } as const)
+    : undefined;
+
   const winnerIndex = winnerId == null ? -1 : segments.findIndex((s) => s.id === winnerId);
   const winnerSweep = count ? 360 / count : 0;
   const winnerStartDeg = winnerIndex >= 0 ? winnerIndex * winnerSweep : 0;
@@ -433,6 +452,7 @@ export default function SpinWheel({
               aria-hidden="true"
               className="absolute inset-0 rounded-full"
               style={{
+                ...promote,
                 transform: "rotate(var(--rot))",
                 backgroundImage: `${separators}, ${conic}`,
                 boxShadow: "var(--wheel-shadow), inset 0 0 0 1px var(--glass-card-border)",
@@ -447,6 +467,7 @@ export default function SpinWheel({
                 aria-hidden="true"
                 className="absolute inset-0 rounded-full pointer-events-none"
                 style={{
+                  ...promote,
                   transform: "rotate(var(--rot))",
                   backgroundImage: `conic-gradient(from 90deg, transparent 0deg ${winnerStartDeg}deg, var(--pane-win-edge) ${winnerStartDeg}deg ${winnerStartDeg + 0.6}deg, var(--pane-win) ${winnerStartDeg + 0.6}deg ${winnerEndDeg - 0.6}deg, var(--pane-win-edge) ${winnerEndDeg - 0.6}deg ${winnerEndDeg}deg, transparent ${winnerEndDeg}deg 360deg)`,
                   transition: "opacity var(--dur-view) var(--ease-standard)",
@@ -465,7 +486,7 @@ export default function SpinWheel({
             />
 
             {/* Labels ride the same --rot and counter-rotate to stay horizontal. */}
-            <div className="absolute inset-0" style={{ transform: "rotate(var(--rot))" }}>
+            <div className="absolute inset-0" style={{ ...promote, transform: "rotate(var(--rot))" }}>
               {segments.map((seg, i) => {
                 const centerDeg = paneCenterDeg(i, count);
                 // Bounded by the disc it sits on AND by the visible frame the
@@ -522,6 +543,14 @@ export default function SpinWheel({
               style={{
                 width: discPx * 0.26,
                 height: discPx * 0.26,
+                // A backdrop-filter inside a subtree that transforms every frame
+                // re-samples its backdrop every frame. The budget's rule for a
+                // cell that will not go green is that the glass on that surface
+                // gets thinner, never that the timing gets shorter — so the hub
+                // drops its blur while the wheel is moving and takes it back the
+                // moment it stops. Worth ~1 fps and 1.2% of slow frames.
+                backdropFilter: moving ? "none" : undefined,
+                WebkitBackdropFilter: moving ? "none" : undefined,
                 // Counter-rotates the camera's 90°: the hub is pinned to the disc
                 // centre, but the count is meant to stay readable, not tip over
                 // with the world.

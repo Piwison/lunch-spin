@@ -668,7 +668,7 @@ export default function WheelApp() {
       >
         <div className="flex items-center gap-3">
           <div
-            className="w-7 h-7 orb-wheel flex-shrink-0 animate-orb-spin"
+            className="w-7 h-7 orb-wheel flex-shrink-0"
             style={{
               boxShadow: "0 0 12px oklch(from var(--brand) l c h / 0.5)",
               animationDuration: "20s",
@@ -1067,7 +1067,7 @@ export default function WheelApp() {
                           <div className="flex flex-col items-center gap-3 text-center">
                             <button
                               onClick={() => setActiveTab("restaurants")}
-                              className="group flex items-center gap-2.5 px-8 py-4 rounded-full font-bold text-sm tracking-widest transition-all duration-200 active:scale-95 hover:-translate-y-0.5 cta-pulse"
+                              className="group flex items-center gap-2.5 px-8 py-4 rounded-full font-bold text-sm tracking-widest transition-all duration-200 active:scale-95 hover:-translate-y-0.5"
                               style={{
                                 fontFamily: "var(--font-display)",
                                 background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
@@ -1089,7 +1089,7 @@ export default function WheelApp() {
                               disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
                               className={`relative overflow-hidden px-12 py-4 rounded-full font-black text-base tracking-[0.15em] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 ${
                                 !(isSpinning || createSpin.isPending || wheelSegments.length === 0)
-                                  ? "cta-pulse hover:-translate-y-1 hover:brightness-110"
+                                  ? "hover:-translate-y-1 hover:brightness-110"
                                   : ""
                               }`}
                               style={{

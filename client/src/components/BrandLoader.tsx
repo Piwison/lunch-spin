@@ -5,10 +5,10 @@
  * visual and never "swap" between a gradient blob, the wheel orb, and a gray
  * circle (the old janky first-load sequence).
  *
- * .animate-orb-spin is 28s by default (ambient rotation in the header/hero);
- * we override animation-duration inline so it reads as an active spinner here.
- * prefers-reduced-motion still zeroes the animation (index.css) — the label
- * carries the "loading" meaning in that case.
+ * .animate-orb-spin now runs at loading speed by default — it is only ever a
+ * loading indicator, since the ambient header/hero rotations were removed for
+ * the performance budget's 0-idle-frames rule. prefers-reduced-motion still
+ * zeroes the animation (index.css); the label carries the meaning in that case.
  */
 export default function BrandLoader({
   label = "LOADING…",
@@ -26,7 +26,6 @@ export default function BrandLoader({
         style={{
           width: size,
           height: size,
-          animationDuration: "1.4s",
           boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
         }}
       />
