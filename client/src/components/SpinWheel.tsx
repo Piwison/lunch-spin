@@ -416,10 +416,13 @@ export default function SpinWheel({
       className="relative w-full"
       style={{
         height: discPx || undefined,
-        // The disc breaks the frame on purpose; the PAGE must not scroll because
-        // of it. Clipping here also gives the zoom its "hub sinking below the
-        // fold" read instead of spilling the whole disc over the content below.
-        overflow: "clip",
+        // Clip only while the camera is in. At rest the disc breaks the frame by
+        // about 30px, which the page column clips horizontally — and clipping
+        // here instead would cut the disc's own drop shadow square, sitting the
+        // wheel inside a faint rectangle. Zoomed, the clip is doing real work:
+        // it keeps the 740px disc off the content below and gives the hub its
+        // "sinking below the fold" read.
+        overflow: active || receded ? "clip" : "visible",
         // Once the disc has receded it is a 14px blur at half opacity, and a hard
         // clip turns that into a visible rectangle of haze. Feathering the frame
         // edge lets it dissolve into the ground the way a blurred thing should.

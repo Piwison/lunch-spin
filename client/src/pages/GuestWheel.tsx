@@ -242,7 +242,7 @@ export default function GuestWheel() {
  *  visitor, not follow their OS/localStorage preference). */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh flex items-center justify-center bg-background text-foreground">
+    <div className="min-h-dvh flex items-center justify-center overflow-x-clip bg-background text-foreground">
       {children}
     </div>
   );

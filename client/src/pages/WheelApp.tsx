@@ -899,7 +899,7 @@ export default function WheelApp() {
           )}
 
           {/* ── TAB CONTENT ── (pb clears the fixed mobile nav) */}
-          <div className="flex-1 overflow-y-auto pb-28 md:pb-0">
+          <div className="flex-1 overflow-y-auto overflow-x-clip pb-28 md:pb-0">
             {!selectedWheelId ? (
               wheelsLoading ? (
                 /* Hold a neutral state until we know if this is a first run —
