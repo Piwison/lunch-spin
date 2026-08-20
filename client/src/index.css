@@ -592,12 +592,32 @@
 .cta-pulse { animation: cta-pulse 2.6s ease-in-out infinite; }
 .fade-in { animation: fade-in 0.25s ease-out; }
 
+/* The winning pane unrolling into display type. Transform and opacity only,
+   and it starts partway into the disc's recede so the name resolves while the
+   disc is still travelling back — see SPIN_TOTAL_MS in shared/wheelGeometry.ts. */
+@keyframes unroll {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-enter));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-unroll {
+  animation: unroll var(--dur-unroll) var(--ease-standard) var(--dur-unroll-delay, 160ms) both;
+}
+
 /* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate,
-  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in, .animate-spin-result {
+  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in, .animate-spin-result,
+  .animate-unroll {
     animation: none !important;
   }
+  /* Under reduced motion the result appears; it does not unroll. */
+  .animate-unroll { opacity: 1 !important; transform: none !important; }
   .reveal { opacity: 1 !important; transform: none !important; }
 }
 

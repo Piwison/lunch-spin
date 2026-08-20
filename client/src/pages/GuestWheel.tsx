@@ -1,11 +1,12 @@
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
+import WinnerSurface from "@/components/WinnerSurface";
 import { getLoginUrl } from "@/const";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { trpc } from "@/lib/trpc";
 import { pickWinner } from "@shared/pick";
 import { shouldPromptSignup } from "@shared/onboarding";
-import { ArrowRight, Check, MapPin, RotateCw, Sparkles, Utensils } from "lucide-react";
+import { ArrowRight, Sparkles, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
 
@@ -159,6 +160,9 @@ export default function GuestWheel() {
               isSpinning={isSpinning}
               onSpinStart={handleSpin}
               targetId={targetId}
+              zoomed={isSpinning || showResult}
+              winnerId={spinResult?.id ?? null}
+              receded={showResult}
             />
 
             <button
@@ -207,115 +211,27 @@ export default function GuestWheel() {
         </div>
       </div>
 
-      {/* ── RESULT OVERLAY ── */}
+      {/* ── RESULT ──
+          The same surface the signed-in app uses. These two pages carried two
+          near-identical copies of this overlay, which is how the guest wheel kept
+          drifting a release behind; the read-only and vote-once rules differ, but
+          none of the presentation does. Accept here just dismisses — a guest has
+          nothing to record. */}
       {showResult && spinResult && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in"
-          style={{ background: "rgba(0,0,0,0.80)", backdropFilter: "blur(12px)" }}
-          onClick={() => setShowResult(false)}
+        <WinnerSurface
+          name={spinResult.label}
+          acceptLabel="Sounds good"
+          onAccept={() => setShowResult(false)}
+          onRespin={handleReSpin}
+          onDirections={() => openDirections(spinResult)}
+          onDismiss={() => setShowResult(false)}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Spin result: ${spinResult.label}`}
-            className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
-            style={{
-              background: "var(--card)",
-              border: `2px solid ${spinResult.color}`,
-              boxShadow: `0 0 80px ${spinResult.color}55, 0 0 160px ${spinResult.color}22, 0 32px 64px rgba(0,0,0,0.6)`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Faint glow only — heavy per-glyph shadows stack into a muddy
-                smear behind the title (same treatment as WheelApp's overlay). */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{ background: `radial-gradient(circle at 50% 0%, ${spinResult.color}14 0%, transparent 65%)` }}
-            />
-            <div className="relative">
-              <div className="text-5xl mb-4 animate-float">🎉</div>
-              <p
-                className="text-xs mb-2 tracking-[0.2em] flex items-center justify-center gap-2"
-                style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
-                TODAY'S LUNCH
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
-              </p>
-              {/* No text glow: cool-hued halos turn to mud on the warm card —
-                  the segment color already speaks through border, dots, buttons. */}
-              <h2
-                className="text-3xl font-black mb-8 leading-tight"
-                style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
-              >
-                {spinResult.label}
-              </h2>
-              <div className="flex flex-col gap-2.5">
-                <button
-                  onClick={() => openDirections(spinResult)}
-                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
-                  style={{
-                    background: spinResult.color + "20",
-                    border: `1px solid ${spinResult.color}60`,
-                    color: spinResult.color,
-                    fontFamily: "var(--font-display)",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  <MapPin size={14} /> DIRECTIONS
-                </button>
-                <div className="flex gap-2.5">
-                  <button
-                    onClick={handleReSpin}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:bg-white/8"
-                    style={{
-                      background: "var(--muted)",
-                      border: "1px solid var(--border)",
-                      color: "var(--foreground)",
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    <RotateCw size={12} /> RE-SPIN
-                  </button>
-                  <button
-                    autoFocus
-                    onClick={() => setShowResult(false)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
-                    style={{
-                      background: "oklch(from var(--ok) l c h / 0.15)",
-                      border: "1px solid oklch(from var(--ok) l c h / 0.45)",
-                      color: "var(--ok)",
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    <Check size={12} /> ACCEPT
-                  </button>
-                </div>
-              </div>
-
-              {/* Conversion moment — earned after the first spin (decision 1b). */}
-              {shouldPromptSignup(spinCount) && (
-                <div className="mt-6 pt-5" style={{ borderTop: "1px solid var(--border)" }}>
-                  <a
-                    href={getLoginUrl()}
-                    className="flex items-center justify-center gap-2 w-full px-5 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
-                    style={{
-                      fontFamily: "var(--font-display)",
-                      background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                      boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.35)",
-                      color: "white",
-                    }}
-                  >
-                    <Sparkles size={14} /> Make your own wheel — it’s free
-                    <ArrowRight size={14} />
-                  </a>
-                </div>
-              )}
+          {shouldPromptSignup(spinCount) && (
+            <div className="w-full pt-1">
+              <SignInCta />
             </div>
-          </div>
-        </div>
+          )}
+        </WinnerSurface>
       )}
     </Shell>
   );

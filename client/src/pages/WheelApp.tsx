@@ -5,6 +5,7 @@ import { cachedUserId, clearBootCache, readBootCache, saveBootCache } from "@/li
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
+import WinnerSurface from "@/components/WinnerSurface";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
@@ -16,7 +17,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -1058,6 +1059,7 @@ export default function WheelApp() {
                           targetId={targetId}
                           zoomed={isSpinning || showResult}
                           winnerId={spinResult?.id ?? null}
+                          receded={showResult}
                         />
 
                         {(restaurants?.length ?? 0) === 0 ? (
@@ -1276,173 +1278,65 @@ export default function WheelApp() {
         </div>
       </div>
 
-      {/* ── RESULT OVERLAY ── */}
-      {showResult && spinResult && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in"
-          style={{ background: "rgba(0,0,0,0.80)", backdropFilter: "blur(12px)" }}
-          onClick={() => setShowResult(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Spin result: ${spinResult.label}`}
-            className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
-            style={{
-              background: "var(--card)",
-              border: `2px solid ${spinResult.color}`,
-              boxShadow: `0 0 80px ${spinResult.color}55, 0 0 160px ${spinResult.color}22, 0 32px 64px rgba(0,0,0,0.6)`,
-            }}
-            onClick={(e) => e.stopPropagation()}
+      {/* ── RESULT ──
+          No modal and no card: the camera is still holding its zoom on the wheel
+          behind this, and the winning pane unrolls in place into display type.
+          Everything the old overlay carried survives — closing-soon from the real
+          openStatus, the one-time exclusion explainer, the rating capture, and
+          the quiet dismiss that means "not this one, not now" without respinning. */}
+      {showResult && spinResult && (() => {
+        const win = restaurants?.find((r) => r.id === spinResult.id);
+        const walkSeconds = wheelData?.distanceEnabled ? win?.walkSeconds : null;
+        return (
+          <WinnerSurface
+            name={spinResult.label}
+            isClosingSoon={win?.openStatus === "closing_soon"}
+            closingSoonMinutes={win?.minutesUntilClose ?? null}
+            meta={
+              walkSeconds != null ? (
+                <span className="flex items-center gap-1.5">
+                  <Footprints size={14} className="flex-shrink-0" />
+                  {formatWalk(walkSeconds / 60)} from {wheelData?.originLabel || "Office"}
+                </span>
+              ) : null
+            }
+            onAccept={handleAccept}
+            onRespin={handleReSpin}
+            respinDisabled={wheelSegments.length === 0}
+            onDirections={() => openDirections(spinResult)}
+            onDismiss={() => setShowResult(false)}
           >
-            {/* Close [x] — a third choice beyond RE-SPIN / ACCEPT: dismiss this
-                result. The spin is already recorded as rejected (excluded only
-                for the rest of today), so closing = "skip this one today". */}
-            <button
-              onClick={() => setShowResult(false)}
-              aria-label="Close"
-              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
-            >
-              <X size={16} />
-            </button>
-            {/* Background glow blob — kept faint: heavy per-glyph shadows on the
-                title used to stack into a muddy smear behind the winner name. */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: `radial-gradient(circle at 50% 0%, ${spinResult.color}14 0%, transparent 65%)`,
-              }}
-            />
-            <div className="relative">
-              <div className="text-5xl mb-4 animate-float">🎉</div>
-              <p
-                className="text-xs mb-2 tracking-[0.2em] flex items-center justify-center gap-2"
-                style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
-                TODAY'S LUNCH
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
-              </p>
-              {/* No text glow: cool-hued halos turn to mud on the warm card —
-                  the segment color already speaks through border, dots, buttons. */}
-              <h2
-                className="text-3xl font-black leading-tight"
-                style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
-              >
-                {spinResult.label}
-              </h2>
-              <div className="mb-8">
-                {wheelData?.distanceEnabled && (() => {
-                  const walkSeconds = restaurants?.find((r) => r.id === spinResult.id)?.walkSeconds;
-                  if (walkSeconds == null) return null;
-                  return (
-                    <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mt-2">
-                      <Footprints size={12} className="flex-shrink-0" />
-                      {formatWalk(walkSeconds / 60)} from {wheelData.originLabel || "Office"}
-                    </p>
-                  );
-                })()}
+            {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
+              <div className="glass-chip flex items-start gap-2.5 px-4 py-3 w-full text-left">
+                <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
+                <span className="type-meta" style={{ color: "var(--body)" }}>
+                  We&apos;ll skip{" "}
+                  <span className="font-semibold" style={{ color: "var(--foreground)" }}>
+                    {spinResult.label}
+                  </span>{" "}
+                  for the next {wheelData.exclusionDays}{" "}
+                  {wheelData.exclusionDays === 1 ? "day" : "days"} so you don&apos;t get it twice.
+                  Change that in wheel settings.
+                </span>
               </div>
-              {/* Closing-soon warning: the winner is open, but not for long. Shown
-                  as a caution, never a block — the spin already stands. */}
-              {(() => {
-                const win = restaurants?.find((r) => r.id === spinResult.id);
-                if (win?.openStatus !== "closing_soon") return null;
-                const mins = win.minutesUntilClose;
-                return (
-                  <div
-                    className="flex items-center justify-center gap-1.5 text-xs font-semibold mb-5 px-3 py-2 rounded-xl"
-                    style={{
-                      background: "oklch(from var(--destructive) l c h / 0.12)",
-                      border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
-                      color: "var(--destructive)",
-                    }}
-                  >
-                    <Clock3 size={13} className="flex-shrink-0" />
-                    {mins != null ? `Closing in ~${mins} min — hurry!` : "Closing soon — hurry!"}
-                  </div>
-                );
-              })()}
-              {/* The one teaching moment in the whole product. Exclusion used to
-                  be a dropdown in the create dialog, asked of someone who had
-                  never spun the wheel; here it's explained at the exact moment
-                  it becomes real, and only on the user's first couple of spins.
-                  After that it's just noise they've already read. */}
-              {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
-                <div
-                  className="flex items-start gap-2 text-xs mb-5 px-3 py-2.5 rounded-xl text-left"
-                  style={{
-                    background: "oklch(from var(--brand) l c h / 0.10)",
-                    border: "1px solid oklch(from var(--brand) l c h / 0.25)",
-                  }}
-                >
-                  <Clock size={13} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
-                  <span className="text-muted-foreground">
-                    We'll skip <span className="text-foreground font-semibold">{spinResult.label}</span> for the next{" "}
-                    {wheelData.exclusionDays} {wheelData.exclusionDays === 1 ? "day" : "days"} so you don't get it
-                    twice. Change that in wheel settings.
-                  </span>
-                </div>
-              )}
-              {/* Post-spin capture — rate the winner right here (per-place rating). */}
-              <div className="flex flex-col items-center gap-1.5 mb-6">
-                <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>
-                <StarRating
-                  value={myStarsFor(spinResult.id)}
-                  size={26}
-                  disabled={rateRestaurant.isPending}
-                  onChange={(stars) => selectedWheelId && rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })}
-                />
-              </div>
-              <div className="flex flex-col gap-2.5">
-                <button
-                  onClick={() => openDirections(spinResult)}
-                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
-                  style={{
-                    background: spinResult.color + "20",
-                    border: `1px solid ${spinResult.color}60`,
-                    color: spinResult.color,
-                    fontFamily: "var(--font-display)",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  <MapPin size={14} /> DIRECTIONS
-                </button>
-                <div className="flex gap-2.5">
-                  <button
-                    onClick={handleReSpin}
-                    disabled={wheelSegments.length === 0}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 hover:bg-white/8"
-                    style={{
-                      background: "var(--muted)",
-                      border: "1px solid var(--border)",
-                      color: "var(--foreground)",
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    <RotateCw size={12} /> RE-SPIN
-                  </button>
-                  <button
-                    autoFocus
-                    onClick={handleAccept}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
-                    style={{
-                      background: "oklch(from var(--ok) l c h / 0.15)",
-                      border: "1px solid oklch(from var(--ok) l c h / 0.45)",
-                      color: "var(--ok)",
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    <Check size={12} /> ACCEPT
-                  </button>
-                </div>
-              </div>
+            )}
+            <div className="flex items-center gap-3 w-full">
+              <span className="type-eyebrow" style={{ color: "var(--muted-foreground)" }}>
+                Rate it
+              </span>
+              <StarRating
+                value={myStarsFor(spinResult.id)}
+                size={26}
+                disabled={rateRestaurant.isPending}
+                onChange={(stars) =>
+                  selectedWheelId &&
+                  rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })
+                }
+              />
             </div>
-          </div>
-        </div>
-      )}
+          </WinnerSurface>
+        );
+      })()}
     </div>
   );
 }

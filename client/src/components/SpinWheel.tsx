@@ -41,6 +41,8 @@ interface SpinWheelProps {
   zoomed?: boolean;
   /** The pane that won, once the wheel has landed. Takes the persimmon wash. */
   winnerId?: number | null;
+  /** The result is up: the disc drops back and blurs behind the display type. */
+  receded?: boolean;
 }
 
 /** Resting pointer sits on the left rim, pointing in. 0° is 3 o'clock. */
@@ -112,6 +114,7 @@ export default function SpinWheel({
   targetId,
   zoomed = false,
   winnerId = null,
+  receded = false,
 }: SpinWheelProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const rotRef = useRef<HTMLDivElement>(null);
@@ -341,9 +344,12 @@ export default function SpinWheel({
   const contactX = centerX - discPx / 2;
   const contactY = discPx / 2;
   const active = zoomed && !reducedMotion;
+  // The recede is applied outermost so it moves the whole camera back rather
+  // than fighting the zoom's transform-origin at the pointer.
+  const recede = receded && !reducedMotion ? "translateY(52px) scale(0.94) " : "";
   const camera = active
-    ? `translate(${frameW / 2 - contactX}px, ${ZOOM_POINTER_Y - contactY}px) rotate(90deg) scale(${zoomScale})`
-    : "none";
+    ? `${recede}translate(${frameW / 2 - contactX}px, ${ZOOM_POINTER_Y - contactY}px) rotate(90deg) scale(${zoomScale})`
+    : recede || "none";
   const zoomLabelRadius = (discPx / 2) * ZOOM_LABEL_RATIO;
 
   const winnerIndex = winnerId == null ? -1 : segments.findIndex((s) => s.id === winnerId);
@@ -395,6 +401,12 @@ export default function SpinWheel({
         // of it. Clipping here also gives the zoom its "hub sinking below the
         // fold" read instead of spilling the whole disc over the content below.
         overflow: "clip",
+        // Once the disc has receded it is a 14px blur at half opacity, and a hard
+        // clip turns that into a visible rectangle of haze. Feathering the frame
+        // edge lets it dissolve into the ground the way a blurred thing should.
+        maskImage: receded
+          ? "radial-gradient(120% 92% at 50% 40%, #000 55%, transparent 100%)"
+          : undefined,
       }}
     >
       {frameW > 0 && (
@@ -410,7 +422,10 @@ export default function SpinWheel({
               ["--rot" as string]: "0deg",
               transform: camera,
               transformOrigin: "0% 50%",
-              transition: `transform var(--dur-zoom) var(--ease-zoom)`,
+              filter: receded && !reducedMotion ? "blur(14px)" : "none",
+              opacity: receded && !reducedMotion ? 0.5 : 1,
+              transition:
+                "transform var(--dur-zoom) var(--ease-zoom), filter var(--dur-recede) var(--ease-standard), opacity var(--dur-recede) var(--ease-standard)",
               willChange: active ? "transform" : undefined,
             }}
           >
@@ -547,10 +562,12 @@ export default function SpinWheel({
           <div
             className="absolute z-20"
             style={{
+              opacity: receded ? 0 : 1,
               left: active ? frameW / 2 : Math.max(contactX, 2),
               top: active ? ZOOM_POINTER_Y : contactY,
               transform: active ? "translate(-50%, -50%) rotate(90deg)" : "translateY(-50%)",
-              transition: "left var(--dur-zoom) var(--ease-zoom), top var(--dur-zoom) var(--ease-zoom)",
+              transition:
+                "left var(--dur-zoom) var(--ease-zoom), top var(--dur-zoom) var(--ease-zoom), opacity var(--dur-recede) var(--ease-standard)",
             }}
           >
             <svg width="30" height="26" viewBox="0 0 30 26" fill="none" aria-hidden="true">
