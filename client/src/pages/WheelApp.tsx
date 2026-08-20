@@ -645,7 +645,7 @@ export default function WheelApp() {
   const defaultWheel = wheels?.find((w) => w.id === user.defaultWheelId);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--ground)" }}>
       {/* ── HEADER ── */}
       <header
         className="border-b border-border/40 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
@@ -686,7 +686,7 @@ export default function WheelApp() {
                 {unreadCount > 0 && (
                   <span
                     className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
-                    style={{ background: "#ef4444", boxShadow: "0 0 0 2px var(--background)" }}
+                    style={{ background: "var(--brand)", boxShadow: "0 0 0 2px var(--background)" }}
                   />
                 )}
               </button>

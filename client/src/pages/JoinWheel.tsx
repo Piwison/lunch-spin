@@ -11,7 +11,7 @@ import { Loader2 } from "lucide-react";
  *  instead of centered. min-h-dvh (not vh) tracks the mobile browser chrome. */
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh grid place-items-center px-6 text-center" style={{ background: "var(--background)" }}>
+    <div className="min-h-dvh grid place-items-center px-6 text-center" style={{ background: "var(--ground)" }}>
       <div className="flex flex-col items-center gap-5 max-w-sm w-full">{children}</div>
     </div>
   );

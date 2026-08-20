@@ -1,12 +1,25 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* ─── Warm Appetite — light + dark ────────────────────────────────────────────
-   Tokens resolve through intermediate vars so the SAME utility (bg-card,
-   text-muted-foreground, …) adapts to the mode. `:root` is the warm-cream light
-   default; `.dark` (toggled by ThemeContext on <html>) swaps in warm charcoal.
-   Brand is a single tomato/ember accent; `--brand-2` (amber) is reserved for the
-   hero gradient on the wheel/result only. */
+/* ─── Ember — light + dark ────────────────────────────────────────────────────
+   "Liquid Glass at full strength on a warm paper ground." Tokens resolve through
+   intermediate vars so the SAME utility (bg-card, text-muted-foreground, …)
+   adapts to the mode. `:root` is the light default; `.dark` (toggled by
+   ThemeContext on <html>) is the same system at inverted value.
+
+   Persimmon (`--brand`) is the only saturated colour in the app: primary action,
+   eyebrows, icons, pointer. The Ember spec's names map onto the names this repo
+   already swept ~260 hardcoded values into, so no call site had to change:
+
+     spec --accent → --brand / --primary / --ring      spec --ink    → --foreground
+     spec --hairline → --border / --input              spec --muted  → --muted-foreground
+     spec --ground → --ground (gradient) + --background (its flat mid stop,
+     because bg-background compiles to background-color, which cannot take one)
+
+   `--accent` and `--muted` keep their existing repo meaning — pale hover/panel
+   SURFACES, driving bg-accent and bg-muted across the shadcn primitives. They are
+   deliberately not the spec's persimmon and grey, which live on --brand and
+   --muted-foreground. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -27,6 +40,14 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-paper: var(--paper);
+  --color-ink-strong: var(--ink-strong);
+  --color-body: var(--body);
+  --color-faint: var(--faint);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
   --color-chart-1: var(--brand);
   --color-chart-2: var(--brand-2);
   --color-chart-3: oklch(0.70 0.20 160);
@@ -37,86 +58,111 @@
   --font-display: "Fredoka", "Poppins", sans-serif;
 }
 
-/* ── Light (default): warm cream ── */
+/* ── Light (default): warm paper ── */
 :root {
-  --background: oklch(0.97 0.015 80);
-  --foreground: oklch(0.26 0.03 50);
-  --card: oklch(0.995 0.008 80);
-  --card-foreground: oklch(0.26 0.03 50);
-  --popover: oklch(0.995 0.008 80);
-  --popover-foreground: oklch(0.26 0.03 50);
-  --primary: oklch(0.64 0.19 38);
-  --primary-foreground: oklch(0.99 0.01 80);
-  --secondary: oklch(0.94 0.015 78);
-  --secondary-foreground: oklch(0.30 0.03 50);
-  --muted: oklch(0.95 0.012 80);
-  --muted-foreground: oklch(0.50 0.03 60);
-  --accent: oklch(0.93 0.03 70);
-  --accent-foreground: oklch(0.30 0.03 50);
-  --destructive: oklch(0.57 0.20 28);
-  --destructive-foreground: oklch(0.99 0.01 80);
-  --border: oklch(0.90 0.02 75);
-  --input: oklch(0.90 0.02 75);
-  --ring: oklch(0.64 0.19 38);
+  /* Ground. The app background is a gradient; --background carries its flat mid
+     stop so `bg-background` (a background-color) still resolves to something. */
+  --ground: linear-gradient(160deg, #f6f2ec 0%, #efe8df 55%, #e7ded2 100%);
+  --background: #efe8df;
+  --paper: #fbf7f2;              /* text on accent; solid cards */
 
-  /* Brand accents (mode-tuned so glows/gradients read right in each mode). */
-  --brand: oklch(0.64 0.19 38);     /* tomato/ember — the single accent */
-  --brand-2: oklch(0.74 0.15 65);   /* amber/mango — hero gradient only */
-  --brand-glow: 0.20;               /* glow opacity multiplier (calmer in light) */
-  --star: oklch(0.72 0.15 72);      /* rating stars (warm gold) */
+  /* Ink */
+  --foreground: #14161c;         /* spec --ink: headings, primary text */
+  --ink-strong: #0d0f14;         /* display type only */
+  --body: #5a626d;               /* body copy */
+  --muted-foreground: #868d97;   /* spec --muted: labels, meta */
+  --faint: #9aa1aa;              /* placeholder, disabled */
+  --border: #c7cbd1;             /* spec --hairline: rules, dividers */
+  --input: #c7cbd1;
 
-  /* Semantic text accents — kept legible against their faint tinted chips by
-     going darker in light mode, brighter in dark. */
-  --ok: oklch(0.52 0.14 150);       /* success text */
-  --info: oklch(0.54 0.13 62);      /* info / notice text */
+  /* Surfaces. --muted and --accent are pale panels/hover fills (repo meaning),
+     NOT the spec's grey and persimmon — those are --muted-foreground and --brand. */
+  --card: #fbf7f2;
+  --card-foreground: #14161c;
+  --popover: #fbf7f2;
+  --popover-foreground: #14161c;
+  --secondary: #e7ded2;
+  --secondary-foreground: #14161c;
+  --muted: #e7ded2;
+  --accent: #e7ded2;
+  --accent-foreground: #14161c;
 
-  /* Glass surfaces (frosted cream). */
-  --glass-bg: oklch(0.99 0.01 80 / 0.72);
-  --glass-border: oklch(0.80 0.03 70 / 0.55);
-  --glass-nav-bg: oklch(0.985 0.012 80 / 0.62);
-  --glass-nav-border: oklch(0.78 0.03 70 / 0.50);
-  --glass-nav-shadow: 0 8px 32px oklch(0.50 0.05 40 / 0.12);
-  --glass-highlight: oklch(1 0 0 / 0.55);
-  --glass-opaque: oklch(0.985 0.012 80 / 0.98);
+  /* Persimmon — the only saturated colour in the app. */
+  --primary: #de5c1f;
+  --primary-foreground: #fbf7f2;
+  --ring: #de5c1f;
+  --brand: #de5c1f;
+  --accent-ink: #b0431a;         /* accent TEXT on light glass (winner label) */
+  --on-accent: #fbf7f2;          /* ink on a persimmon fill */
+  /* Reserved for the hero gradient on wheel/result. A lighter persimmon rather
+     than the old amber, so a gradient never introduces a second hue. */
+  --brand-2: #f0894a;
+  --brand-glow: 0.2;             /* glow opacity multiplier (calmer in light) */
+
+  /* Semantic. Deliberately desaturated so nothing competes with persimmon. */
+  --destructive: #b3261e;
+  --destructive-foreground: #fbf7f2;
+  --star: #c98a2e;               /* rating stars — a conventional gold, muted */
+  --ok: #2f6b4f;                 /* success text */
+  --info: #7a5b33;               /* info / notice text */
+
+  /* Glass surfaces — see the four named recipes below. */
+  --glass-bg: rgb(255 255 255 / 0.62);
+  --glass-border: rgb(255 255 255 / 0.95);
+  --glass-nav-bg: rgb(255 255 255 / 0.55);
+  --glass-nav-border: rgb(255 255 255 / 0.9);
+  --glass-nav-shadow: 0 18px 40px rgb(20 22 28 / 0.14);
+  --glass-highlight: rgb(255 255 255 / 0.55);
+  --glass-opaque: #fbf7f2;
 }
 
-/* ── Dark: warm charcoal ── */
+/* ── Dark: same system at inverted value ──
+   Persimmon is lifted so it holds its weight against charcoal. */
 .dark {
-  --background: oklch(0.16 0.02 50);
-  --foreground: oklch(0.95 0.01 80);
-  --card: oklch(0.20 0.022 50);
-  --card-foreground: oklch(0.95 0.01 80);
-  --popover: oklch(0.20 0.022 50);
-  --popover-foreground: oklch(0.95 0.01 80);
-  --primary: oklch(0.70 0.19 40);
-  --primary-foreground: oklch(0.16 0.02 50);
-  --secondary: oklch(0.24 0.025 50);
-  --secondary-foreground: oklch(0.90 0.01 80);
-  --muted: oklch(0.22 0.022 50);
-  --muted-foreground: oklch(0.62 0.02 70);
-  --accent: oklch(0.27 0.03 50);
-  --accent-foreground: oklch(0.92 0.01 80);
-  --destructive: oklch(0.60 0.20 28);
-  --destructive-foreground: oklch(0.98 0.01 80);
-  --border: oklch(0.30 0.022 55);
-  --input: oklch(0.26 0.025 55);
-  --ring: oklch(0.70 0.19 40);
+  --ground: linear-gradient(160deg, #191b20 0%, #15171c 55%, #101216 100%);
+  --background: #15171c;
+  --paper: #1e2127;
 
-  --brand: oklch(0.70 0.19 40);
-  --brand-2: oklch(0.78 0.15 65);
+  --foreground: #f6f3ee;
+  --ink-strong: #fcfaf7;
+  --body: #e6e2db;
+  --muted-foreground: #9ba0a8;
+  --faint: #7c838c;
+  --border: #2e323a;
+  --input: #2e323a;
+
+  --card: #1e2127;
+  --card-foreground: #f6f3ee;
+  --popover: #1e2127;
+  --popover-foreground: #f6f3ee;
+  --secondary: #23262c;
+  --secondary-foreground: #f6f3ee;
+  --muted: #23262c;
+  --accent: #23262c;
+  --accent-foreground: #f6f3ee;
+
+  --primary: #f2703a;
+  --primary-foreground: #16120f;
+  --ring: #f2703a;
+  --brand: #f2703a;
+  --accent-ink: #f2703a;         /* on dark glass the accent reads as itself */
+  --on-accent: #16120f;
+  --brand-2: #f79463;
   --brand-glow: 0.45;
-  --star: oklch(0.80 0.14 76);      /* rating stars (brighter in dark) */
 
-  --ok: oklch(0.80 0.15 148);
-  --info: oklch(0.82 0.14 70);
+  --destructive: #e5654f;
+  --destructive-foreground: #16120f;
+  --star: #e0a544;
+  --ok: #6fbf95;
+  --info: #c9a97a;
 
-  --glass-bg: oklch(0.22 0.022 50 / 0.70);
-  --glass-border: oklch(0.40 0.03 55 / 0.50);
-  --glass-nav-bg: oklch(0.21 0.022 50 / 0.55);
-  --glass-nav-border: oklch(0.42 0.03 55 / 0.45);
-  --glass-nav-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --glass-highlight: oklch(1 0 0 / 0.08);
-  --glass-opaque: oklch(0.21 0.022 50 / 0.97);
+  --glass-bg: rgb(255 255 255 / 0.08);
+  --glass-border: rgb(255 255 255 / 0.12);
+  --glass-nav-bg: rgb(255 255 255 / 0.08);
+  --glass-nav-border: rgb(255 255 255 / 0.12);
+  --glass-nav-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
+  --glass-highlight: rgb(255 255 255 / 0.08);
+  --glass-opaque: #1e2127;
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────────────────── */
@@ -141,9 +187,16 @@
     color-scheme: dark;
   }
 
+  /* The ground. Painted once here and nowhere else: the Ember rule is that the
+     ground stays flat paper and never blurs, so no glass surface may re-declare
+     it. `fixed` keeps the 160deg ramp anchored to the viewport instead of
+     re-running down a long scroll — the app's real scrollers are inner divs. */
   body {
     @apply bg-background text-foreground font-sans antialiased;
     background-color: var(--background);
+    background-image: var(--ground);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
   }
 
   h1, h2, h3, h4, h5, h6 {

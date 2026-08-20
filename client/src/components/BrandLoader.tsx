@@ -40,7 +40,7 @@ export default function BrandLoader({
 
   if (fullscreen) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center fade-in" style={{ background: "var(--background)" }}>
+      <div className="fixed inset-0 flex items-center justify-center fade-in" style={{ background: "var(--ground)" }}>
         {orb}
       </div>
     );
