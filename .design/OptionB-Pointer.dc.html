@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #b0431a; } a:hover { color: #de5c1f; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 390px; min-height: 760px; background: {{bg}}; position: relative; overflow: hidden; display: flex; flex-direction: column;">
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid {{hair}};">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <div style="width: 22px; height: 22px; border-radius: 999px; background: {{conic}};"></div>
+      <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.02em; color: {{ink}};">Tuesday Crew</span>
+    </div>
+    <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: {{muted}};">{{count}} in play</span>
+  </div>
+  <div style="padding: 26px 16px 6px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: {{brand}}; margin-bottom: 8px;">At the pointer</div>
+    <div style="font-size: 34px; font-weight: 600; line-height: 1; letter-spacing: -0.035em; color: {{accentInk}}; text-wrap: balance;">{{atName}}</div>
+  </div>
+  <div style="position: relative; width: 390px; height: 424px; overflow: hidden;">
+    <div style="position: absolute; left: 3px; top: 0; width: 414px; height: 414px; border-radius: 999px; background-image: {{hair}}, {{conic}}; box-shadow: {{shadow}}, inset 0 0 0 1px {{glassBorder}};"></div>
+    <div style="position: absolute; left: 3px; top: 0; width: 414px; height: 414px; border-radius: 999px; background-image: {{highlight}};"></div>
+    <div style="position: absolute; left: 3px; top: 0; width: 414px; height: 414px; border-radius: 999px; background-image: {{winConic}};"></div>
+    <div style="position: absolute; left: 156px; top: 153px; width: 108px; height: 108px; border-radius: 999px; background: {{glassBg}}; border: 1px solid {{glassBorder}}; backdrop-filter: blur(24px); display: flex; flex-direction: column; align-items: center; justify-content: center;">
+      <span style="font-size: 40px; font-weight: 600; letter-spacing: -0.04em; line-height: 1; color: {{inkStrong}};">{{count}}</span>
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 5px; color: {{brand}};">in play</span>
+    </div>
+    <div style="position: absolute; left: 3px; top: 175px; width: 82px; height: 64px; background: linear-gradient(90deg, {{sense}}, transparent); border-radius: 0 999px 999px 0;"></div>
+    <div style="position: absolute; left: 6px; top: 194px; width: 0; height: 0; border-top: 13px solid transparent; border-bottom: 13px solid transparent; border-left: 22px solid {{brand}};"></div>
+  </div>
+  <div style="padding: 0 16px 24px; margin-top: auto;">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; border-radius: 22px; background: {{brand}}; color: {{onAccent}}; font-size: 17px; font-weight: 600;">Spin the wheel</div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"count":{"editor":"enum","options":[8,12],"default":12,"section":"Wheel"},"dark":{"editor":"boolean","default":false,"section":"Wheel"}}'>
+class Component extends DCLogic {
+  tokens(dark) {
+    return dark ? {
+      ground: "linear-gradient(160deg,#191b20 0%,#15171c 55%,#101216 100%)",
+      paper: "#1e2127", ink: "#f6f3ee", inkStrong: "#fcfaf7", body: "#e6e2db",
+      muted: "#9ba0a8", faint: "#7c838c", hairline: "#2e323a",
+      brand: "#f2703a", accentInk: "#f2703a", onAccent: "#16120f",
+      paneA: "rgb(255 255 255 / 0.12)", paneB: "rgb(255 255 255 / 0.06)",
+      wheelHair: "rgb(0 0 0 / 0.3)", shadow: "0 24px 60px rgb(0 0 0 / 0.5)",
+      glassBg: "rgb(255 255 255 / 0.08)", glassBorder: "rgb(255 255 255 / 0.12)",
+      highlight: "linear-gradient(135deg,rgb(255 255 255 / .10),rgb(255 255 255 / 0) 42%,rgb(242 112 58 / .12))",
+      win: "rgb(242 112 58 / 0.30)", winEdge: "rgb(242 112 58 / 0.85)",
+      rowHover: "rgb(255 255 255 / 0.04)"
+    } : {
+      ground: "linear-gradient(160deg,#f6f2ec 0%,#efe8df 55%,#e7ded2 100%)",
+      paper: "#fbf7f2", ink: "#14161c", inkStrong: "#0d0f14", body: "#5a626d",
+      muted: "#868d97", faint: "#9aa1aa", hairline: "#c7cbd1",
+      brand: "#de5c1f", accentInk: "#b0431a", onAccent: "#fbf7f2",
+      paneA: "rgb(255 255 255 / 0.78)", paneB: "rgb(255 255 255 / 0.40)",
+      wheelHair: "rgb(20 22 28 / 0.1)", shadow: "0 24px 60px rgb(20 22 28 / 0.18)",
+      glassBg: "rgb(255 255 255 / 0.62)", glassBorder: "rgb(255 255 255 / 0.95)",
+      highlight: "linear-gradient(135deg,rgb(255 255 255 / .55),rgb(255 255 255 / 0) 42%,rgb(222 92 31 / .07))",
+      win: "rgb(222 92 31 / 0.22)", winEdge: "rgb(222 92 31 / 0.75)",
+      rowHover: "rgb(255 255 255 / 0.5)"
+    };
+  }
+  base() {
+    const NAMES = ["Nonna's Trattoria","Sichuan House","Green Bowl","Tacos El Sol",
+      "Sakura Ramen","The Daily Grind","Falafel Corner","Bombay Kitchen",
+      "Pho 88","Smokehouse Six","Olive & Vine","Banh Mi Bros"];
+    const count = Number(this.props.count ?? 12);
+    const dark = !!this.props.dark;
+    const t = this.tokens(dark);
+    const names = NAMES.slice(0, count);
+    const sweep = 360 / count;
+    const stops = [];
+    for (let i = 0; i < count; i++) {
+      const heavy = (count % 2 === 1 && i === count - 1) ? false : i % 2 === 0;
+      stops.push((heavy ? t.paneA : t.paneB) + " " + (i * sweep) + "deg " + ((i + 1) * sweep) + "deg");
+    }
+    const POINTER = 180;
+    // Which pane currently sits under the pointer.
+    let at = 0, best = 1e9;
+    for (let i = 0; i < count; i++) {
+      const c = i * sweep + sweep / 2;
+      const d = Math.abs(((c - POINTER + 540) % 360) - 180);
+      if (d < best) { best = d; at = i; }
+    }
+    return {
+      count, dark, t, names, sweep, at,
+      conic: "conic-gradient(from 90deg," + stops.join(",") + ")",
+      hair: "repeating-conic-gradient(from 90deg," + t.wheelHair + " 0deg 0.35deg,transparent 0.35deg " + sweep + "deg)",
+      DISC: 414, CX: 210
+    };
+  }
+  renderVals() {
+    const b = this.base();
+    const t = b.t;
+    const winStart = b.at * b.sweep, winEnd = winStart + b.sweep;
+    const v = {
+      count: b.count, bg: t.ground, ink: t.ink, inkStrong: t.inkStrong, body: t.body,
+      muted: t.muted, faint: t.faint, hair: t.hairline, brand: t.brand,
+      accentInk: t.accentInk, onAccent: t.onAccent, paper: t.paper,
+      conic: b.conic, hairConic: b.hair, shadow: t.shadow, highlight: t.highlight,
+      glassBg: t.glassBg, glassBorder: t.glassBorder,
+      sense: b.dark ? "rgb(242 112 58 / 0.22)" : "rgb(222 92 31 / 0.18)",
+      winConic: "conic-gradient(from 90deg,transparent 0deg " + winStart + "deg," + t.winEdge + " " + winStart + "deg " + (winStart + 0.6) + "deg," + t.win + " " + (winStart + 0.6) + "deg " + (winEnd - 0.6) + "deg," + t.winEdge + " " + (winEnd - 0.6) + "deg " + winEnd + "deg,transparent " + winEnd + "deg 360deg)",
+      atName: b.names[b.at]
+    };
+    return v;
+  }
+}
+</script>
+</body>
+</html>
