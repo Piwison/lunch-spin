@@ -95,10 +95,7 @@ export default function GuestWheel() {
     return (
       <Shell>
         <div className="flex flex-col items-center gap-4">
-          <div
-            className="w-12 h-12 orb-wheel animate-orb-spin"
-            style={{ boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)" }}
-          />
+          <div className="w-12 h-12 orb-wheel animate-orb-spin" />
           <p className="text-sm text-muted-foreground">Loading wheel…</p>
         </div>
       </Shell>
@@ -111,7 +108,7 @@ export default function GuestWheel() {
       <Shell>
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
           <div className="text-5xl">🍽️</div>
-          <h1 className="text-2xl font-black" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
             This wheel isn’t available
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -131,17 +128,17 @@ export default function GuestWheel() {
         {/* Header */}
         <div className="text-center">
           <div
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] mb-3 tracking-widest"
+            className="type-eyebrow inline-flex items-center gap-1.5 px-3 py-1.5 mb-3"
             style={{
-              fontFamily: "var(--font-display)",
-              background: "oklch(from var(--brand) l c h / 0.12)",
-              border: "1px solid oklch(from var(--brand) l c h / 0.30)",
+              borderRadius: "var(--radius-chip)",
+              background: "oklch(from var(--brand) l c h / 0.10)",
+              border: "1px solid oklch(from var(--brand) l c h / 0.25)",
               color: "var(--brand)",
             }}
           >
-            <Utensils size={11} /> PUBLIC WHEEL
+            <Utensils size={12} /> Public wheel
           </div>
-          <h1 className="text-3xl font-black leading-tight" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
             {wheel.name}
           </h1>
         </div>
@@ -168,22 +165,19 @@ export default function GuestWheel() {
             <button
               onClick={handleSpin}
               disabled={isSpinning || segments.length === 0}
-              className={`relative overflow-hidden px-12 py-4 rounded-full font-black text-base tracking-[0.15em] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 ${
-                !isSpinning ? "hover:-translate-y-1 hover:brightness-110" : ""
-              }`}
+              className="px-12 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[var(--press-scale)]"
               style={{
-                fontFamily: "var(--font-display)",
-                background: isSpinning
-                  ? "var(--muted)"
-                  : "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                boxShadow: isSpinning
-                  ? "none"
-                  : "0 0 40px oklch(from var(--brand) l c h / 0.5), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
-                color: "white",
-                minWidth: "180px",
+                minHeight: 56,
+                minWidth: 180,
+                borderRadius: "var(--radius-control)",
+                background: isSpinning ? "var(--muted)" : "var(--brand)",
+                color: isSpinning ? "var(--body-warm)" : "var(--on-accent)",
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
               }}
             >
-              <span className="relative">{isSpinning ? "SPINNING..." : "SPIN"}</span>
+              {isSpinning ? "Spinning…" : "Spin"}
             </button>
 
             <p className="text-xs text-muted-foreground">
@@ -232,7 +226,7 @@ export default function GuestWheel() {
  *  visitor, not follow their OS/localStorage preference). */
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh flex items-center justify-center overflow-x-clip bg-background text-foreground">
+    <div className="min-h-dvh flex items-center justify-center overflow-x-clip text-foreground" style={{ background: "var(--ground)" }}>
       {children}
     </div>
   );
@@ -244,15 +238,18 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
     return (
       <a
         href={getLoginUrl()}
-        className="flex items-center justify-center gap-2 w-full px-5 py-3 rounded-2xl text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
+        className="flex items-center justify-center gap-2 w-full px-5 transition-colors active:scale-[var(--press-scale)]"
         style={{
-          background: "var(--card)",
+          minHeight: 56,
+          borderRadius: "var(--radius-control)",
+          background: "var(--paper)",
           border: "1px solid var(--border)",
-          color: "var(--foreground)",
-          fontFamily: "var(--font-display)",
+          color: "var(--ink-warm)",
+          fontSize: 15,
+          fontWeight: 500,
         }}
       >
-        <Sparkles size={14} style={{ color: "var(--brand-2)" }} />
+        <Sparkles size={15} style={{ color: "var(--brand)" }} />
         Make your own wheel
         <ArrowRight size={14} />
       </a>
@@ -261,15 +258,18 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
   return (
     <a
       href={getLoginUrl()}
-      className="mt-2 inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm tracking-wide transition-all active:scale-95 hover:-translate-y-0.5"
+      className="mt-2 inline-flex items-center gap-2 px-7 transition-colors active:scale-[var(--press-scale)]"
       style={{
-        fontFamily: "var(--font-display)",
-        background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-        boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
-        color: "white",
+        minHeight: 56,
+        borderRadius: "var(--radius-control)",
+        background: "var(--brand)",
+        color: "var(--on-accent)",
+        fontSize: 16,
+        fontWeight: 500,
+        letterSpacing: "0.05em",
       }}
     >
-      Make your own wheel <ArrowRight size={15} />
+      Make your own wheel <ArrowRight size={16} />
     </a>
   );
 }

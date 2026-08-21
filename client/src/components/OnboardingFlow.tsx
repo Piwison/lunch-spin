@@ -171,10 +171,10 @@ export default function OnboardingFlow({
         <div className="flex flex-col items-center gap-5 text-center">
           <div
             className="orb-wheel animate-orb-spin"
-            style={{ width: 84, height: 84, animationDuration: "1.4s", boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
+            style={{ width: 84, height: 84, animationDuration: "1.4s" }}
           />
           <div className="flex flex-col gap-1.5">
-            <p className="text-xl font-black" style={{ fontFamily: "var(--font-display)" }}>
+            <p className="type-section" style={{ color: "var(--ink-warm)" }}>
               Building your wheel
             </p>
             <p className="text-sm text-muted-foreground">
@@ -195,7 +195,7 @@ export default function OnboardingFlow({
       <Shell scroll>
         <div className="flex flex-col gap-4 w-full">
           <div className="flex flex-col gap-1">
-            <p className="text-2xl font-black" style={{ fontFamily: "var(--font-display)" }}>
+            <p className="type-title" style={{ color: "var(--ink-warm)" }}>
               Pick your spots
             </p>
             <p className="text-sm text-muted-foreground">
@@ -213,11 +213,11 @@ export default function OnboardingFlow({
                   key={f.id}
                   onClick={() => setFilter(f.id)}
                   aria-pressed={on}
-                  className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95"
+                  className="px-3.5 py-1.5 transition-colors active:scale-[var(--press-scale)]"
                   style={
                     on
-                      ? { background: "var(--foreground)", color: "var(--background)" }
-                      : { background: "var(--card)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }
+                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand)", color: "var(--on-accent)", fontSize: 13, fontWeight: 500 }
+                      : { borderRadius: "var(--radius-chip)", background: "var(--paper)", border: "1px solid var(--border)", color: "var(--body-warm)", fontSize: 13, fontWeight: 500 }
                   }
                 >
                   {f.label}
@@ -228,8 +228,8 @@ export default function OnboardingFlow({
 
           {search.data?.lowDensity && origin && (
             <div
-              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs"
-              style={{ background: "oklch(from var(--info) l c h / 0.08)", border: "1px solid oklch(from var(--info) l c h / 0.20)", color: "var(--info)" }}
+              className="flex items-center justify-between gap-2 px-3.5 py-2.5 type-meta"
+              style={{ borderRadius: "var(--radius-chip)", background: "oklch(from var(--info) l c h / 0.08)", border: "1px solid oklch(from var(--info) l c h / 0.20)", color: "var(--info)" }}
             >
               <span className="flex items-center gap-2">
                 <AlertTriangle size={13} /> Not many spots within reach.
@@ -254,9 +254,13 @@ export default function OnboardingFlow({
                   key={p.placeId}
                   onClick={() => toggle(p.placeId)}
                   aria-pressed={on}
-                  className="flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all active:scale-[0.99]"
+                  className="flex items-center gap-3 px-4 text-left transition-colors active:scale-[var(--press-scale)]"
                   style={{
-                    background: on ? "oklch(from var(--brand) l c h / 0.08)" : "var(--card)",
+                    minHeight: 56,
+                    paddingTop: 12,
+                    paddingBottom: 12,
+                    borderRadius: "var(--radius-card)",
+                    background: on ? "oklch(from var(--brand) l c h / 0.08)" : "var(--paper)",
                     border: on ? "1px solid oklch(from var(--brand) l c h / 0.45)" : "1px solid var(--border)",
                   }}
                 >
@@ -265,7 +269,7 @@ export default function OnboardingFlow({
                     className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
                     style={
                       on
-                        ? { background: "var(--brand)", color: "white" }
+                        ? { background: "var(--brand)", color: "var(--on-accent)" }
                         : { border: "1.5px solid var(--border)" }
                     }
                   >
@@ -309,12 +313,16 @@ export default function OnboardingFlow({
             <button
               onClick={build}
               disabled={!canStartSpinning(selectedCount) || createWheel.isPending}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-sm font-bold transition-all active:scale-[0.98] disabled:opacity-45"
+              className="w-full flex items-center justify-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)] disabled:opacity-45"
               style={{
-                fontFamily: "var(--font-display)",
-                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                boxShadow: "0 6px 28px oklch(from var(--brand) l c h / 0.45)",
-                color: "white",
+                minHeight: 56,
+                borderRadius: "var(--radius-control)",
+                background: "var(--brand)",
+                color: "var(--on-accent)",
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
+                boxShadow: "var(--glass-card-shadow)",
               }}
             >
               <RotateCw size={16} />
@@ -333,12 +341,10 @@ export default function OnboardingFlow({
     <Shell>
       <div className="flex flex-col items-center gap-6 text-center w-full">
         <div
-          className="w-20 h-20 orb-wheel"
-          style={{ boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
-        />
+          className="w-20 h-20 orb-wheel" />
         <div className="flex flex-col gap-2">
-          <p className="text-2xl font-black" style={{ fontFamily: "var(--font-display)" }}>
-            Let's find lunch near you
+          <p className="type-title" style={{ color: "var(--ink-warm)" }}>
+            Let&apos;s find lunch near you
           </p>
           <p className="text-sm text-muted-foreground max-w-xs mx-auto">
             We'll pull up real places within walking distance and put them straight on your wheel.
@@ -367,10 +373,10 @@ export default function OnboardingFlow({
           )}
           <button
             onClick={onManualCreate}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold text-muted-foreground transition-all active:scale-95 hover:text-foreground"
-            style={{ fontFamily: "var(--font-display)" }}
+            className="flex items-center justify-center gap-2 px-6 text-muted-foreground transition-colors active:scale-[var(--press-scale)] hover:text-foreground"
+            style={{ minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 15, fontWeight: 500 }}
           >
-            <Navigation size={13} /> I'll add places myself
+            <Navigation size={15} /> I&apos;ll add places myself
           </button>
         </div>
       </div>
@@ -401,8 +407,9 @@ function ErrorNote({ children, tone = "error" }: { children: React.ReactNode; to
   const token = tone === "warn" ? "--brand" : "--destructive";
   return (
     <div
-      className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-xs w-full max-w-xs"
+      className="flex items-start gap-2.5 px-3.5 py-2.5 type-meta w-full max-w-xs"
       style={{
+        borderRadius: "var(--radius-chip)",
         background: `oklch(from var(${token}) l c h / 0.10)`,
         border: `1px solid oklch(from var(${token}) l c h / 0.25)`,
         color: `var(${token})`,
