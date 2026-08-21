@@ -81,11 +81,8 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
       {/* Statistics Section */}
       {stats && stats.length > 0 && (
         <div>
-          <h2
-            className="text-lg font-bold tracking-tight mb-4"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            INSIGHTS
+          <h2 className="type-section mb-4" style={{ color: "var(--ink-warm)" }}>
+            Insights
           </h2>
           <RestaurantStats
             stats={stats}
@@ -100,11 +97,8 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
       {/* History Section */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2
-            className="text-lg font-bold tracking-tight"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            SPIN HISTORY
+          <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>
+            Spin history
           </h2>
           <span className="text-xs text-muted-foreground">
             {history?.length ?? 0} spin{history?.length !== 1 ? "s" : ""}
@@ -114,11 +108,12 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
         {/* Exclusion legend */}
         {restaurants && restaurants.filter(r => r.isExcluded).length > 0 && (
           <div
-            className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
+            className="flex items-start gap-2 px-3.5 py-2.5 type-meta"
             style={{
-              background: "oklch(from var(--destructive) l c h / 0.1)",
-              border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
-              color: "var(--brand)",
+              borderRadius: "var(--radius-chip)",
+              background: "oklch(from var(--brand) l c h / 0.08)",
+              border: "1px solid oklch(from var(--brand) l c h / 0.22)",
+              color: "var(--body-warm)",
             }}
           >
             <Clock size={13} className="mt-0.5 flex-shrink-0" />
@@ -137,7 +132,8 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
             {[1, 2, 3, 4].map(i => (
               <div
                 key={i}
-                className="h-14 rounded-xl bg-white/5 animate-pulse"
+                className="h-14 animate-pulse"
+                style={{ borderRadius: "var(--radius-control)", background: "var(--muted)" }}
               />
             ))}
           </div>
@@ -145,7 +141,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
           <div className="flex flex-col items-center text-center py-12 gap-4">
             <div className="text-4xl opacity-30">🎡</div>
             <div>
-              <p className="font-semibold text-foreground/70 mb-1" style={{ fontFamily: "var(--font-display)" }}>
+              <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
                 No spins yet
               </p>
               <p className="text-sm text-muted-foreground">Your picks and exclusions will show up here.</p>
@@ -153,15 +149,18 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
             {onGoToWheel && (
               <button
                 onClick={onGoToWheel}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 hover:-translate-y-0.5"
+                className="flex items-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
                 style={{
-                  fontFamily: "var(--font-display)",
-                  background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                  boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.35)",
-                  color: "white",
+                  minHeight: 56,
+                  borderRadius: "var(--radius-control)",
+                  background: "var(--brand)",
+                  color: "var(--on-accent)",
+                  fontSize: 16,
+                  fontWeight: 500,
+                  letterSpacing: "0.05em",
                 }}
               >
-                <Clock size={14} /> Spin to start a history
+                <Clock size={15} /> Spin to start a history
               </button>
             )}
           </div>
@@ -184,9 +183,14 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
               return (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  /* Solid paper, not glass: the direction reserves glass for
+                     floating chrome and overlays, and a scrolling list of
+                     backdrop-filtered rows is the exact stacking the perf
+                     budget warns about. */
+                  className="flex items-center gap-3 px-4 py-3"
                   style={{
-                    background: "var(--card)",
+                    borderRadius: "var(--radius-control)",
+                    background: "var(--paper)",
                     border: "1px solid var(--border)",
                   }}
                 >
@@ -264,17 +268,21 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                         })
                       }
                       disabled={reenable.isPending}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all active:scale-95 hover:brightness-125 flex-shrink-0 disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-4 transition-colors active:scale-[var(--press-scale)] flex-shrink-0 disabled:opacity-50"
                       style={{
+                        minHeight: 44,
+                        borderRadius: "var(--radius-chip)",
                         background: "oklch(from var(--ok) l c h / 0.15)",
                         border: "1px solid oklch(from var(--ok) l c h / 0.4)",
                         color: "var(--ok)",
+                        fontSize: 13,
+                        fontWeight: 500,
                       }}
                     >
                       {reenable.isPending
                         ? <span className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
                         : <RefreshCw size={11} />}
-                      {reenable.isPending ? "Enabling..." : "Re-enable"}
+                      {reenable.isPending ? "Enabling…" : "Re-enable"}
                     </button>
                   )}
                 </div>

@@ -328,11 +328,14 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       <button
         type="button"
         onClick={() => toggleFormTag(tag.id)}
-        className="px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150"
+        className="px-3 py-1.5 transition-colors duration-150"
         style={{
+          borderRadius: "var(--radius-chip)",
           background: isActive ? tag.color + "33" : "var(--muted)",
           border: `1px solid ${isActive ? tag.color : "var(--border)"}`,
-          color: isActive ? tag.color : "var(--muted-foreground)",
+          color: isActive ? tag.color : "var(--body-warm)",
+          fontSize: 13,
+          fontWeight: 500,
         }}
       >
         {tag.name}
@@ -359,7 +362,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         {groups.map(({ label, curated, rest, showAll, setShowAll }) =>
           curated.length > 0 || rest.length > 0 ? (
             <div key={label}>
-              <p className="text-xs text-muted-foreground mb-1.5 tracking-widest" style={{ fontFamily: "var(--font-display)" }}>{label.toUpperCase()}</p>
+              <p className="type-eyebrow mb-2" style={{ color: "var(--body-warm)" }}>{label}</p>
               <div className="flex flex-wrap gap-1.5">
                 {curated.map((tag) => <TagChip key={tag.id} tag={tag} />)}
                 {showAll && rest.map((tag) => <TagChip key={tag.id} tag={tag} />)}
@@ -367,8 +370,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   <button
                     type="button"
                     onClick={() => setShowAll(!showAll)}
-                    className="px-2.5 py-1 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground transition-colors duration-150"
-                    style={{ border: "1px dashed var(--border)" }}
+                    className="px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors duration-150"
+                    style={{ borderRadius: "var(--radius-chip)", border: "1px dashed var(--border)", fontSize: 13, fontWeight: 500 }}
                   >
                     {showAll ? "Show less" : `+${rest.length} more`}
                   </button>
@@ -393,7 +396,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-lg font-black tracking-tight" style={{ fontFamily: "var(--font-display)" }}>RESTAURANTS</h2>
+          <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>Places</h2>
           {restaurants && restaurants.length > 0 && (
             <p className="text-xs text-muted-foreground mt-0.5">{restaurants.length} place{restaurants.length !== 1 ? "s" : ""} on this wheel</p>
           )}
@@ -407,16 +410,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           <button
             onClick={() => setShowNearby(true)}
             title="Add nearby restaurants"
-            className="flex items-center justify-center gap-2 h-10 px-3.5 sm:px-4 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:brightness-110"
+            className="flex items-center justify-center gap-2 px-5 transition-colors duration-150 active:scale-[var(--press-scale)]"
             style={{
-              background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-              color: "white",
-              fontFamily: "var(--font-display)",
-              letterSpacing: "0.06em",
-              boxShadow: "0 0 16px oklch(from var(--brand) l c h / 0.35)",
+              minHeight: 56,
+              borderRadius: "var(--radius-control)",
+              background: "var(--brand)",
+              color: "var(--on-accent)",
+              fontSize: 15,
+              fontWeight: 500,
+              letterSpacing: "0.05em",
             }}
           >
-            <Navigation size={14} /> NEARBY
+            <Navigation size={16} /> Nearby
           </button>
           {/* IMPORT (paste a list of names) was removed: ADD NEARBY and the
               name search in the add form cover the same ground with real place
@@ -425,16 +430,20 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title="Add restaurant"
-            className="flex items-center justify-center gap-2 h-10 min-w-10 px-3 sm:px-3.5 rounded-full text-xs font-semibold transition-all duration-150 active:scale-95 hover:bg-white/5"
+            className="flex items-center justify-center gap-2 px-4 transition-colors duration-150 active:scale-[var(--press-scale)] hover:bg-white/5"
             style={{
-              background: "var(--card)",
+              minHeight: 56,
+              minWidth: 56,
+              borderRadius: "var(--radius-control)",
+              background: "var(--paper)",
               border: "1px solid var(--border)",
-              color: "var(--muted-foreground)",
-              fontFamily: "var(--font-display)",
-              letterSpacing: "0.06em",
+              color: "var(--body-warm)",
+              fontSize: 15,
+              fontWeight: 500,
+              letterSpacing: "0.05em",
             }}
           >
-            <Plus size={14} /> <span className="hidden sm:inline">ADD</span>
+            <Plus size={16} /> <span className="hidden sm:inline">Add</span>
           </button>
         </div>
       </div>
@@ -442,8 +451,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       {/* Permissions note */}
       {!isOwner && (
         <div
-          className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs"
+          className="flex items-center gap-2.5 px-3.5 py-2.5 type-meta"
           style={{
+            borderRadius: "var(--radius-chip)",
             background: "oklch(from var(--info) l c h / 0.08)",
             border: "1px solid oklch(from var(--info) l c h / 0.20)",
             color: "var(--info)",
@@ -506,7 +516,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 <DropdownMenuTrigger asChild>
                   <button
                     aria-label="List tools"
-                    className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                    className="flex items-center justify-center h-11 w-11 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
                   >
                     {refreshHours.isPending || recomputeDistances.isPending ? (
                       <RefreshCw size={15} className="animate-spin" />
@@ -587,7 +597,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       {isLoading ? (
         <div className="flex flex-col gap-2.5">
           {[1,2,3,4].map(i => (
-            <div key={i} className="h-[72px] rounded-2xl animate-pulse" style={{ background: "var(--card)", animationDelay: `${i * 80}ms` }} />
+            <div key={i} className="h-[72px] animate-pulse" style={{ borderRadius: "var(--radius-card)", background: "var(--muted)", animationDelay: `${i * 80}ms` }} />
           ))}
         </div>
       ) : restaurants?.length === 0 ? (
@@ -596,13 +606,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
            was the only one this state suggested. */
         <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
           <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center"
-            style={{ background: "oklch(from var(--brand) l c h / 0.12)" }}
+            className="w-16 h-16 flex items-center justify-center"
+            style={{ borderRadius: "var(--radius-card)", background: "oklch(from var(--brand) l c h / 0.12)" }}
           >
             <MapPin size={26} style={{ color: "var(--brand)" }} />
           </div>
           <div>
-            <p className="font-semibold text-foreground/70 mb-1" style={{ fontFamily: "var(--font-display)" }}>NO RESTAURANTS YET</p>
+            <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>No places yet</p>
             <p className="text-sm text-muted-foreground max-w-xs">
               Find real places near you, sorted by walking time — or add them yourself.
             </p>
@@ -610,29 +620,34 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
             <button
               onClick={() => setShowNearby(true)}
-              className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
+              className="flex items-center justify-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
               style={{
-                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                color: "white",
-                fontFamily: "var(--font-display)",
-                letterSpacing: "0.06em",
-                boxShadow: "0 0 24px oklch(from var(--brand) l c h / 0.3)",
+                minHeight: 56,
+                borderRadius: "var(--radius-control)",
+                background: "var(--brand)",
+                color: "var(--on-accent)",
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
               }}
             >
-              <Navigation size={14} /> ADD NEARBY
+              <Navigation size={16} /> Add nearby
             </button>
             <button
               onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:bg-white/5"
+              className="flex items-center justify-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)] hover:bg-white/5"
               style={{
-                background: "var(--card)",
+                minHeight: 56,
+                borderRadius: "var(--radius-control)",
+                background: "var(--paper)",
                 border: "1px solid var(--border)",
-                color: "var(--foreground)",
-                fontFamily: "var(--font-display)",
-                letterSpacing: "0.06em",
+                color: "var(--ink-warm)",
+                fontSize: 15,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
               }}
             >
-              <Plus size={13} /> ADD ONE BY HAND
+              <Plus size={15} /> Add one by hand
             </button>
           </div>
         </div>
@@ -644,27 +659,28 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             return (
             <div
               key={r.id}
-              className="group flex items-start gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 hover:scale-[1.005] hover:-translate-y-0.5"
+              /* Paper, not glass: item 10's rows are page content, and a
+                 scrolling list of backdrop-filtered surfaces is exactly the
+                 stacking the perf budget calls out. The dark-theme drop shadow
+                 came from the old palette and reads as grime on warm paper. */
+              className="group flex items-start gap-3 px-4 py-3.5 transition-colors duration-200"
               style={{
-                background: r.isExcluded ? "var(--card)" : "var(--card)",
-                border: r.isExcluded ? "1px solid var(--border)" : "1px solid var(--border)",
+                borderRadius: "var(--radius-card)",
+                background: "var(--paper)",
+                border: "1px solid var(--border)",
                 opacity: r.isExcluded ? 0.55 : 1,
-                boxShadow: r.isExcluded ? "none" : "0 2px 12px rgba(0,0,0,0.2)",
               }}
             >
               {/* Color swatch — matches wheel segment */}
               <div
                 className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 transition-all duration-200"
                 title={primary?.name ? `Tagged "${primary.name}"` : "Wheel color"}
-                style={{
-                  background: dotColor,
-                  boxShadow: `0 0 8px ${dotColor}99`,
-                }}
+                style={{ background: dotColor }}
               />
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-sm">{r.name}</span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</span>
                   {r.isExcluded && (
                     <span
                       className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
@@ -735,7 +751,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 <RatingChip average={ratingByRestaurant.get(r.id)?.average ?? null} />
                 <button
                   onClick={() => setDetailId(r.id)}
-                  className="flex items-center justify-center h-9 w-9 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all duration-150 active:scale-90"
+                  className="flex items-center justify-center h-11 w-11 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-colors duration-150 active:scale-[var(--press-scale)]"
                   aria-label={`Open ${r.name}`}
                 >
                   <MoreVertical size={18} />
@@ -760,19 +776,24 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             const mine = summary?.myStars ?? null;
             return (
               <div className="mx-auto w-full max-w-md px-5 pb-8 pt-1">
-                <h3 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{r.name}</h3>
+                {/* Detail card title — 17px/600 per the CJK type pass; the old
+                    20px display face set Chinese names far heavier than Latin. */}
+                <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {r.tags.map((t) => (
-                    <span key={t.id} className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: t.color + "18", color: t.color, border: `1px solid ${t.color}35` }}>{t.name}</span>
+                    <span key={t.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: t.color + "18", color: t.color, border: `1px solid ${t.color}35`, fontSize: 12, fontWeight: 500 }}>{t.name}</span>
                   ))}
                   {distanceEnabled && r.walkSeconds != null && (
-                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full text-muted-foreground" style={{ background: "var(--muted)" }}>
-                      <Footprints size={10} />{formatWalk(r.walkSeconds / 60)}
+                    <span
+                      className="flex items-center gap-1.5 px-2.5 py-1"
+                      style={{ borderRadius: "var(--radius-chip)", background: "var(--muted)", color: "var(--body-warm)", fontSize: 13, fontWeight: 400 }}
+                    >
+                      <Footprints size={12} />{formatWalk(r.walkSeconds / 60)}
                     </span>
                   )}
                   {r.mapUrl && (
-                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--brand)" }}>
-                      <Navigation size={11} />Directions
+                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand)", fontSize: 13, fontWeight: 500 }}>
+                      <Navigation size={12} />Directions
                     </a>
                   )}
                 </div>
@@ -796,12 +817,12 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-6">
-                  <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Team rating</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand)" }}>Team rating</div>
                   {avg == null ? (
                     <p className="text-sm text-muted-foreground">No ratings yet — be the first.</p>
                   ) : (
                     <div className="flex items-center gap-3">
-                      <span className="text-3xl font-extrabold" style={{ fontFamily: "var(--font-display)" }}>{avg.toFixed(1)}</span>
+                      <span className="type-section tabular-nums" style={{ fontSize: 34, color: "var(--ink-warm)" }}>{avg.toFixed(1)}</span>
                       <div>
                         <StarRating value={avg} size={18} />
                         <div className="text-[11px] text-muted-foreground mt-0.5">{count} rating{count === 1 ? "" : "s"}</div>
@@ -811,7 +832,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-6">
-                  <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Your rating</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand)" }}>Your rating</div>
                   <StarRating
                     value={mine}
                     size={30}
@@ -823,18 +844,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 <div className="mt-7 pt-4 flex gap-2.5" style={{ borderTop: "1px solid var(--border)" }}>
                   <button
                     onClick={() => { const target = r; setDetailId(null); openEdit(target); }}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all active:scale-95"
-                    style={{ borderColor: "var(--border)" }}
+                    className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
+                    style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "var(--border)", color: "var(--ink-warm)", fontSize: 15, fontWeight: 500 }}
                   >
-                    <Pencil size={15} /> Edit
+                    <Pencil size={16} /> Edit
                   </button>
                   {isOwner && (
                     <button
                       onClick={() => { if (confirm(`Remove "${r.name}"?`)) { deleteRestaurant.mutate({ id: r.id }); setDetailId(null); } }}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-all active:scale-95"
-                      style={{ borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)" }}
+                      className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
+                      style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)", fontSize: 15, fontWeight: 500 }}
                     >
-                      <Trash2 size={15} /> Delete
+                      <Trash2 size={16} /> Delete
                     </button>
                   )}
                 </div>
@@ -847,10 +868,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
 
       {/* Add/Edit dialog */}
       <Dialog open={showAdd || editId !== null} onOpenChange={(open) => { if (!open) { setShowAdd(false); setEditId(null); setForm(EMPTY_FORM); } }}>
-        <DialogContent className="glass border-border/50 max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="glass-sheet max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>
-              {editId !== null ? "EDIT RESTAURANT" : "ADD RESTAURANT"}
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>
+              {editId !== null ? "Edit place" : "Add a place"}
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
@@ -907,7 +928,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               {nameResults.length > 0 && (
                 <div
                   className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-xl p-1"
-                  style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+                  style={{ borderRadius: "var(--radius-control)", background: "var(--paper)", border: "1px solid var(--border)" }}
                 >
                   {nameResults.map((p) => (
                     <button
@@ -972,12 +993,20 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             <Button
               onClick={() => { setFormError(null); submitForm(); }}
               disabled={!form.name.trim() || addRestaurant.isPending || updateRestaurant.isPending}
-              className="transition-all duration-200 active:scale-[0.97]"
-              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+              className="transition-colors duration-200 active:scale-[var(--press-scale)]"
+              style={{
+                minHeight: 56,
+                borderRadius: "var(--radius-control)",
+                background: "var(--brand)",
+                color: "var(--on-accent)",
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
+              }}
             >
               {addRestaurant.isPending || updateRestaurant.isPending ? (
-                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />{editId !== null ? "Saving..." : "Adding..."}</span>
-              ) : editId !== null ? "Save Changes" : "Add Restaurant"}
+                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{editId !== null ? "Saving…" : "Adding…"}</span>
+              ) : editId !== null ? "Save changes" : "Add place"}
             </Button>
           </div>
         </DialogContent>
@@ -993,9 +1022,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
 
       {/* Tag creation dialog — user picks which category the new tag joins */}
       <Dialog open={showTagCreate} onOpenChange={setShowTagCreate}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="glass-sheet max-w-sm">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>CREATE TAG</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Create tag</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 pt-2">
             <div className="flex gap-1.5">
@@ -1004,10 +1033,14 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   key={value}
                   type="button"
                   onClick={() => setNewTagCategory(value)}
-                  className="flex-1 px-2 py-1.5 rounded-full text-xs font-medium transition-all duration-150"
+                  className="flex-1 px-3 transition-colors duration-150"
                   style={{
+                    minHeight: 44,
+                    borderRadius: "var(--radius-chip)",
                     background: newTagCategory === value ? "var(--brand)" : "var(--muted)",
-                    color: newTagCategory === value ? "white" : "var(--muted-foreground)",
+                    color: newTagCategory === value ? "var(--on-accent)" : "var(--body-warm)",
+                    fontSize: 13,
+                    fontWeight: 500,
                   }}
                 >
                   {label}
@@ -1027,10 +1060,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 onClick={() => { setTagError(null); newTagName.trim() && createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); }}
                 disabled={!newTagName.trim() || createTag.isPending}
                 size="icon"
-                className="transition-all duration-200 active:scale-90 flex-shrink-0"
-                style={{ background: "var(--brand)", color: "white" }}
+                className="transition-colors duration-200 active:scale-[var(--press-scale)] flex-shrink-0"
+                style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
               >
-                {createTag.isPending ? <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={16} />}
+                {createTag.isPending ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Check size={16} />}
               </Button>
             </div>
             <ErrorChip error={tagError} onDismiss={() => setTagError(null)} />
