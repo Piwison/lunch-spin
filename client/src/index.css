@@ -570,24 +570,48 @@
    remaining loading orbs were turning too slowly to read as moving at all. */
 .animate-orb-spin { animation: orb-spin 1.4s linear infinite; }
 
-/* The brand mark: a miniature lunch wheel. Eight hard-stop slices from the
-   segment palette (client/src/lib/palette.ts) around a theme-colored hub, so
-   every orb in the app — header, hero, first-run, loading — reads as the
-   product itself instead of a plain gradient ball. Pair with animate-orb-spin. */
+/* The brand mark: the app's own wheel in miniature.
+   It used to be eight saturated slices from the old segment palette, which
+   stopped being true the moment the wheel itself became colourless glass — the
+   logo depicted a product that no longer existed. This is the resting wheel's
+   real recipe at mark scale: alternating --pane-heavy / --pane-light glass over
+   the ground, the same petal gaps, the same warm highlight, the same solid
+   --paper hub. One pane carries the winner wash so the mark still reads as
+   *this* product at 24px and still has a fixed point to spin around; it sits at
+   12 o'clock, under the pointer the hero draws above it.
+
+   Eight panes at 45deg. `from 337.5deg` puts the seam 22.5deg before top, which
+   centres that first (persimmon) pane on 12 o'clock.
+   Pair with animate-orb-spin. */
 .orb-wheel {
   border-radius: 9999px;
+  /* First layer is topmost: hub over gaps over highlight over the panes, with an
+     opaque ground underneath so the translucent panes read on any surface —
+     glass bar, paper card or charcoal. */
   background:
-    radial-gradient(closest-side, var(--background) 0 24%, rgba(0, 0, 0, 0.35) 24.5% 29%, transparent 30%),
+    radial-gradient(closest-side, var(--paper) 0 25%, transparent 25.5%),
+    repeating-conic-gradient(
+      from 337.5deg,
+      var(--pane-gap) 0deg 1.6deg,
+      transparent 1.6deg 45deg
+    ),
+    var(--wheel-highlight),
     conic-gradient(
-      #e3893e 0 45deg,
-      #dcab4a 45deg 90deg,
-      #8fb46b 90deg 135deg,
-      #5aa6a0 135deg 180deg,
-      #5f8fd4 180deg 225deg,
-      #8b7fd6 225deg 270deg,
-      #d56fa3 270deg 315deg,
-      #e2674f 315deg 360deg
-    );
+      from 337.5deg,
+      var(--brand) 0deg 45deg,
+      var(--pane-light) 45deg 90deg,
+      var(--pane-heavy) 90deg 135deg,
+      var(--pane-light) 135deg 180deg,
+      var(--pane-heavy) 180deg 225deg,
+      var(--pane-light) 225deg 270deg,
+      var(--pane-heavy) 270deg 315deg,
+      var(--pane-light) 315deg 360deg
+    ),
+    var(--pane-gap);
+  /* A real rim, not the disc's usual hairline. At 24px in the rail the pane
+     alternation and the 1.6deg gaps are sub-pixel and disappear, so the mark
+     has to survive on two things: the persimmon wedge and a closed circle. */
+  box-shadow: inset 0 0 0 1px var(--wheel-hairline);
 }
 .tab-enter { animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
 .fade-in { animation: fade-in 0.25s ease-out; }
