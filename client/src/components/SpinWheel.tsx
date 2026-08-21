@@ -5,12 +5,13 @@ import {
   EASE_SETTLE,
   EASE_STANDARD,
   SPIN_TIMELINE,
-  labelFrameWidthPx,
-  labelMaxWidthPx,
   landingRotationDeg,
+  normalizeDeg,
   paneCenterDeg,
   panes,
-  restingLabelRadiusPx,
+  labelRay,
+  restingWheelMetrics,
+  wedgeClipPolygon,
   visibleLabels,
 } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
@@ -43,24 +44,30 @@ interface SpinWheelProps {
   winnerId?: number | null;
   /** The result is up: the disc drops back and blurs behind the display type. */
   receded?: boolean;
+  /**
+   * Fires when a DIFFERENT pane arrives at the pointer — not every frame.
+   *
+   * The readout has to name whatever is under the pointer, including mid-spin,
+   * but a state update per frame would cost the whole frame budget. A pane
+   * change happens a few dozen times in a spin, not sixty times a second.
+   */
+  onPointerIndexChange?: (index: number) => void;
 }
 
 /** Resting pointer sits on the left rim, pointing in. 0° is 3 o'clock. */
 const POINTER_DEG = 180;
 
 /**
- * The disc is oversized and breaks the right edge — the signature motif.
+ * The resting disc sits fully on-screen: 92% of the frame width, centred.
  *
- * How far it may break is bounded by item 5's other condition, "no clipped
- * label". Those two pull against each other: at the full 1.9×-style overhang the
- * 3 o'clock label lands at x=311 in a 320px frame and is guillotined mid-word,
- * which reads as a bug rather than as a disc continuing past the screen. So the
- * overhang is real but modest — the disc still runs past the right edge, it just
- * does not take a name with it. The zoom camera (item 7) is where the disc
- * genuinely breaks both edges, and there labels are culled by angle instead.
+ * The circle breaking an edge is still the signature motif, but §4 now scopes it
+ * to the ZOOMED spin, the Places map and the History ring. A labelled disc is
+ * the exception: a circle that breaks an edge cannot carry readable labels on
+ * the part that is off-screen, and the labels are the point of the resting
+ * state. The zoom is where it genuinely breaks both edges.
  */
-const DISC_TO_FRAME = 1.06;
-const DISC_CENTER_X = 0.54;
+const DISC_TO_FRAME = 0.92;
+const DISC_CENTER_X = 0.5;
 
 /** Degrees the disc counter-rotates on the wind-up, before it releases. */
 const WINDUP_DEG = 14;
@@ -115,6 +122,7 @@ export default function SpinWheel({
   zoomed = false,
   winnerId = null,
   receded = false,
+  onPointerIndexChange,
 }: SpinWheelProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const rotRef = useRef<HTMLDivElement>(null);
@@ -126,6 +134,12 @@ export default function SpinWheel({
   const zoomedRef = useRef(zoomed);
   const zoomScaleRef = useRef(1);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const pointerIndexRef = useRef(-1);
+  /** Last written display/blur per label, so identical writes are skipped. */
+  const labelStateRef = useRef<{ shown: boolean; blur: number }[]>([]);
+  const [restRotation, setRestRotation] = useState(0);
+  const onPointerIndexChangeRef = useRef(onPointerIndexChange);
+  onPointerIndexChangeRef.current = onPointerIndexChange;
   const reducedMotion = useReducedMotion();
 
   // Latest props mirrored into refs so the spin loop can read them without
@@ -137,6 +151,33 @@ export default function SpinWheel({
   onSpinEndRef.current = onSpinEnd;
   const targetIdRef = useRef(targetId);
   targetIdRef.current = targetId;
+
+  /**
+   * Seat pane 0 on the pointer — ONCE per set of places, never again.
+   *
+   * At rotation 0 the pointer lands exactly on a pane BOUNDARY whenever the
+   * count divides 180 evenly: at eight places it sits precisely between panes 3
+   * and 4, so the wheel opens pointing at nothing and the readout has to guess.
+   *
+   * The guard is the important half. The rAF loop owns the disc's rotation once
+   * a spin starts, so an effect that re-seats whenever `isSpinning` changes
+   * snaps the disc back to pane 0 the instant the spin ends — silently undoing
+   * the landing while the winner banner says otherwise. Seeding is an INITIAL
+   * VALUE, not a state the effect keeps restoring.
+   */
+  const seatedForRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const n = segments.length;
+    // frameW is in the deps because the disc does not exist until the frame has
+    // been measured — writing --rot before then lands on nothing.
+    if (isSpinning || n === 0 || frameW === 0) return;
+    if (seatedForRef.current === n) return;
+    seatedForRef.current = n;
+    const seat = normalizeDeg(POINTER_DEG - paneCenterDeg(0, n));
+    applyRotation(seat);
+    setRestRotation(seat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segments.length, isSpinning, frameW]);
 
   useLayoutEffect(() => {
     const el = frameRef.current;
@@ -160,6 +201,18 @@ export default function SpinWheel({
     angleRef.current = deg;
     rotRef.current?.style.setProperty("--rot", `${deg}deg`);
     if (zoomedRef.current) paintLabelBlur(deg);
+    reportPointerIndex(deg);
+  };
+
+  /** Which pane is at the pointer now — reported only when it changes. */
+  const reportPointerIndex = (deg: number) => {
+    const n = segmentsRef.current.length;
+    if (!n) return;
+    const sweep = 360 / n;
+    const idx = Math.floor(normalizeDeg(POINTER_DEG - deg) / sweep) % n;
+    if (idx === pointerIndexRef.current) return;
+    pointerIndexRef.current = idx;
+    onPointerIndexChangeRef.current?.(idx);
   };
 
   /**
@@ -184,12 +237,27 @@ export default function SpinWheel({
       const el = labelRefs.current[i];
       if (!el) continue;
       const l = shown.get(i);
+      // Writing the same value again still invalidates style and layout, and
+      // this runs 60 times a second across every label. Only write on change.
+      const prev = labelStateRef.current[i];
+      const nextBlur = l ? Math.round(l.blurPx * 4) / 4 : 0;
+      if (prev && prev.shown === !!l && prev.blur === nextBlur) continue;
+      labelStateRef.current[i] = { shown: !!l, blur: nextBlur };
       if (!l) {
-        el.style.visibility = "hidden";
+        // `display` rather than `visibility`: a hidden-but-displayed label still
+        // takes part in layout and compositing, and each one of these is a
+        // full-disc wrapper. At 24 places that was 20 wrappers being composited
+        // every frame to show nothing. §4 says anything past the arc is not
+        // rendered — this is what "not rendered" has to mean.
+        el.style.display = "none";
         continue;
       }
-      el.style.visibility = "visible";
-      el.style.filter = l.blurPx > 0.01 ? `blur(${l.blurPx / scale}px)` : "none";
+      el.style.display = "contents";
+      // Blur the TEXT, not the wrapper. The wrapper spans the whole disc — 935px
+      // once the camera is in — and blurring a layer that size costs orders of
+      // magnitude more than blurring the glyphs sitting in it.
+      const inner = el.firstElementChild as HTMLElement | null;
+      if (inner) inner.style.filter = nextBlur > 0.01 ? `blur(${nextBlur / scale}px)` : "none";
     }
   };
 
@@ -303,6 +371,7 @@ export default function SpinWheel({
         rafRef.current = requestAnimationFrame(reducedFrame);
       } else {
         applyRotation(targetAngle);
+        setRestRotation(normalizeDeg(targetAngle));
         if (landSegment) onSpinEndRef.current(landSegment);
       }
     };
@@ -315,12 +384,14 @@ export default function SpinWheel({
   const count = segments.length;
   const discPx = Math.max(frameW * DISC_TO_FRAME, 1);
   const centerX = frameW * DISC_CENTER_X;
-  const labelRadius = restingLabelRadiusPx(discPx, Math.max(count, 1));
+  // The whole resting geometry — disc, hub, band, tier, and the band-start fit
+  // check — comes from one place, so the component never re-derives it.
+  const metrics = restingWheelMetrics(frameW || 1, Math.max(count, 1));
   // Spec sets the resting label at 15px. Narrower wedges get a smaller size so a
   // name keeps a few more characters before the ellipsis — at 12 places the
   // wedge simply is not wide enough for a full name, and the zoom is where the
   // names become legible (headline-sized, one at a time).
-  const labelSize = count <= 8 ? 15 : count <= 10 ? 13 : 12;
+
 
   /**
    * The camera.
@@ -381,13 +452,21 @@ export default function SpinWheel({
     zoomScaleRef.current = zoomScale;
     // Leaving the zoom returns every label to full size and no blur; entering it
     // culls immediately rather than waiting for the next animation frame.
-    if (active) paintLabelBlur(angleRef.current);
-    else
+    // Both arms clear the cache in the same breath as they touch the DOM. The
+    // cache is only sound while it is the ONLY writer: an unbraced else once let
+    // the bulk reset run on every render, so the DOM said "visible" while the
+    // cache still said "culled" and the culling never re-engaged.
+    labelStateRef.current = [];
+    if (active) {
+      paintLabelBlur(angleRef.current);
+    } else {
       labelRefs.current.forEach((el) => {
         if (!el) return;
-        el.style.visibility = "visible";
-        el.style.filter = "none";
+        el.style.display = "";
+        const inner = el.firstElementChild as HTMLElement | null;
+        if (inner) inner.style.filter = "none";
       });
+    }
   });
 
   // Alternating colourless glass panes. Two stops per pane so each is a hard
@@ -479,62 +558,110 @@ export default function SpinWheel({
             )}
 
             {/* Warm highlight. A lighting effect on the frame, not on the disc,
-                so it stays put while the wheel turns underneath it. */}
+                so it stays put while the wheel turns underneath it.
+
+                Promoted like its siblings: it is a full-disc gradient sitting on
+                top of layers that transform every frame, and an unpromoted
+                overlay in that position is re-rastered on each one. */}
             <div
               aria-hidden="true"
               className="absolute inset-0 rounded-full pointer-events-none"
-              style={{
-                backgroundImage: "var(--wheel-highlight)",
-              }}
+              style={{ ...promote, backgroundImage: "var(--wheel-highlight)" }}
             />
 
-            {/* Labels ride the same --rot and counter-rotate to stay horizontal. */}
+            {/* Labels. Radial at rest, tangential in the zoom — and each one
+                clipped to its own wedge, which is what makes a name crossing a
+                pane boundary impossible by construction rather than by tuning. */}
+            {/* Promoted, like the other rotating layers. Dropping the promotion
+                while the camera is in was measured and is WORSE (46.3 vs 49.6
+                fps at 24 places) — the re-raster it avoids costs more than the
+                texture it saves. */}
             <div className="absolute inset-0" style={{ ...promote, transform: "rotate(var(--rot))" }}>
-              {segments.map((seg, i) => {
-                const centerDeg = paneCenterDeg(i, count);
-                // Bounded by the disc it sits on AND by the visible frame the
-                // disc runs past — whichever bites first.
-                const maxWidth = Math.min(
-                  labelMaxWidthPx(centerDeg, labelRadius, discPx, count),
-                  labelFrameWidthPx(centerDeg, labelRadius, centerX, frameW)
-                );
+              {(metrics.drawLabels ? segments : []).map((seg, i) => {
+                const ray = labelRay(i, count, restRotation);
+                const { tier } = metrics;
+                // Flipped labels read back toward the hub, so their box hangs off
+                // the other side of the ray and is right-aligned.
+                const restTransform = `rotate(${ray.flipped ? ray.deg + 180 : ray.deg}deg)`;
+                const text = tier.indexOnly ? String(i + 1) : seg.label;
                 return (
                   <div
                     key={seg.id}
                     ref={(el) => {
                       labelRefs.current[i] = el;
                     }}
-                    className="absolute left-1/2 top-1/2"
-                    style={{
-                      // Rotation is scoped to the zoomed state. At rest the label
-                      // cancels the disc's turn and stays horizontal; zoomed it
-                      // runs along the arc, which the camera's own 90° then
-                      // brings upright under the pointer — so the name being read
-                      // is level and the ones further round rake away.
-                      transform: active
-                        ? `rotate(${centerDeg}deg) translateX(${zoomLabelRadius}px) rotate(90deg)`
-                        : `rotate(${centerDeg}deg) translateX(${labelRadius}px) rotate(${-centerDeg}deg) rotate(calc(-1 * var(--rot)))`,
-                      transition: `transform var(--dur-zoom) var(--ease-zoom)`,
-                    }}
+                    className={active ? undefined : "absolute inset-0"}
+                    style={
+                      active
+                        ? // Zoomed there is no clip, so the wedge wrapper is pure
+                          // overhead — and it is disc-sized, which is 935px once
+                          // the camera is in. `display: contents` makes it
+                          // generate no box at all, leaving the label positioned
+                          // against the disc exactly as before.
+                          { display: "contents" }
+                        : { clipPath: wedgeClipPolygon(i, count, discPx), pointerEvents: "none" }
+                    }
                   >
-                    <span
-                      className="block -translate-x-1/2 -translate-y-1/2 text-center whitespace-nowrap overflow-hidden text-ellipsis"
+                    <div
+                      className="absolute left-1/2 top-1/2"
                       style={{
-                        // Zoomed type is 28px on screen; the camera scale gets it
-                        // there, so the local size barely moves.
-                        // Zoomed, the name under the pointer is the most
-                        // important text on screen and must not be cut by the
-                        // frame the disc deliberately breaks. Bounded to the
-                        // frame in local units, since the camera scales it up.
-                        maxWidth: active ? (frameW - 32) / zoomScale : maxWidth,
-                        fontSize: active ? 28 / zoomScale : labelSize,
-                        fontWeight: 700,
-                        letterSpacing: "-0.02em",
-                        color: "var(--foreground)",
+                        transform: active
+                          ? `rotate(${ray.deg}deg) translateX(${zoomLabelRadius}px) rotate(90deg)`
+                          : restTransform,
+                        transition: `transform var(--dur-zoom) var(--ease-zoom)`,
                       }}
                     >
-                      {seg.label}
-                    </span>
+                      <span
+                        className="block absolute"
+                        style={
+                          active
+                            ? {
+                                // Zoomed type is 28px on screen; the camera scale
+                                // gets it there, so the local size barely moves.
+                                // Bounded to the frame in local units, since the
+                                // name under the pointer must never be cut.
+                                transform: "translate(-50%, -50%)",
+                                maxWidth: (frameW - 32) / zoomScale,
+                                fontSize: 28 / zoomScale,
+                                fontWeight: 700,
+                                letterSpacing: "-0.02em",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                textAlign: "center",
+                                color: "var(--foreground)",
+                              }
+                            : {
+                                // The band IS the max-width: a long name
+                                // ellipsises before the wedge clip could ever
+                                // bisect a glyph. Never rely on the clip to end
+                                // a line.
+                                [ray.flipped ? "right" : "left"]: metrics.bandStartPx,
+                                top: -tier.bandHeightPx * metrics.scale * 0.5,
+                                width: metrics.maxTextWidthPx,
+                                maxWidth: metrics.maxTextWidthPx,
+                                height: tier.bandHeightPx * metrics.scale,
+                                textAlign: tier.indexOnly ? "center" : ray.flipped ? "right" : "left",
+                                fontSize: tier.fontPx * metrics.scale,
+                                lineHeight: `${tier.lineHeightPx * metrics.scale}px`,
+                                fontWeight: 700,
+                                letterSpacing: "-0.02em",
+                                color: tier.muted ? "var(--muted-foreground)" : "var(--foreground)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                // Wrap first, truncate last: two lines where the
+                                // wedge affords them, one where it does not.
+                                display: "-webkit-box",
+                                WebkitBoxOrient: "vertical",
+                                WebkitLineClamp: tier.lines,
+                                textWrap: tier.lines > 1 ? "balance" : undefined,
+                                wordBreak: tier.lines > 1 ? "break-word" : "normal",
+                              }
+                        }
+                      >
+                        {active ? seg.label : text}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -544,8 +671,8 @@ export default function SpinWheel({
             <div
               className="glass-chip absolute left-1/2 top-1/2 rounded-full flex flex-col items-center justify-center"
               style={{
-                width: discPx * 0.26,
-                height: discPx * 0.26,
+                width: metrics.hubPx,
+                height: metrics.hubPx,
                 // A backdrop-filter inside a subtree that transforms every frame
                 // re-samples its backdrop every frame. The budget's rule for a
                 // cell that will not go green is that the glass on that surface
@@ -564,7 +691,7 @@ export default function SpinWheel({
               }}
             >
               <span
-                style={{ fontSize: discPx * 0.1, fontWeight: 600, letterSpacing: "-0.04em", lineHeight: 1, color: "var(--ink-strong)" }}
+                style={{ fontSize: metrics.hubPx * 0.38, fontWeight: 600, letterSpacing: "-0.04em", lineHeight: 1, color: "var(--ink-strong)" }}
               >
                 {count}
               </span>
@@ -595,16 +722,25 @@ export default function SpinWheel({
             className="absolute z-20"
             style={{
               opacity: receded ? 0 : 1,
-              left: active ? frameW / 2 : Math.max(contactX, 2),
+              // 30x32, apex right, BITING INTO the rim rather than floating
+              // outside it — that overlap is what frees the disc to use the full
+              // frame width instead of reserving a gutter for the pointer.
+              left: active ? frameW / 2 : contactX - 9 * metrics.scale,
               top: active ? ZOOM_POINTER_Y : contactY,
               transform: active ? "translate(-50%, -50%) rotate(90deg)" : "translateY(-50%)",
               transition:
                 "left var(--dur-zoom) var(--ease-zoom), top var(--dur-zoom) var(--ease-zoom), opacity var(--dur-recede) var(--ease-standard)",
             }}
           >
-            <svg width="30" height="26" viewBox="0 0 30 26" fill="none" aria-hidden="true">
+            <svg
+              width={30 * metrics.scale}
+              height={32 * metrics.scale}
+              viewBox="0 0 30 32"
+              fill="none"
+              aria-hidden="true"
+            >
               <path
-                d="M27 13L4 2.5L4 23.5Z"
+                d="M29 16L3 3L3 29Z"
                 fill="var(--brand)"
                 stroke="var(--paper)"
                 strokeWidth="1.5"

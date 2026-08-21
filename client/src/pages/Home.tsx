@@ -421,20 +421,6 @@ export default function Home() {
                 }
               }}
             >
-              {/* Shimmer sweep */}
-              <span
-                className="absolute inset-0 rounded-full overflow-hidden"
-                style={{ pointerEvents: "none" }}
-              >
-                <span
-                  className="absolute inset-0"
-                  style={{
-                    background: "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)",
-                    backgroundSize: "200% 100%",
-                    animation: "shimmer 3s linear infinite",
-                  }}
-                />
-              </span>
               <span>GET STARTED</span>
               <ArrowRight size={16} className="transition-transform duration-300 group-hover:translate-x-1.5" />
             </a>

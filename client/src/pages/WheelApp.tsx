@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
+import PointerReadout from "@/components/PointerReadout";
+import { labelTier } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
@@ -104,6 +106,8 @@ export default function WheelApp() {
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
   const prefersReducedMotion = useReducedMotion();
+  /** Which pane the wheel currently has under its pointer. */
+  const [pointerIndex, setPointerIndex] = useState(0);
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -627,6 +631,15 @@ export default function WheelApp() {
   // Reduced motion never pushes in, so the chrome never recedes either.
   const cameraIn = (isSpinning || showResult) && !prefersReducedMotion;
 
+  // What the readout names. The wheel reports an index; the page owns turning
+  // that into a restaurant, because the wheel is only given id/label/colour.
+  const pointerTier = labelTier(Math.max(wheelSegments.length, 1));
+  const atPointerSegment = wheelSegments[Math.min(pointerIndex, wheelSegments.length - 1)];
+  const atPointer = atPointerSegment
+    ? restaurants?.find((r) => r.id === atPointerSegment.id) ?? null
+    : null;
+  const spinDisabled = isSpinning || createSpin.isPending || wheelSegments.length === 0;
+
   const cuisineTags = (tags ?? []).filter((t) => t.category === "cuisine" && usedTagIds.has(t.id));
   const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
@@ -1057,6 +1070,7 @@ export default function WheelApp() {
                           isSpinning={isSpinning}
                           onSpinStart={handleSpin}
                           targetId={targetId}
+                          onPointerIndexChange={setPointerIndex}
                           zoomed={isSpinning || showResult}
                           winnerId={spinResult?.id ?? null}
                           receded={showResult}
@@ -1080,79 +1094,85 @@ export default function WheelApp() {
                             <p className="text-xs text-muted-foreground">Add a few places, then spin to decide.</p>
                           </div>
                         ) : (
-                          <>
-                            {/* Spin error chip */}
+                          <div className="w-full max-w-sm flex flex-col" style={{ gap: 20 }}>
                             <ErrorChip error={spinError} onDismiss={() => setSpinError(null)} />
-                            {/* SPIN button */}
+
+                            {/* Above 16 places the disc carries indices, so say
+                                where the names are before the user looks for them. */}
+                            {pointerTier.indexOnly && (
+                              <p className="type-meta" style={{ color: "var(--muted-foreground)" }}>
+                                Names arrive as the wheel passes the pointer, and in full when it lands.
+                              </p>
+                            )}
+
+                            {atPointer && (
+                              <PointerReadout
+                                name={atPointer.name}
+                                indexLabel={pointerTier.indexOnly ? `#${pointerIndex + 1}` : null}
+                                meta={
+                                  <>
+                                    {wheelData?.distanceEnabled && atPointer.walkSeconds != null && (
+                                      <span className="flex items-center gap-1.5">
+                                        <Footprints size={13} className="flex-shrink-0" />
+                                        {formatWalk(atPointer.walkSeconds / 60)}
+                                      </span>
+                                    )}
+                                    {atPointer.priceLevel != null && (
+                                      <span>{"$".repeat(atPointer.priceLevel)}</span>
+                                    )}
+                                  </>
+                                }
+                              />
+                            )}
+
                             <button
                               onClick={handleSpin}
                               disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
-                              className={`relative overflow-hidden px-12 py-4 rounded-full font-black text-base tracking-[0.15em] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 ${
-                                !(isSpinning || createSpin.isPending || wheelSegments.length === 0)
-                                  ? "hover:-translate-y-1 hover:brightness-110"
-                                  : ""
-                              }`}
+                              className="w-full flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{
-                                fontFamily: "var(--font-display)",
-                                background: isSpinning || createSpin.isPending || wheelSegments.length === 0
-                                  ? "var(--muted)"
-                                  : "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                                boxShadow: isSpinning || createSpin.isPending || wheelSegments.length === 0
-                                  ? "none"
-                                  : "0 0 40px oklch(from var(--brand) l c h / 0.5), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
-                                color: "white",
-                                minWidth: "180px",
+                                minHeight: 56,
+                                borderRadius: "var(--radius-control)",
+                                background: spinDisabled ? "var(--muted)" : "var(--brand)",
+                                color: spinDisabled ? "var(--muted-foreground)" : "var(--on-accent)",
+                                fontSize: 17,
+                                transitionDuration: "var(--dur-tap)",
                               }}
                             >
-                              {/* Shimmer */}
-                              {!(isSpinning || createSpin.isPending) && (
-                                <span
-                                  className="absolute inset-0 rounded-full"
-                                  style={{
-                                    background: "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)",
-                                    backgroundSize: "200% 100%",
-                                    animation: "shimmer 3s linear infinite",
-                                  }}
-                                />
-                              )}
-                              <span className="relative">
-                                {isSpinning || createSpin.isPending ? "SPINNING..." : "SPIN"}
-                              </span>
+                              {isSpinning || createSpin.isPending ? "Spinning…" : "Spin the wheel"}
                             </button>
 
-                            {/* Status line */}
+                            {/* The muted line under the stack: how many are on the
+                                wheel, and why the count is lower than the list —
+                                the closed count answers that, so it belongs here
+                                rather than floating somewhere else on the tab. */}
                             {wheelSegments.length === 0 ? (
                               <div
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs max-w-sm text-center"
-                                style={{
-                                  background: "oklch(from var(--destructive) l c h / 0.10)",
-                                  border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
-                                  color: "var(--brand)",
-                                }}
+                                className="glass-chip flex items-center gap-2 px-4 py-3 w-full"
+                                style={{ color: "var(--destructive)" }}
                               >
-                                <AlertTriangle size={13} className="flex-shrink-0" />
-                                <span>
+                                <AlertTriangle size={14} className="flex-shrink-0" />
+                                <span className="type-meta">
                                   Nothing to spin — every restaurant is
                                   {selectedTagIds.length > 0 ? " filtered out or " : " "}
                                   excluded or vetoed.
                                 </span>
                               </div>
                             ) : (
-                              <p className="text-xs text-muted-foreground">
+                              <p className="type-meta text-center" style={{ color: "var(--muted-foreground)" }}>
                                 <span className="font-semibold" style={{ color: "var(--brand)" }}>{filteredRestaurants.length}</span>
                                 {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
                                 {closedCount > 0 && (
                                   <>
                                     {" · "}
                                     <span className="inline-flex items-center gap-1">
-                                      <Clock3 size={11} className="flex-shrink-0" />
+                                      <Clock3 size={12} className="flex-shrink-0" />
                                       {closedCount} closed now
                                     </span>
                                   </>
                                 )}
                               </p>
                             )}
-                          </>
+                          </div>
                         )}
 
                         {/* Excluded restaurants — collapsed by default to keep the wheel the focus */}

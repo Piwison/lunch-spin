@@ -7,17 +7,19 @@ import {
   SPIN_TIMELINE,
   SPIN_TOTAL_MS,
   labelBlurPx,
-  labelFrameWidthPx,
-  labelMaxWidthPx,
   landingRotationDeg,
   normalizeDeg,
   paneCenterDeg,
   paneSweepDeg,
   panes,
-  restingLabelRadiusPx,
   signedAngleDeg,
   visibleLabels,
   cubicBezier,
+  bandStartFits,
+  labelRay,
+  labelTier,
+  restingWheelMetrics,
+  wedgeClipPolygon,
 } from "./wheelGeometry";
 
 const POINTER = 180; // resting pointer sits on the left of the disc
@@ -189,137 +191,187 @@ describe("landingRotationDeg", () => {
   });
 });
 
-describe("resting labels", () => {
-  const widths = [320, 360, 390, 412, 430];
-  const counts = [6, 8, 10, 12];
+describe("resting wheel metrics", () => {
+  const frames = [320, 360, 390, 412, 430];
+  const counts = [2, 3, 8, 9, 12, 16, 17, 24, 40];
 
-  it("never lets a horizontal label cross the rim, at any supported size", () => {
-    for (const disc of widths) {
+  it("matches the spec's reference numbers exactly at 390px", () => {
+    const m = restingWheelMetrics(390, 8);
+    expect(m.discPx).toBeCloseTo(358.8, 1); // 92% of the frame
+    expect(m.radiusPx).toBeCloseTo(179.4, 1);
+    expect(m.hubPx).toBeCloseTo(100, 6);
+    expect(m.bandStartPx).toBeCloseTo(58, 6);
+    expect(m.bandEndPx).toBeCloseTo(159.4, 1); // R - 20
+    expect(m.maxTextWidthPx).toBeCloseTo(m.bandEndPx - m.bandStartPx - 4, 6);
+  });
+
+  it("scales every number with the frame and NOTHING with the place count", () => {
+    for (const frameW of frames) {
+      const ref = restingWheelMetrics(frameW, 8);
+      expect(ref.discPx).toBeCloseTo(frameW * 0.92, 6);
       for (const count of counts) {
-        const r = restingLabelRadiusPx(disc, count);
-        for (let i = 0; i < count; i++) {
-          const center = paneCenterDeg(i, count);
-          const w = labelMaxWidthPx(center, r, disc, count);
-          const rad = (center * Math.PI) / 180;
-          // Worst corner of the horizontal box measured from the disc centre.
-          const x = Math.abs(r * Math.cos(rad)) + w / 2;
-          const y = Math.abs(r * Math.sin(rad));
-          expect(Math.hypot(x, y)).toBeLessThanOrEqual(disc / 2);
-        }
+        const m = restingWheelMetrics(frameW, count);
+        // The disc, its radius and the hub never move for the place count.
+        expect(m.discPx).toBeCloseTo(ref.discPx, 6);
+        expect(m.radiusPx).toBeCloseTo(ref.radiusPx, 6);
+        expect(m.hubPx).toBeCloseTo(ref.hubPx, 6);
+        expect(m.bandEndPx).toBeCloseTo(ref.bandEndPx, 6);
       }
     }
   });
 
-  it("leaves every label wide enough to say something", () => {
-    for (const disc of widths) {
+  it("keeps the band clear of the hub at every count", () => {
+    for (const frameW of frames) {
       for (const count of counts) {
-        const r = restingLabelRadiusPx(disc, count);
-        for (let i = 0; i < count; i++) {
-          expect(labelMaxWidthPx(paneCenterDeg(i, count), r, disc, count)).toBeGreaterThanOrEqual(40);
-        }
+        const m = restingWheelMetrics(frameW, count);
+        expect(m.bandStartPx).toBeGreaterThanOrEqual(m.hubPx / 2 + 8 * (frameW / 390) - 1e-6);
+        expect(m.bandStartPx).toBeLessThan(m.bandEndPx);
+      }
+    }
+  });
+});
+
+describe("label tiers", () => {
+  it("wraps to two lines up to 8 places, one line to 16, index only above", () => {
+    for (const n of [2, 5, 8]) {
+      const t = labelTier(n);
+      expect(t.lines).toBe(2);
+      expect(t.fontPx).toBe(15);
+      expect(t.lineHeightPx).toBe(17);
+      expect(t.bandHeightPx).toBe(36);
+      expect(t.indexOnly).toBe(false);
+    }
+    for (const n of [9, 12, 16]) {
+      const t = labelTier(n);
+      expect(t.lines).toBe(1);
+      expect(t.fontPx).toBe(13);
+      expect(t.bandHeightPx).toBe(22);
+      expect(t.indexOnly).toBe(false);
+    }
+    for (const n of [17, 24, 40]) {
+      const t = labelTier(n);
+      expect(t.fontPx).toBe(11);
+      expect(t.bandHeightPx).toBe(15);
+      expect(t.indexOnly).toBe(true);
+    }
+  });
+
+  it("never interpolates type size — it is fixed per tier", () => {
+    const sizes = new Set([2, 3, 8, 9, 12, 16, 17, 24, 40].map((n) => labelTier(n).fontPx));
+    expect([...sizes].sort((a, b) => b - a)).toEqual([15, 13, 11]);
+  });
+});
+
+describe("bandStartFits", () => {
+  it("is the spec's formula", () => {
+    // h / (2 * tan(180/n)) <= r0
+    expect(bandStartFits(8, 36, 58)).toBe(true);
+    expect(bandStartFits(16, 22, 58)).toBe(true);
+    expect(bandStartFits(24, 15, 68)).toBe(true);
+    // A two-line band cannot fit a 16-way wedge that close to the hub.
+    expect(bandStartFits(16, 36, 58)).toBe(false);
+  });
+
+  it("holds for the band start the metrics actually choose, at every count", () => {
+    // The load-bearing assertion: whatever tier and count, the band the wheel
+    // draws fits inside its own wedge.
+    for (const frameW of [320, 360, 390, 412, 430]) {
+      for (let n = 2; n <= 60; n++) {
+        const m = restingWheelMetrics(frameW, n);
+        const s = frameW / 390;
+        expect(bandStartFits(n, m.tier.bandHeightPx * s, m.bandStartPx)).toBe(true);
       }
     }
   });
 
-  it("leaves a visible gutter between level neighbours, not a hairline", () => {
-    // Touching at the top and bottom of the disc reads as one run-on label.
-    for (const disc of widths) {
-      for (const count of counts) {
-        const r = restingLabelRadiusPx(disc, count);
-        const box = (i: number) => {
-          const c = paneCenterDeg(i, count);
-          const rad = (c * Math.PI) / 180;
-          return {
-            x: r * Math.cos(rad),
-            y: r * Math.sin(rad),
-            w: labelMaxWidthPx(c, r, disc, count),
-          };
-        };
-        for (let i = 0; i < count; i++) {
-          const a = box(i);
-          const b = box((i + 1) % count);
-          if (Math.abs(a.y - b.y) < 18) {
-            expect(Math.abs(a.x - b.x) - (a.w + b.w) / 2).toBeGreaterThanOrEqual(10);
-          }
-        }
+  it("raises the band start rather than shrinking the type when a wedge is too tight", () => {
+    // Past ~28 places even the 15px index band no longer clears r0 = 68, and the
+    // spec's instruction is to raise r0, never to shrink the type.
+    const wide = restingWheelMetrics(390, 24);
+    const tight = restingWheelMetrics(390, 40);
+    expect(tight.tier.fontPx).toBe(wide.tier.fontPx);
+    expect(tight.bandStartPx).toBeGreaterThan(wide.bandStartPx);
+    expect(tight.maxTextWidthPx).toBeLessThan(wide.maxTextWidthPx);
+  });
+
+  it("either leaves room to draw an index, or stops drawing labels entirely", () => {
+    // Raising the band start eats the band. Past a point even a two-digit index
+    // has nowhere to sit, and the honest answer is a bare disc plus the pointer
+    // readout — which is what the readout is for.
+    for (let n = 2; n <= 80; n++) {
+      const m = restingWheelMetrics(390, n);
+      if (m.drawLabels) expect(m.maxTextWidthPx).toBeGreaterThanOrEqual(18);
+      else expect(n).toBeGreaterThan(24); // never gives up at a plausible team size
+    }
+  });
+});
+
+describe("labelRay", () => {
+  it("puts every label on its own pane's centre ray", () => {
+    for (const count of [2, 8, 9, 17]) {
+      for (let i = 0; i < count; i++) {
+        expect(labelRay(i, count, 0).deg).toBeCloseTo(paneCenterDeg(i, count), 6);
       }
     }
   });
 
-  it("keeps horizontally-adjacent labels from overlapping near the top and bottom", () => {
-    // Panes near 90° and 270° sit almost level with each other, so the rim is
-    // not the binding constraint there — the neighbour is.
-    for (const disc of widths) {
-      for (const count of counts) {
-        const r = restingLabelRadiusPx(disc, count);
-        const box = (i: number) => {
-          const c = paneCenterDeg(i, count);
-          const rad = (c * Math.PI) / 180;
-          const w = labelMaxWidthPx(c, r, disc, count);
-          return { x: r * Math.cos(rad), y: r * Math.sin(rad), w };
-        };
+  it("decides the flip from the ON-SCREEN angle, not the pane's angle on the disc", () => {
+    // The disc carries a rotation. Deciding the flip from the pane's own angle
+    // leaves labels upside down as soon as the disc is turned at all — which is
+    // always, because the wheel opens with pane 0 seated at the pointer.
+    for (const count of [8, 12, 24]) {
+      for (const discRotation of [0, 37, 172.5, 250, -95]) {
         for (let i = 0; i < count; i++) {
-          const a = box(i);
-          const b = box((i + 1) % count);
-          const lineHeight = 18;
-          if (Math.abs(a.y - b.y) < lineHeight) {
-            expect(Math.abs(a.x - b.x)).toBeGreaterThanOrEqual((a.w + b.w) / 2 - 1e-6);
-          }
+          const r = labelRay(i, count, discRotation);
+          const onScreen = normalizeDeg(paneCenterDeg(i, count) + discRotation);
+          expect(r.flipped).toBe(onScreen > 90 && onScreen < 270);
+          // Whatever the disc rotation, no label ever renders inverted.
+          const applied = normalizeDeg(onScreen + (r.flipped ? 180 : 0));
+          expect(applied <= 90 + 1e-9 || applied >= 270 - 1e-9).toBe(true);
         }
       }
     }
   });
 });
 
-describe("labelFrameWidthPx", () => {
-  // The disc deliberately breaks the right edge of its frame, but item 5's gate
-  // is "no clipped label" -- so a label's budget is bounded by the visible frame
-  // as well as by the disc it sits on.
-  const frames = [320, 360, 390, 412, 430];
-  const counts = [6, 8, 10, 12];
-  const DISC_TO_FRAME = 1.06;
-  const DISC_CENTER_X = 0.54;
+describe("wedgeClipPolygon", () => {
+  const parse = (poly: string) =>
+    poly
+      .slice(poly.indexOf("(") + 1, poly.lastIndexOf(")"))
+      .split(",")
+      .map((pair) => pair.trim().split(/\s+/).map((v) => parseFloat(v)) as [number, number]);
 
-  it("keeps every resting label inside the frame at every supported width", () => {
-    for (const frameW of frames) {
-      for (const count of counts) {
-        const disc = frameW * DISC_TO_FRAME;
-        const cx = frameW * DISC_CENTER_X;
-        const r = restingLabelRadiusPx(disc, count);
-        for (let i = 0; i < count; i++) {
-          const center = paneCenterDeg(i, count);
-          const w = Math.min(
-            labelMaxWidthPx(center, r, disc, count),
-            labelFrameWidthPx(center, r, cx, frameW)
-          );
-          const x = cx + r * Math.cos((center * Math.PI) / 180);
-          expect(x - w / 2).toBeGreaterThanOrEqual(0);
-          expect(x + w / 2).toBeLessThanOrEqual(frameW);
-        }
+  it("starts at the disc centre — the wedge apex", () => {
+    const pts = parse(wedgeClipPolygon(0, 8, 358));
+    expect(pts[0]![0]).toBeCloseTo(179, 6);
+    expect(pts[0]![1]).toBeCloseTo(179, 6);
+  });
+
+  it("stays inside the disc plus the 8px overshoot, and samples the arc finely", () => {
+    for (const count of [2, 8, 16, 24]) {
+      const pts = parse(wedgeClipPolygon(1 % count, count, 358));
+      expect(pts.length).toBeGreaterThanOrEqual(3);
+      for (const [x, y] of pts) {
+        // 0.01 covers the polygon's deliberate 2-decimal rounding, not slop.
+        expect(Math.hypot(x - 179, y - 179)).toBeLessThanOrEqual(179 + 8 + 0.01);
       }
+      // ~4 degree sampling, so a 45 degree wedge gets at least a dozen arc points.
+      const expected = Math.ceil(360 / count / 4) + 1;
+      expect(pts.length).toBeGreaterThanOrEqual(expected);
     }
   });
 
-  it("still gives the tightest label something to work with", () => {
-    for (const frameW of frames) {
-      for (const count of counts) {
-        const disc = frameW * DISC_TO_FRAME;
-        const cx = frameW * DISC_CENTER_X;
-        const r = restingLabelRadiusPx(disc, count);
-        const widths = Array.from({ length: count }, (_, i) =>
-          Math.min(
-            labelMaxWidthPx(paneCenterDeg(i, count), r, disc, count),
-            labelFrameWidthPx(paneCenterDeg(i, count), r, cx, frameW)
-          )
-        );
-        expect(Math.min(...widths)).toBeGreaterThanOrEqual(40);
+  it("covers exactly its own pane's angular range and no neighbour's", () => {
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+      const pts = parse(wedgeClipPolygon(i, count, 358)).slice(1);
+      const sweep = paneSweepDeg(count);
+      for (const [x, y] of pts) {
+        const deg = normalizeDeg((Math.atan2(y - 179, x - 179) * 180) / Math.PI);
+        const rel = normalizeDeg(deg - i * sweep);
+        expect(rel <= sweep + 1e-6 || rel >= 360 - 1e-6).toBe(true);
       }
     }
-  });
-
-  it("is symmetric about the disc centre", () => {
-    const w = (deg: number) => labelFrameWidthPx(deg, 100, 200, 400);
-    expect(w(0)).toBeCloseTo(w(180), 6);
   });
 });
 

@@ -1,6 +1,14 @@
 # The resting wheel's labels — open design problem
 
-**Status:** open. Being redesigned in Claude Design. Do not tune the current layout further.
+**Status: RESOLVED.** Radial labels shipped — see §4 of `docs/ember-upgrade/UI_UPGRADE.md`,
+which supersedes everything below. This file is kept for the reasoning, because the
+constraint list is what the replacement had to satisfy and the lesson is worth not
+relearning.
+
+The answer was the one direction that broke a stated rule: labels run RADIALLY along their
+own pane's centre ray, each clipped to its own wedge, wrapping to two lines up to 8 places.
+"Labels horizontal, never rotated" was the constraint doing the damage, and no amount of
+width tuning inside it was ever going to work.
 
 The Ember resting wheel puts a horizontal label in every pane. At eight places that mostly
 works. Past ten it does not, and two rounds of geometry work did not save it.

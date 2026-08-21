@@ -185,98 +185,176 @@ export function landingRotationDeg({
   return fromDeg + minTurns * 360 + remainder;
 }
 
-/** Breathing room between a label's far corner and the rim. */
-const RIM_PAD_PX = 6;
-
-/** Clear space between two labels sitting level with each other. Without it the
- *  budget lets neighbours meet exactly, and two names at the top of the disc read
- *  as one run-on phrase. */
-const LABEL_GUTTER_PX = 12;
-
-/** Clear space between a label and the edge of the visible frame. */
-const FRAME_PAD_PX = 8;
-
-/**
- * Where resting labels sit, as a fraction of the disc radius.
+/* ─── The resting wheel (spec §4) ──────────────────────────────────────────────
  *
- * Pushed OUTWARD as the pane count rises, which is the opposite of the instinct.
- * Labels stay horizontal at rest, so the binding constraint at 12 and 6 o'clock
- * is the neighbouring label, not the rim — and the horizontal gap between two
- * adjacent labels is 2·r·sin(π/count), which grows with r. Pulling labels in to
- * "make room" shrinks exactly the gap that was already tightest.
+ * Radial labels, not horizontal. A horizontal name laid across a wedge that is
+ * not itself horizontal always ends up crossing a boundary and reading as if it
+ * belongs to two places — that was the defect that forced this redesign, and it
+ * is why none of the width tuning that preceded it worked.
+ *
+ * Three things do the work together, and removing any one brings the defect
+ * back: each label sits on its own pane's centre ray, each is CLIPPED to its own
+ * wedge so crossing a boundary is impossible by construction, and each has a
+ * max-width so a long name ellipsises before the clip could bisect a glyph.
+ *
+ * Reference frame is 390px wide. Every number scales with the frame; NOTHING
+ * scales with the place count — a wheel of 24 is the same disc as a wheel of 4.
  */
-export function restingLabelRadiusPx(discPx: number, count: number): number {
-  const ratio = count <= 8 ? 0.6 : count <= 10 ? 0.66 : 0.7;
-  return (discPx / 2) * ratio;
+
+/** The frame width every literal below is quoted at. */
+export const WHEEL_REF_FRAME_PX = 390;
+
+const DISC_TO_FRAME = 0.92;
+const HUB_REF_PX = 100;
+const HUB_CLEAR_REF_PX = 8;
+const RIM_MARGIN_REF_PX = 20;
+const TEXT_PAD_REF_PX = 4;
+
+/** Below this the band has nowhere to put even a two-digit index. */
+const MIN_INDEX_WIDTH_REF_PX = 18;
+
+/** Arc sampling for the wedge clip, and how far past the rim it reaches. */
+const ARC_SAMPLE_DEG = 4;
+const CLIP_OVERSHOOT_PX = 8;
+
+export interface LabelTier {
+  fontPx: number;
+  lineHeightPx: number;
+  bandHeightPx: number;
+  lines: number;
+  /** Above 16 places the disc carries indices and hands legibility to the readout. */
+  indexOnly: boolean;
+  /** The index tier is set back, so it needs its own band start. */
+  bandStartRefPx: number;
+  /** Index numbers are muted; names are not. */
+  muted: boolean;
 }
 
 /**
- * How wide a horizontal label may be before it clips.
+ * Type size is fixed per tier and never interpolated between them.
  *
- * Two constraints, whichever bites first:
- *
- *  - The rim, which binds hardest at 3 and 9 o'clock where the box extends
- *    straight out along the radius and has the least disc left in front of it.
- *
- *  - The neighbouring label, which binds near 12 and 6 o'clock where adjacent
- *    panes sit almost level and the rim is nowhere near. Two adjacent anchors
- *    are always exactly `chord = 2·r·sin(π/count)` apart, split into Δx and Δy
- *    by where they sit on the circle. A neighbour can only collide while
- *    Δy < lineHeight, and since Δx² + Δy² = chord², the tightest Δx that can
- *    ever be in collision range is √(chord² − lineHeight²). That is the budget —
- *    exact, rather than a margin chosen by eye.
- *
- * Rotation is scoped to the zoom, so the resting wheel is the only state that
- * needs a per-angle budget at all.
+ * A 45° wedge has far more tangential room than one line of type uses, which is
+ * what pays for the two-line band at low counts — ordinary restaurant names fit
+ * whole rather than truncating.
  */
-export function labelMaxWidthPx(
-  centerDeg: number,
-  radiusPx: number,
-  discPx: number,
+export function labelTier(count: number): LabelTier {
+  if (count <= 8) {
+    return { fontPx: 15, lineHeightPx: 17, bandHeightPx: 36, lines: 2, indexOnly: false, bandStartRefPx: 58, muted: false };
+  }
+  if (count <= 16) {
+    return { fontPx: 13, lineHeightPx: 22, bandHeightPx: 22, lines: 1, indexOnly: false, bandStartRefPx: 58, muted: false };
+  }
+  return { fontPx: 11, lineHeightPx: 15, bandHeightPx: 15, lines: 1, indexOnly: true, bandStartRefPx: 68, muted: true };
+}
+
+/**
+ * Whether a band of height `h` fits inside an n-way wedge at radius `r0`.
+ *
+ * A wedge is a triangle near its apex: at radius r it is only 2·r·tan(180/n)
+ * across. So a band of height h has to start beyond h / (2·tan(180/n)) or it is
+ * wider than the wedge that is supposed to contain it — and the clip would eat
+ * the type. This is asserted at render time rather than assumed.
+ */
+export function bandStartFits(n: number, bandHeightPx: number, bandStartPx: number): boolean {
+  const halfWedgeRad = ((180 / n) * Math.PI) / 180;
+  return bandHeightPx / (2 * Math.tan(halfWedgeRad)) <= bandStartPx;
+}
+
+export interface RestingWheelMetrics {
+  scale: number;
+  discPx: number;
+  radiusPx: number;
+  hubPx: number;
+  bandStartPx: number;
+  bandEndPx: number;
+  bandLengthPx: number;
+  /** The label's max-width — a long name ellipsises before the clip reaches it. */
+  maxTextWidthPx: number;
+  tier: LabelTier;
+  /** False once the band is too short even for an index; the readout carries it. */
+  drawLabels: boolean;
+}
+
+export function restingWheelMetrics(frameWidthPx: number, count: number): RestingWheelMetrics {
+  const scale = frameWidthPx / WHEEL_REF_FRAME_PX;
+  const discPx = frameWidthPx * DISC_TO_FRAME;
+  const radiusPx = discPx / 2;
+  const hubPx = HUB_REF_PX * scale;
+  const bandEndPx = radiusPx - RIM_MARGIN_REF_PX * scale;
+  const tier = labelTier(count);
+
+  // The band start is CHECKED, not chosen. Where the tier's own start would put
+  // the band inside a wedge too narrow to hold it, the start is raised — never
+  // the type shrunk, which is the spec's explicit instruction.
+  const bandHeight = tier.bandHeightPx * scale;
+  const required = bandHeight / (2 * Math.tan(((180 / count) * Math.PI) / 180));
+  const floor = Math.max(tier.bandStartRefPx * scale, hubPx / 2 + HUB_CLEAR_REF_PX * scale);
+  const bandStartPx = Math.max(floor, required);
+
+  const bandLengthPx = Math.max(0, bandEndPx - bandStartPx);
+  const maxTextWidthPx = Math.max(0, bandLengthPx - TEXT_PAD_REF_PX * scale);
+
+  return {
+    scale, discPx, radiusPx, hubPx, bandStartPx, bandEndPx, bandLengthPx, maxTextWidthPx, tier,
+    drawLabels: maxTextWidthPx >= MIN_INDEX_WIDTH_REF_PX * scale,
+  };
+}
+
+export interface LabelRay {
+  deg: number;
+  /** Rotated a further 180° and right-aligned, so no name is ever upside down. */
+  flipped: boolean;
+}
+
+/**
+ * The ray a label reads along, and whether it has to be flipped upright.
+ *
+ * §4 states the flip rule as "mid-angle between 180° and 360°" measured from 12
+ * o'clock. This module's zero is 3 o'clock, so the same half of the wheel is
+ * (90°, 270°) here — the half where text rotated onto its ray comes out upside
+ * down.
+ *
+ * `discRotationDeg` is not optional detail: the flip depends on where the label
+ * ends up ON SCREEN, and the disc is always turned by something — the wheel
+ * opens with pane 0 seated at the pointer, and every landing leaves it somewhere
+ * else again. Deciding from the pane's own angle instead renders half the wheel
+ * upside down at rest.
+ */
+export function labelRay(index: number, count: number, discRotationDeg: number): LabelRay {
+  const deg = paneCenterDeg(index, count);
+  const onScreen = normalizeDeg(deg + discRotationDeg);
+  return { deg, flipped: onScreen > 90 && onScreen < 270 };
+}
+
+/**
+ * The `clip-path` polygon for one pane's wedge, in disc-local px.
+ *
+ * Apex at the disc centre, arc sampled every ~4° out to R + 8 so the clip ends
+ * past the rim rather than on it. Crossing a pane boundary is then impossible by
+ * construction rather than by tuning — which is the whole point.
+ */
+export function wedgeClipPolygon(
+  index: number,
   count: number,
-  lineHeightPx = 18
-): number {
-  const R = discPx / 2 - RIM_PAD_PX;
-  const rad = (centerDeg * Math.PI) / 180;
-  const x = Math.abs(radiusPx * Math.cos(rad));
-  const y = Math.abs(radiusPx * Math.sin(rad));
+  discPx: number,
+  overshootPx = CLIP_OVERSHOOT_PX
+): string {
+  const R = discPx / 2;
+  const reach = R + overshootPx;
+  const sweep = paneSweepDeg(count);
+  const start = index * sweep;
+  const end = start + sweep;
 
-  const span = R * R - y * y;
-  const rimLimit = span <= 0 ? 0 : 2 * Math.max(0, Math.sqrt(span) - x);
+  const at = (deg: number) => {
+    const rad = (deg * Math.PI) / 180;
+    return `${(R + reach * Math.cos(rad)).toFixed(2)}px ${(R + reach * Math.sin(rad)).toFixed(2)}px`;
+  };
 
-  const chord = 2 * radiusPx * Math.sin(Math.PI / count);
-  const neighbourLimit =
-    chord > lineHeightPx
-      ? Math.sqrt(chord * chord - lineHeightPx * lineHeightPx) - LABEL_GUTTER_PX
-      : 0;
-
-  return Math.max(0, Math.min(rimLimit, neighbourLimit));
+  const pts = [`${R.toFixed(2)}px ${R.toFixed(2)}px`];
+  for (let a = start; a < end; a += ARC_SAMPLE_DEG) pts.push(at(a));
+  pts.push(at(end));
+  return `polygon(${pts.join(", ")})`;
 }
-
-/**
- * How wide a label may be before it leaves the visible frame.
- *
- * The disc is oversized and deliberately breaks one edge of its container — that
- * is the signature motif — but item 5's gate is "no clipped label", so the disc
- * running past the frame must not take a name with it. This bounds a label by
- * the frame the same way labelMaxWidthPx bounds it by the disc; the caller takes
- * whichever is smaller.
- *
- * `discCenterXPx` is the disc's centre measured in frame coordinates, so it is
- * usually larger than half the frame width.
- */
-export function labelFrameWidthPx(
-  centerDeg: number,
-  radiusPx: number,
-  discCenterXPx: number,
-  frameWidthPx: number,
-  padPx = FRAME_PAD_PX
-): number {
-  const x = discCenterXPx + radiusPx * Math.cos((centerDeg * Math.PI) / 180);
-  const room = Math.min(x - padPx, frameWidthPx - padPx - x);
-  return Math.max(0, 2 * room);
-}
-
 
 /**
  * A cubic-bezier easing function, matching the CSS timing function of the same

@@ -183,16 +183,6 @@ export default function GuestWheel() {
                 minWidth: "180px",
               }}
             >
-              {!isSpinning && (
-                <span
-                  className="absolute inset-0 rounded-full"
-                  style={{
-                    background: "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)",
-                    backgroundSize: "200% 100%",
-                    animation: "shimmer 3s linear infinite",
-                  }}
-                />
-              )}
               <span className="relative">{isSpinning ? "SPINNING..." : "SPIN"}</span>
             </button>
 
