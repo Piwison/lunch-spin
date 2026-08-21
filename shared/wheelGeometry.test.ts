@@ -22,7 +22,14 @@ import {
   wedgeClipPolygon,
 } from "./wheelGeometry";
 
-const POINTER = 180; // resting pointer sits on the left of the disc
+// The pointer sits on the TOP rim (0° is 3 o'clock, so top is 270°). It moved
+// there from the left rim when the zoom camera stopped rotating the disc: with
+// the pointer already at the top, rest and zoom frame the same thing and the
+// camera only has to scale. The landing maths is parameterised by the angle, so
+// the suite pins BOTH — the old left-rim value included, because nothing in the
+// geometry should ever depend on where the pointer happens to be.
+const POINTER = 270;
+const POINTER_ANGLES = [270, 180, 0, 90, 37.5];
 
 describe("timeline", () => {
   it("sums to the 3.62s the spec quotes, which only works if recede and unroll overlap", () => {
@@ -162,15 +169,31 @@ describe("visibleLabels", () => {
 describe("landingRotationDeg", () => {
   const counts = [2, 3, 5, 8, 12, 17];
 
-  it("lands the chosen pane centred on the pointer, from any start, every time", () => {
-    for (const count of counts) {
-      for (let targetIndex = 0; targetIndex < count; targetIndex++) {
-        for (const fromDeg of [0, 37, 180, 359.4, -220, 1234.5]) {
-          const to = landingRotationDeg({ fromDeg, targetIndex, count, pointerDeg: POINTER });
-          const landed = normalizeDeg(paneCenterDeg(targetIndex, count) + to);
-          expect(Math.abs(signedAngleDeg(landed, POINTER))).toBeLessThan(1e-6);
+  it("lands the chosen pane centred on the pointer, from any start, at any pointer angle", () => {
+    for (const pointerDeg of POINTER_ANGLES) {
+      for (const count of counts) {
+        for (let targetIndex = 0; targetIndex < count; targetIndex++) {
+          for (const fromDeg of [0, 37, 180, 359.4, -220, 1234.5]) {
+            const to = landingRotationDeg({ fromDeg, targetIndex, count, pointerDeg });
+            const landed = normalizeDeg(paneCenterDeg(targetIndex, count) + to);
+            expect(Math.abs(signedAngleDeg(landed, pointerDeg))).toBeLessThan(1e-6);
+          }
         }
       }
+    }
+  });
+
+  it("keeps the winner sharp and the far side blurred wherever the pointer is", () => {
+    for (const pointerDeg of POINTER_ANGLES) {
+      // Seat pane 0 under the pointer, then ask what is drawn.
+      const rotation = landingRotationDeg({ fromDeg: 0, targetIndex: 0, count: 8, pointerDeg });
+      const seen = visibleLabels(8, rotation, pointerDeg);
+      const under = seen.find((l) => l.index === 0);
+      expect(under).toBeDefined();
+      expect(under!.blurPx).toBe(0);
+      expect(Math.abs(under!.distanceDeg)).toBeLessThan(1e-6);
+      // Never more than the four the spec allows on screen at once.
+      expect(seen.length).toBeLessThanOrEqual(4);
     }
   });
 

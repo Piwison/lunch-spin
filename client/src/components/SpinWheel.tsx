@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
   EASE_DECAY,
   EASE_EXIT,
@@ -55,8 +55,18 @@ interface SpinWheelProps {
   onPointerIndexChange?: (index: number) => void;
 }
 
-/** Resting pointer sits on the left rim, pointing in. 0° is 3 o'clock. */
-const POINTER_DEG = 180;
+/**
+ * The pointer sits on the TOP rim, pointing down into the disc. 0° is 3
+ * o'clock, so top is 270°.
+ *
+ * It used to sit on the left (180°) and the zoom camera rotated the whole disc
+ * 90° to bring it to top centre. That rotation was the reason the wheel looked
+ * like a different object once the spin started — the thing you were reading
+ * physically turned a quarter turn under you. With the pointer already at the
+ * top, the camera has nothing to rotate: it only scales, and the pane under the
+ * pointer is a fixed point that never moves.
+ */
+const POINTER_DEG = 270;
 
 /**
  * The resting disc sits fully on-screen: 92% of the frame width, centred.
@@ -96,8 +106,6 @@ const MIN_DECAY_MS = 1200;
 /** Zoomed disc diameter, as a multiple of the frame width (spec §4). */
 const ZOOM_DISC_TO_FRAME = 1.9;
 
-/** Label ring in the zoomed state: 250px on a 740px disc. */
-const ZOOM_LABEL_RATIO = 250 / 370;
 
 /** Where the pointer sits once the camera has pushed in — top centre. */
 const ZOOM_POINTER_Y = 44;
@@ -413,16 +421,20 @@ export default function SpinWheel({
    * column zooms against its own column (item 14) rather than the whole screen.
    */
   const zoomScale = discPx > 0 ? (frameW * ZOOM_DISC_TO_FRAME) / discPx : 1;
-  const contactX = centerX - discPx / 2;
-  const contactY = discPx / 2;
+  // The pointer contact: top centre of the disc, which is the one point on
+  // screen that must not move when the camera pushes in.
+  const contactX = centerX;
+  const contactY = 0;
+  const discLeft = centerX - discPx / 2;
   const active = zoomed && !reducedMotion;
   // The recede is applied outermost so it moves the whole camera back rather
   // than fighting the zoom's transform-origin at the pointer.
   const recede = receded && !reducedMotion ? "translateY(52px) scale(0.94) " : "";
+  // One transform: park the contact point at (frame centre, ZOOM_POINTER_Y) and
+  // scale about it. No rotation — see POINTER_DEG.
   const camera = active
-    ? `${recede}translate(${frameW / 2 - contactX}px, ${ZOOM_POINTER_Y - contactY}px) rotate(90deg) scale(${zoomScale})`
+    ? `${recede}translate(${frameW / 2 - contactX}px, ${ZOOM_POINTER_Y - contactY}px) scale(${zoomScale})`
     : recede || "none";
-  const zoomLabelRadius = (discPx / 2) * ZOOM_LABEL_RATIO;
 
   /**
    * Whether the wheel is moving, and therefore whether its layers are worth
@@ -530,10 +542,12 @@ export default function SpinWheel({
             style={{
               width: discPx,
               height: discPx,
-              left: contactX,
+              left: discLeft,
               ["--rot" as string]: "0deg",
               transform: camera,
-              transformOrigin: "0% 50%",
+              // The contact point in the disc's own coordinates: top centre.
+              // Scaling about it is what keeps the pane being read still.
+              transformOrigin: "50% 0%",
               filter: receded && !reducedMotion ? "blur(14px)" : "none",
               opacity: receded && !reducedMotion ? 0.5 : 1,
               transition:
@@ -580,9 +594,27 @@ export default function SpinWheel({
               style={{ ...promote, backgroundImage: "var(--wheel-highlight)" }}
             />
 
-            {/* Labels. Radial at rest, tangential in the zoom — and each one
-                clipped to its own wedge, which is what makes a name crossing a
-                pane boundary impossible by construction rather than by tuning. */}
+            {/* Labels.
+                Radial at rest AND in the zoom — the same box, the same size, the
+                same alignment, on the same ray. Nothing about a label is
+                re-laid-out when the camera moves; it grows because the disc
+                around it grows, which is the whole reason the zoomed wheel reads
+                as the wheel you were just looking at.
+
+                It used to add `rotate(90deg)` in the zoom, swinging every name
+                round to lie across its wedge, and swap font size, weight,
+                alignment and positioning scheme in the same frame. Eight
+                properties changing at once is not a transition, it is a cut, and
+                a name that was pointing outward suddenly lay sideways.
+
+                Three things still differ, and only three:
+                  · the wedge clip is released, so a full name can overflow the
+                    pane it belongs to — at rest that clip is what stops names
+                    crossing boundaries, and zoomed there are only four labels on
+                    screen so there is nothing to cross into;
+                  · index-only wheels relax their max-width, because the band was
+                    sized for "17" and now has to hold a restaurant;
+                  · index-only wheels crossfade the number out and the name in. */}
             {/* Promoted, like the other rotating layers. Dropping the promotion
                 while the camera is in was measured and is WORSE (46.3 vs 49.6
                 fps at 24 places) — the re-raster it avoids costs more than the
@@ -594,7 +626,57 @@ export default function SpinWheel({
                 // Flipped labels read back toward the hub, so their box hangs off
                 // the other side of the ray and is right-aligned.
                 const restTransform = `rotate(${ray.flipped ? ray.deg + 180 : ray.deg}deg)`;
-                const text = tier.indexOnly ? String(i + 1) : seg.label;
+                // The band is the label's max width at rest. Zoomed, an
+                // index-only wheel needs room for a name where a number stood —
+                // capped to the frame in local units so it can never be cut.
+                const bandWidth =
+                  active && tier.indexOnly
+                    ? Math.max(metrics.maxTextWidthPx, (frameW - 32) / zoomScale)
+                    : metrics.maxTextWidthPx;
+                /** One label span. Identical geometry for the number and the
+                 *  name, so a crossfade between them cannot shift anything. */
+                const labelStyle = (muted: boolean): CSSProperties => ({
+                  // The band IS the max-width: a long name ellipsises before the
+                  // wedge clip could ever bisect a glyph. Never rely on the clip
+                  // to end a line.
+                  [ray.flipped ? "right" : "left"]: metrics.bandStartPx,
+                  top: -tier.bandHeightPx * metrics.typeScale * 0.5,
+                  width: bandWidth,
+                  maxWidth: bandWidth,
+                  height: tier.bandHeightPx * metrics.typeScale,
+                  textAlign: tier.indexOnly && !active ? "center" : ray.flipped ? "right" : "left",
+                  fontSize: tier.fontPx * metrics.typeScale,
+                  lineHeight: `${tier.lineHeightPx * metrics.typeScale}px`,
+                  // 500, not 700. Chinese strokes are dense enough that bold at
+                  // 12px closes the counters and the name turns into a blob —
+                  // and these labels sit on translucent glass, the hardest
+                  // contrast case in the app, where a blob is unreadable.
+                  fontWeight: 500,
+                  // Positive tracking, not the Latin display's negative: on an
+                  // arc, adjacent CJK glyphs otherwise touch and the strokes run
+                  // together.
+                  letterSpacing: "0.02em",
+                  color: muted ? "var(--body-warm)" : "var(--ink-warm)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  transition: "width var(--dur-zoom) var(--ease-zoom), opacity var(--dur-zoom) var(--ease-zoom)",
+                  // Wrap first, truncate last: two lines where the wedge affords
+                  // them, one where it does not.
+                  //
+                  // One-line tiers use nowrap rather than a 1-line clamp. CJK
+                  // breaks between any two characters, and the clamp let a line
+                  // break land on a punctuation mark — a name ending in a lone
+                  // 《 on its own. nowrap has no break opportunities to get wrong.
+                  ...(tier.lines > 1
+                    ? {
+                        display: "-webkit-box",
+                        WebkitBoxOrient: "vertical" as const,
+                        WebkitLineClamp: tier.lines,
+                        textWrap: "balance" as const,
+                        wordBreak: "break-word" as const,
+                      }
+                    : { whiteSpace: "nowrap" as const }),
+                });
                 return (
                   <div
                     key={seg.id}
@@ -615,82 +697,31 @@ export default function SpinWheel({
                   >
                     <div
                       className="absolute left-1/2 top-1/2"
-                      style={{
-                        transform: active
-                          ? `rotate(${ray.deg}deg) translateX(${zoomLabelRadius}px) rotate(90deg)`
-                          : restTransform,
-                        transition: `transform var(--dur-zoom) var(--ease-zoom)`,
-                      }}
+                      style={{ transform: restTransform }}
                     >
+                      {/* The name. On a labelled wheel this is the only span and
+                          it is always visible; on an index-only wheel it fades
+                          in as the camera arrives. */}
                       <span
                         className="block absolute"
-                        style={
-                          active
-                            ? {
-                                // Zoomed type is 28px on screen; the camera scale
-                                // gets it there, so the local size barely moves.
-                                // Bounded to the frame in local units, since the
-                                // name under the pointer must never be cut.
-                                transform: "translate(-50%, -50%)",
-                                maxWidth: (frameW - 32) / zoomScale,
-                                fontSize: 28 / zoomScale,
-                                fontWeight: 700,
-                                letterSpacing: "-0.02em",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                textAlign: "center",
-                                color: "var(--foreground)",
-                              }
-                            : {
-                                // The band IS the max-width: a long name
-                                // ellipsises before the wedge clip could ever
-                                // bisect a glyph. Never rely on the clip to end
-                                // a line.
-                                [ray.flipped ? "right" : "left"]: metrics.bandStartPx,
-                                top: -tier.bandHeightPx * metrics.typeScale * 0.5,
-                                width: metrics.maxTextWidthPx,
-                                maxWidth: metrics.maxTextWidthPx,
-                                height: tier.bandHeightPx * metrics.typeScale,
-                                textAlign: tier.indexOnly ? "center" : ray.flipped ? "right" : "left",
-                                fontSize: tier.fontPx * metrics.typeScale,
-                                lineHeight: `${tier.lineHeightPx * metrics.typeScale}px`,
-                                // 500, not 700. Chinese strokes are dense enough
-                                // that bold at 12px closes the counters and the
-                                // name turns into a blob — and these labels sit
-                                // on translucent glass, the hardest contrast
-                                // case in the app, where a blob is unreadable.
-                                fontWeight: 500,
-                                // Positive tracking, not the Latin display's
-                                // negative: on an arc, adjacent CJK glyphs
-                                // otherwise touch and the strokes run together.
-                                letterSpacing: "0.02em",
-                                color: tier.muted ? "var(--body-warm)" : "var(--ink-warm)",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                // Wrap first, truncate last: two lines where the
-                                // wedge affords them, one where it does not.
-                                //
-                                // One-line tiers use nowrap rather than a
-                                // 1-line clamp. CJK breaks between any two
-                                // characters, and the clamp let a line break
-                                // land on a punctuation mark — a name ending in
-                                // a lone 《 on its own. nowrap has no break
-                                // opportunities to get wrong.
-                                ...(tier.lines > 1
-                                  ? {
-                                      display: "-webkit-box",
-                                      WebkitBoxOrient: "vertical" as const,
-                                      WebkitLineClamp: tier.lines,
-                                      textWrap: "balance" as const,
-                                      wordBreak: "break-word" as const,
-                                    }
-                                  : { whiteSpace: "nowrap" as const }),
-                              }
-                        }
+                        style={{
+                          ...labelStyle(tier.muted && !active),
+                          opacity: tier.indexOnly && !active ? 0 : 1,
+                        }}
                       >
-                        {active ? seg.label : text}
+                        {seg.label}
                       </span>
+                      {/* The index, on 25+ wheels only. Same box, so the swap is
+                          a dissolve rather than a move. */}
+                      {tier.indexOnly && (
+                        <span
+                          aria-hidden="true"
+                          className="block absolute"
+                          style={{ ...labelStyle(true), opacity: active ? 0 : 1 }}
+                        >
+                          {i + 1}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -743,25 +774,27 @@ export default function SpinWheel({
             className="absolute z-20"
             style={{
               opacity: receded ? 0 : 1,
-              // 30x32, apex right, BITING INTO the rim rather than floating
-              // outside it — that overlap is what frees the disc to use the full
-              // frame width instead of reserving a gutter for the pointer.
-              left: active ? frameW / 2 : contactX - 9 * metrics.scale,
-              top: active ? ZOOM_POINTER_Y : contactY,
-              transform: active ? "translate(-50%, -50%) rotate(90deg)" : "translateY(-50%)",
+              // 32x30, apex DOWN, biting into the top rim rather than floating
+              // above it — that overlap is what frees the disc to use the full
+              // frame width instead of reserving a gutter for the pointer. It
+              // does not move between rest and zoom on the x axis at all; only
+              // the y slides down to the zoomed reading line.
+              left: contactX,
+              top: active ? ZOOM_POINTER_Y : contactY + 9 * metrics.scale,
+              transform: "translate(-50%, -50%)",
               transition:
                 "left var(--dur-zoom) var(--ease-zoom), top var(--dur-zoom) var(--ease-zoom), opacity var(--dur-recede) var(--ease-standard)",
             }}
           >
             <svg
-              width={30 * metrics.scale}
-              height={32 * metrics.scale}
-              viewBox="0 0 30 32"
+              width={32 * metrics.scale}
+              height={30 * metrics.scale}
+              viewBox="0 0 32 30"
               fill="none"
               aria-hidden="true"
             >
               <path
-                d="M29 16L3 3L3 29Z"
+                d="M16 29L3 3L29 3Z"
                 fill="var(--brand)"
                 stroke="var(--paper)"
                 strokeWidth="1.5"
