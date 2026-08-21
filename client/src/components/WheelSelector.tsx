@@ -504,8 +504,13 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
   return (
     <>
       {/* ── DESKTOP RAIL — floating Liquid Glass panel ── */}
+      {/* Ember item 14: the rail is an xl-and-up affordance. Between 768 and
+          1279 the tablet layout spends that width on the wheel column and the
+          380px tab column instead, and the switcher falls back to the pill +
+          sheet below — a 240px rail plus 380px of tab content leaves 148px for
+          the wheel at 768. */}
       <aside
-        className="hidden md:flex w-60 flex-col gap-1 m-2 p-2 glass-bar overflow-y-auto flex-shrink-0"
+        className="hidden xl:flex w-60 flex-col gap-1 m-2 p-2 glass-bar overflow-y-auto flex-shrink-0"
         style={{ borderRadius: "var(--radius-card)" }}
       >
         <div className="px-3 pt-2 pb-3">
@@ -527,7 +532,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
       </aside>
 
       {/* ── MOBILE — wheel-picker pill + bottom sheet ── */}
-      <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0 flex items-center gap-2">
+      <div className="xl:hidden px-3 pt-3 pb-1 flex-shrink-0 flex items-center gap-2">
         <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
           <SheetTrigger asChild>
             <button

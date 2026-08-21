@@ -13,6 +13,7 @@ import {
   restingWheelMetrics,
   wedgeClipPolygon,
   visibleLabels,
+  WHEEL_REF_FRAME_PX,
 } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
@@ -499,6 +500,12 @@ export default function SpinWheel({
       className="relative w-full"
       style={{
         height: discPx || undefined,
+        // The wheel is drawn at a reference frame of 390px and every number in
+        // the geometry scales off that. Below 390 it shrinks with the column;
+        // above 390 it holds, rather than inflating a 618px disc to fill a
+        // desktop column — the spec's "held at its drawn size, not scaled up".
+        maxWidth: WHEEL_REF_FRAME_PX,
+        marginInline: "auto",
         // Clip only while the camera is in. At rest the disc breaks the frame by
         // about 30px, which the page column clips horizontally — and clipping
         // here instead would cut the disc's own drop shadow square, sitting the

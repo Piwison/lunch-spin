@@ -627,6 +627,18 @@ export default function WheelApp() {
   // The camera is in from the first frame of the spin until the result clears.
   // Reduced motion never pushes in, so the chrome never recedes either.
   const cameraIn = (isSpinning || showResult) && !prefersReducedMotion;
+  /** Everything except the wheel recedes while the camera is pushed in. The
+   *  header has carried this since item 7; on the tablet layout the supporting
+   *  column sits *beside* the wheel, where a 1.9x disc overlaps it, so it
+   *  recedes on the same curve rather than staying sharp under the zoom. */
+  const recedeStyle: React.CSSProperties = {
+    transform: cameraIn ? "translateY(-12px)" : "none",
+    filter: cameraIn ? "blur(1.6px)" : "none",
+    opacity: cameraIn ? 0.5 : 1,
+    transition:
+      "transform var(--dur-windup) var(--ease-standard), filter var(--dur-windup) var(--ease-standard), opacity var(--dur-windup) var(--ease-standard)",
+    pointerEvents: cameraIn ? "none" : undefined,
+  };
 
   const pointerTier = labelTier(Math.max(wheelSegments.length, 1));
   const spinDisabled = isSpinning || createSpin.isPending || wheelSegments.length === 0;
@@ -820,7 +832,7 @@ export default function WheelApp() {
         }
       />
 
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-col xl:flex-row flex-1 overflow-hidden">
         {/* ── WHEEL SWITCHER (desktop rail · mobile pill+sheet) ── */}
         <WheelSelector
           selectedWheelId={selectedWheelId}
@@ -845,7 +857,7 @@ export default function WheelApp() {
               Ember: one glass bar, solid persimmon on the active segment (no
               gradient, no glow — persimmon is the only saturated colour and it
               is flat), and 56px of height like every other control. */}
-          <div className="hidden md:flex px-4 py-2.5 flex-shrink-0">
+          <div className="hidden md:flex px-4 py-2.5 flex-shrink-0 md:justify-center xl:justify-start">
             <div
               className="inline-flex items-center gap-1 p-1.5 glass-bar"
               style={{ borderRadius: "var(--radius-control)" }}
@@ -949,7 +961,14 @@ export default function WheelApp() {
 
                 {/* ══ TAB 1: WHEEL ══ */}
                 {activeTab === "wheel" && (
-                  <div className="flex flex-col items-center gap-4 px-4 py-4 pb-8 max-w-2xl mx-auto">
+                  /* Ember item 14 — tablet (768–1279) is two columns: the wheel
+                     holds the left column at its drawn size, everything that
+                     supports it (settings, team, round, filter) stacks in a
+                     fixed column on the right. Below 768 and at 1280+ this is
+                     the single centred column it has always been, and the
+                     children keep their DOM order either way, so the wheel is
+                     mounted exactly once at every width. */
+                  <div className="flex flex-col items-center gap-4 px-4 py-4 pb-8 max-w-2xl mx-auto md:grid md:max-w-4xl md:items-start md:gap-6 md:grid-cols-[minmax(0,1fr)_340px] lg:grid-cols-[minmax(0,1fr)_380px] xl:flex xl:max-w-2xl xl:items-center">
 
                     {/* Settings shortcut — same dialog as the sidebar's kebab menu
                         (registerSettingsOpener), just faster once you're already
@@ -959,7 +978,7 @@ export default function WheelApp() {
                         row above Team/Round, so the gear lives in the
                         wheel-picker pill row instead (WheelSelector.tsx). */}
                     {selectedWheelId && (
-                      <div className="hidden md:flex w-full justify-end -mb-2">
+                      <div className="hidden md:flex w-full justify-end -mb-2 md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <button
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
                           aria-label="Wheel settings"
@@ -973,7 +992,7 @@ export default function WheelApp() {
 
                     {/* Team roster */}
                     {isShared && wheelData && (
-                      <div className="w-full">
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <WheelMembers
                           ownerId={wheelData.ownerId}
                           owner={wheelData.owner}
@@ -987,7 +1006,7 @@ export default function WheelApp() {
 
                     {/* Round panel (shared wheels) */}
                     {isShared && (
-                      <div className="w-full">
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <RoundPanel
                           restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
                           tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color }))}
@@ -1003,6 +1022,7 @@ export default function WheelApp() {
                     )}
 
                     {/* ── FILTER BAR (compact, collapsible) — tags + distance ── */}
+                    <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                     <FilterBar
                       open={showFilters}
                       onOpenChange={setShowFilters}
@@ -1020,6 +1040,7 @@ export default function WheelApp() {
                       totalCount={restaurants?.length ?? 0}
                       emptyMessage="No restaurants match your filters. Try removing some."
                     />
+                    </div>
 
                     {/* ── WHEEL + SPIN CTA ── */}
                     {restaurantsLoading ? (
@@ -1030,7 +1051,7 @@ export default function WheelApp() {
                          reading as a spinner and just looks like a broken wheel
                          that failed to draw its labels. The pill below stands in
                          for the SPIN button. */
-                      <div className="flex flex-col items-center gap-8 py-16 w-full">
+                      <div className="flex flex-col items-center gap-8 py-16 w-full md:col-start-1 md:row-start-1 md:row-span-5 xl:col-auto xl:row-auto">
                         <BrandLoader label="Warming up your wheel" size={72} />
                         {/* Token background, not bg-white/5: on the light theme a
                             5%-white pill over a near-white page is invisible, so
@@ -1050,7 +1071,7 @@ export default function WheelApp() {
                         </button>
                       </div>
                     ) : (
-                      <div className="w-full flex flex-col items-center gap-5">
+                      <div className="w-full flex flex-col items-center gap-5 md:col-start-1 md:row-start-1 md:row-span-5 xl:col-auto xl:row-auto">
                         {/* Screen title, as the design leads with. The app bar
                             names the product; this names what you are looking
                             at, which is the thing the user actually needs. */}
