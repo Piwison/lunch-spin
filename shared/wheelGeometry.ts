@@ -231,6 +231,21 @@ export interface LabelTier {
 }
 
 /**
+ * The last place count that still carries NAMES on the disc.
+ *
+ * §4 put this at 16, reasoning that no type size past sixteen panes is both
+ * legible and contained. That was reasoned about long Latin names. A CJK name is
+ * few characters but each is full-width, so the binding number is characters,
+ * not letters — and at 17-24 the band still holds about seven of them, which is
+ * what the shipped app displays legibly on a 21-place wheel today.
+ *
+ * Past this the disc carries indices and the zoom reveals the names: the camera
+ * puts one pane's name on screen at headline size, so nothing is lost, it just
+ * arrives when the wheel is actually being read.
+ */
+const NAME_CEILING = 24;
+
+/**
  * Type size is fixed per tier and never interpolated between them.
  *
  * A 45° wedge has far more tangential room than one line of type uses, which is
@@ -243,6 +258,9 @@ export function labelTier(count: number): LabelTier {
   }
   if (count <= 16) {
     return { fontPx: 13, lineHeightPx: 22, bandHeightPx: 22, lines: 1, indexOnly: false, bandStartRefPx: 58, muted: false };
+  }
+  if (count <= NAME_CEILING) {
+    return { fontPx: 12, lineHeightPx: 16, bandHeightPx: 16, lines: 1, indexOnly: false, bandStartRefPx: 68, muted: false };
   }
   return { fontPx: 11, lineHeightPx: 15, bandHeightPx: 15, lines: 1, indexOnly: true, bandStartRefPx: 68, muted: true };
 }

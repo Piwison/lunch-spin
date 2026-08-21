@@ -651,11 +651,22 @@ export default function SpinWheel({
                                 textOverflow: "ellipsis",
                                 // Wrap first, truncate last: two lines where the
                                 // wedge affords them, one where it does not.
-                                display: "-webkit-box",
-                                WebkitBoxOrient: "vertical",
-                                WebkitLineClamp: tier.lines,
-                                textWrap: tier.lines > 1 ? "balance" : undefined,
-                                wordBreak: tier.lines > 1 ? "break-word" : "normal",
+                                //
+                                // One-line tiers use nowrap rather than a
+                                // 1-line clamp. CJK breaks between any two
+                                // characters, and the clamp let a line break
+                                // land on a punctuation mark — a name ending in
+                                // a lone 《 on its own. nowrap has no break
+                                // opportunities to get wrong.
+                                ...(tier.lines > 1
+                                  ? {
+                                      display: "-webkit-box",
+                                      WebkitBoxOrient: "vertical" as const,
+                                      WebkitLineClamp: tier.lines,
+                                      textWrap: "balance" as const,
+                                      wordBreak: "break-word" as const,
+                                    }
+                                  : { whiteSpace: "nowrap" as const }),
                               }
                         }
                       >

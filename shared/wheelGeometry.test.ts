@@ -248,7 +248,16 @@ describe("label tiers", () => {
       expect(t.bandHeightPx).toBe(22);
       expect(t.indexOnly).toBe(false);
     }
-    for (const n of [17, 24, 40]) {
+    // 17-24 still carries NAMES. The 16-place ceiling was reasoned about long
+    // Latin names; CJK names are few characters but full-width, and the shipped
+    // app displays 21 of them legibly. Names hold to 24, indices start after.
+    for (const n of [17, 21, 24]) {
+      const t = labelTier(n);
+      expect(t.lines).toBe(1);
+      expect(t.fontPx).toBe(12);
+      expect(t.indexOnly).toBe(false);
+    }
+    for (const n of [25, 32, 40]) {
       const t = labelTier(n);
       expect(t.fontPx).toBe(11);
       expect(t.bandHeightPx).toBe(15);
@@ -256,9 +265,18 @@ describe("label tiers", () => {
     }
   });
 
+  it("fits about seven CJK characters on a name label at 17-24 places", () => {
+    // The real test of the ceiling: a full-width character is as wide as the
+    // font size, so this is a direct character count.
+    for (const n of [17, 21, 24]) {
+      const m = restingWheelMetrics(390, n);
+      expect(m.maxTextWidthPx / m.tier.fontPx).toBeGreaterThanOrEqual(7);
+    }
+  });
+
   it("never interpolates type size — it is fixed per tier", () => {
-    const sizes = new Set([2, 3, 8, 9, 12, 16, 17, 24, 40].map((n) => labelTier(n).fontPx));
-    expect([...sizes].sort((a, b) => b - a)).toEqual([15, 13, 11]);
+    const sizes = new Set([2, 3, 8, 9, 12, 16, 17, 24, 25, 40].map((n) => labelTier(n).fontPx));
+    expect([...sizes].sort((a, b) => b - a)).toEqual([15, 13, 12, 11]);
   });
 });
 
@@ -287,7 +305,9 @@ describe("bandStartFits", () => {
   it("raises the band start rather than shrinking the type when a wedge is too tight", () => {
     // Past ~28 places even the 15px index band no longer clears r0 = 68, and the
     // spec's instruction is to raise r0, never to shrink the type.
-    const wide = restingWheelMetrics(390, 24);
+    // Both inside the index tier, so any difference is the band start moving,
+    // not the tier changing underneath the comparison.
+    const wide = restingWheelMetrics(390, 25);
     const tight = restingWheelMetrics(390, 40);
     expect(tight.tier.fontPx).toBe(wide.tier.fontPx);
     expect(tight.bandStartPx).toBeGreaterThan(wide.bandStartPx);
