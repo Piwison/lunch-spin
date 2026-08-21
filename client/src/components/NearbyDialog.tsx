@@ -160,10 +160,10 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
         onOpenChange(o);
       }}
     >
-      <DialogContent className="glass border-border/50 max-w-md max-h-[88vh] overflow-y-auto">
+      <DialogContent className="glass-sheet max-w-md max-h-[88vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2" style={{ fontFamily: "var(--font-display)" }}>
-            <Navigation size={16} style={{ color: "var(--brand)" }} /> ADD NEARBY
+          <DialogTitle className="type-section flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
+            <Navigation size={18} style={{ color: "var(--brand)" }} /> Add nearby
           </DialogTitle>
         </DialogHeader>
 
@@ -187,8 +187,8 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             <Button
               onClick={() => (coords ? runSearch(coords, radius) : locateAndSearch())}
               disabled={locating || search.isPending}
-              className="flex-shrink-0 transition-all active:scale-95"
-              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+              className="flex-shrink-0 transition-colors active:scale-[var(--press-scale)]"
+              style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
             >
               {locating || search.isPending ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -203,8 +203,9 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
           {/* Geolocation error */}
           {geoError && (
             <div
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs"
+              className="flex items-center gap-2.5 px-3.5 py-2.5 type-meta"
               style={{
+                borderRadius: "var(--radius-chip)",
                 background: "oklch(from var(--destructive) l c h / 0.10)",
                 border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
                 color: "var(--destructive)",
@@ -219,8 +220,9 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
               spends another call to be told the same thing. */}
           {alert && (
             <div
-              className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-xs"
+              className="flex items-start gap-2.5 px-3.5 py-2.5 type-meta"
               style={{
+                borderRadius: "var(--radius-chip)",
                 background: `oklch(from var(${alert.quota ? "--brand" : "--destructive"}) l c h / 0.10)`,
                 border: `1px solid oklch(from var(${alert.quota ? "--brand" : "--destructive"}) l c h / 0.25)`,
                 color: `var(${alert.quota ? "--brand" : "--destructive"})`,
@@ -238,16 +240,16 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
           {!coords && !locating && !geoError && !search.isPending && (
             <button
               onClick={locateAndSearch}
-              className="flex flex-col items-center justify-center gap-2 py-8 rounded-2xl text-center transition-all hover:bg-white/3"
-              style={{ background: "var(--card)", border: "1px dashed var(--border)" }}
+              className="flex flex-col items-center justify-center gap-2 py-8 text-center transition-colors hover:bg-white/3"
+              style={{ borderRadius: "var(--radius-card)", background: "var(--paper)", border: "1px dashed var(--border)" }}
             >
               <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ background: "oklch(from var(--brand) l c h / 0.12)" }}
+                className="w-12 h-12 flex items-center justify-center"
+                style={{ borderRadius: "var(--radius-chip)", background: "oklch(from var(--brand) l c h / 0.12)" }}
               >
                 <MapPin size={22} style={{ color: "var(--brand)" }} />
               </div>
-              <span className="text-sm font-semibold" style={{ fontFamily: "var(--font-display)" }}>USE MY LOCATION</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)" }}>Use my location</span>
               <span className="text-xs text-muted-foreground px-6">We only use your location for this search — it's never stored.</span>
             </button>
           )}
@@ -256,7 +258,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
           {search.isPending && (
             <div className="flex flex-col gap-2">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-[68px] rounded-2xl animate-pulse" style={{ background: "var(--card)", animationDelay: `${i * 80}ms` }} />
+                <div key={i} className="h-[68px] animate-pulse" style={{ borderRadius: "var(--radius-card)", background: "var(--muted)", animationDelay: `${i * 80}ms` }} />
               ))}
             </div>
           )}
@@ -271,8 +273,8 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
               )}
               {search.data.lowDensity && (
                 <div
-                  className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs"
-                  style={{ background: "oklch(from var(--info) l c h / 0.08)", border: "1px solid oklch(from var(--info) l c h / 0.20)", color: "var(--info)" }}
+                  className="flex items-center justify-between gap-2 px-3.5 py-2.5 type-meta"
+                  style={{ borderRadius: "var(--radius-chip)", background: "oklch(from var(--info) l c h / 0.08)", border: "1px solid oklch(from var(--info) l c h / 0.20)", color: "var(--info)" }}
                 >
                   <span className="flex items-center gap-2"><AlertTriangle size={13} /> Not many spots within reach.</span>
                   {radius < 5000 && (
@@ -288,8 +290,8 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
           {/* Empty result */}
           {search.data && results.length === 0 && (
             <div
-              className="flex flex-col items-center gap-2 py-8 rounded-2xl text-center text-sm text-muted-foreground"
-              style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+              className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground"
+              style={{ borderRadius: "var(--radius-card)", background: "var(--paper)", border: "1px solid var(--border)" }}
             >
               No restaurants found nearby.
               {radius < 5000 && (
@@ -310,9 +312,13 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                     onClick={() => !isAdded && toggle(p.placeId)}
                     disabled={isAdded}
                     aria-pressed={on}
-                    className="flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left transition-all active:scale-[0.99] disabled:active:scale-100"
+                    className="flex items-center gap-3 px-4 text-left transition-colors active:scale-[var(--press-scale)] disabled:active:scale-100"
                     style={{
-                      background: on ? "oklch(from var(--brand) l c h / 0.08)" : "var(--card)",
+                      minHeight: 56,
+                      paddingTop: 12,
+                      paddingBottom: 12,
+                      borderRadius: "var(--radius-card)",
+                      background: on ? "oklch(from var(--brand) l c h / 0.08)" : "var(--paper)",
                       border: on
                         ? "1px solid oklch(from var(--brand) l c h / 0.45)"
                         : "1px solid var(--border)",
@@ -326,7 +332,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                         isAdded
                           ? { background: "oklch(from var(--ok) l c h / 0.2)", color: "var(--ok)" }
                           : on
-                            ? { background: "var(--brand)", color: "white" }
+                            ? { background: "var(--brand)", color: "var(--on-accent)" }
                             : { border: "1.5px solid var(--border)" }
                       }
                     >
@@ -364,10 +370,15 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             <Button
               onClick={handleAddSelected}
               disabled={selected.size === 0 || addNearby.isPending}
-              className="w-full transition-all active:scale-[0.98]"
+              className="w-full transition-colors active:scale-[var(--press-scale)]"
               style={{
-                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                color: "white",
+                minHeight: 56,
+                borderRadius: "var(--radius-control)",
+                background: "var(--brand)",
+                color: "var(--on-accent)",
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
               }}
             >
               {addNearby.isPending ? (

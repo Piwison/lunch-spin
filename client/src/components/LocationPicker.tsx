@@ -106,11 +106,15 @@ export default function LocationPicker({
         type="button"
         onClick={useMyLocation}
         disabled={busy}
-        className="w-full gap-2 transition-all active:scale-[0.98]"
+        className="w-full gap-2 transition-colors active:scale-[var(--press-scale)]"
         style={{
-          background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-          color: "white",
-          fontFamily: "var(--font-display)",
+          minHeight: 56,
+          borderRadius: "var(--radius-control)",
+          background: "var(--brand)",
+          color: "var(--on-accent)",
+          fontSize: 16,
+          fontWeight: 500,
+          letterSpacing: "0.05em",
         }}
       >
         {locating ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
@@ -125,8 +129,9 @@ export default function LocationPicker({
 
       {geoError && (
         <div
-          className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
+          className="flex items-start gap-2 px-3.5 py-2.5 type-meta"
           style={{
+            borderRadius: "var(--radius-chip)",
             background: "oklch(from var(--destructive) l c h / 0.10)",
             border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
             color: "var(--destructive)",
@@ -139,8 +144,9 @@ export default function LocationPicker({
 
       {alert && (
         <div
-          className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
+          className="flex items-start gap-2 px-3.5 py-2.5 type-meta"
           style={{
+            borderRadius: "var(--radius-chip)",
             background: `oklch(from var(${alert.quota ? "--brand" : "--destructive"}) l c h / 0.10)`,
             border: `1px solid oklch(from var(${alert.quota ? "--brand" : "--destructive"}) l c h / 0.25)`,
             color: `var(${alert.quota ? "--brand" : "--destructive"})`,
@@ -155,8 +161,8 @@ export default function LocationPicker({
         <button
           type="button"
           onClick={() => setShowManual(true)}
-          className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-1"
-          style={{ fontFamily: "var(--font-display)" }}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          style={{ minHeight: 44, fontSize: 14, fontWeight: 500 }}
         >
           Or set it another way
         </button>
@@ -190,7 +196,7 @@ export default function LocationPicker({
                 onClick={runSearch}
                 disabled={!query.trim() || busy}
                 className="flex-shrink-0"
-                style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+                style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)", borderRadius: "var(--radius-chip)" }}
               >
                 {searchPlaces.isPending ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
               </Button>
@@ -205,15 +211,16 @@ export default function LocationPicker({
 
           {results.length > 0 && (
             <div
-              className="flex flex-col gap-1 max-h-52 overflow-y-auto rounded-xl p-1"
-              style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+              className="flex flex-col gap-1 max-h-52 overflow-y-auto p-1"
+              style={{ borderRadius: "var(--radius-control)", background: "var(--paper)", border: "1px solid var(--border)" }}
             >
               {results.map((p) => (
                 <button
                   key={p.placeId}
                   type="button"
                   onClick={() => onPicked({ lat: p.lat, lng: p.lng, label: p.name })}
-                  className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors hover:bg-white/5"
+                  className="flex items-center gap-2.5 px-3 rounded-xl text-left transition-colors hover:bg-white/5"
+                  style={{ minHeight: 56 }}
                 >
                   <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand)" }} />
                   <span className="flex-1 min-w-0">
@@ -246,7 +253,7 @@ export default function LocationPicker({
                 onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim() }); }}
                 disabled={!looksLikeMapLink(link) || busy}
                 className="flex-shrink-0"
-                style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+                style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)", borderRadius: "var(--radius-chip)" }}
               >
                 {resolveLink.isPending
                   ? <Loader2 size={15} className="animate-spin" />
