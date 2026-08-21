@@ -59,8 +59,8 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           onClick={() => collapsible && setOpen((o) => !o)}
           className={`flex items-center gap-1.5 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         >
-          <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-            THIS ROUND
+          <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
+            This round
           </span>
           <span className="text-[10px] font-normal text-muted-foreground/70">· {restaurants.length}</span>
           {hasMarks && (
@@ -102,7 +102,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 style={{
                   background: avoided ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
                   border: `1px solid ${avoided ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
-                  color: avoided ? "var(--brand)" : "var(--muted-foreground)",
+                  color: avoided ? "var(--brand-text)" : "var(--muted-foreground)",
                   textDecoration: avoided ? "line-through" : "none",
                 }}
               >
@@ -158,7 +158,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 style={{
                   background: iVetoed ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
                   border: `1px solid ${iVetoed ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
-                  color: iVetoed ? "var(--brand)" : "var(--muted-foreground)",
+                  color: iVetoed ? "var(--brand-text)" : "var(--muted-foreground)",
                 }}
               >
                 <Ban size={12} />

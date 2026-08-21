@@ -65,38 +65,39 @@ export default function FilterBar({
   };
 
   return (
+    // Ember glass: the recipe comes from index.css, so this no longer hand-rolls
+    // its own backdrop-filter or its own radius.
     <div
-      className="w-full rounded-xl overflow-hidden transition-all duration-300"
+      className="glass-card w-full overflow-hidden"
       style={{
-        background: "oklch(from var(--card) l c h / 0.6)",
-        border: `1px solid ${activeCount > 0 ? "oklch(from var(--brand-2) l c h / 0.4)" : "var(--border)"}`,
-        backdropFilter: "blur(12px)",
+        borderColor: activeCount > 0 ? "oklch(from var(--brand) l c h / 0.45)" : undefined,
       }}
     >
       <button
         onClick={() => onOpenChange(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/3"
+        className="w-full flex items-center justify-between px-4 text-left transition-colors hover:bg-white/3"
+        style={{ minHeight: 56 }}
       >
         <div className="flex items-center gap-2.5">
-          <SlidersHorizontal size={14} style={{ color: activeCount > 0 ? "var(--brand)" : "var(--muted-foreground)" }} />
+          <SlidersHorizontal size={16} style={{ color: activeCount > 0 ? "var(--brand)" : "var(--body-warm)" }} />
           <span
-            className="text-xs font-semibold tracking-widest"
-            style={{ fontFamily: "var(--font-display)", color: activeCount > 0 ? "var(--foreground)" : "var(--muted-foreground)" }}
+            className="type-eyebrow"
+            style={{ color: activeCount > 0 ? "var(--ink-warm)" : "var(--body-warm)" }}
           >
-            FILTER
+            Filter
           </span>
           {activeCount > 0 && (
             <span
-              className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+              className="px-2 py-0.5 text-[11px] font-semibold"
+              style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
             >
-              {activeCount} active
+              {activeCount}
             </span>
           )}
         </div>
         <div className="flex items-center gap-3">
           {activeCount > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <span className="tabular-nums" style={{ fontSize: 13, color: "var(--body-warm)" }}>
               {matchCount}/{totalCount}
             </span>
           )}
@@ -113,7 +114,7 @@ export default function FilterBar({
           {tagGroups.map(({ label, items }) =>
             items.length > 0 ? (
               <div key={label} className="mt-3">
-                <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>{label}</p>
+                <p className="type-eyebrow mb-2" style={{ color: "var(--body-warm)" }}>{label}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {items.map((tag) => {
                     const isActive = selectedTagIds.includes(tag.id);
@@ -123,10 +124,10 @@ export default function FilterBar({
                         onClick={() => onToggleTag(tag.id)}
                         className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
                         style={{
-                          background: isActive ? tag.color + "25" : "var(--muted)",
-                          border: `1px solid ${isActive ? tag.color + "80" : "var(--border)"}`,
-                          color: isActive ? tag.color : "var(--muted-foreground)",
-                          boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
+                          background: isActive ? "var(--brand-solid)" : "var(--glass-chip-bg)",
+                          border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--glass-chip-border)"}`,
+                          color: isActive ? "var(--on-accent)" : "var(--body-warm)",
+                          borderRadius: "var(--radius-chip)",
                         }}
                       >
                         {tag.name}
@@ -141,11 +142,11 @@ export default function FilterBar({
           {distanceEnabled && (
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] tracking-widest text-muted-foreground flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
-                  <Footprints size={11} className="flex-shrink-0" /> DISTANCE
+                <p className="type-eyebrow flex items-center gap-1.5" style={{ color: "var(--body-warm)" }}>
+                  <Footprints size={12} className="flex-shrink-0" /> Distance
                 </p>
                 {distanceActive ? (
-                  <span className="text-xs font-medium" style={{ color: "var(--brand)" }}>
+                  <span className="text-xs font-medium" style={{ color: "var(--brand-text)" }}>
                     Within {maxWalkMinutes} min
                   </span>
                 ) : (
@@ -190,7 +191,7 @@ export default function FilterBar({
           style={{
             background: "oklch(from var(--destructive) l c h / 0.12)",
             border: "1px solid oklch(from var(--destructive) l c h / 0.35)",
-            color: "var(--brand)",
+            color: "var(--brand-text)",
           }}
         >
           <AlertTriangle size={13} className="flex-shrink-0" />

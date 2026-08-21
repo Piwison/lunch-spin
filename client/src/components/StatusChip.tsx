@@ -34,7 +34,7 @@ const CHIP_STYLES: Record<ChipVariant, { bg: string; border: string; color: stri
   loading: {
     bg: "oklch(from var(--brand) l c h / 0.08)",
     border: "oklch(from var(--brand) l c h / 0.25)",
-    color: "var(--brand)",
+    color: "var(--brand-text)",
     glow: "oklch(from var(--brand) l c h / 0.10)",
   },
 };

@@ -25,14 +25,16 @@ function initials(name: string | null, email: string | null): string {
   return source.slice(0, 2).toUpperCase();
 }
 
-function colorFor(id: number): string {
-  const colors = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9"];
-  return colors[id % colors.length]!;
-}
-
 /**
  * Roster for a shared wheel: shows who's in and who's the creator. The owner is
  * always listed first with a crown, even if they aren't in the members table.
+ *
+ * Ember: the old seven-hue palette gave every teammate a saturated identity
+ * colour, which fought the one rule the direction actually has — persimmon is
+ * the only saturated colour in the app. The hues were decorative anyway (each
+ * chip already carries the person's name in text), so the roster is now neutral
+ * glass, and persimmon is spent only on the two things that mean something:
+ * who is here right now, and who owns the wheel.
  */
 export default function WheelMembers({ ownerId, owner, members, currentUserId, presentUserIds = [], collapsible = false }: WheelMembersProps) {
   const [open, setOpen] = useState(false);
@@ -57,15 +59,12 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
         type="button"
         onClick={() => collapsible && setOpen((o) => !o)}
         className={`flex items-center justify-between gap-2 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
+        style={collapsible ? { minHeight: 56 } : undefined}
       >
-        <span className="text-xs font-semibold text-muted-foreground tracking-widest flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
-          <Users size={12} /> TEAM
-          <span className="text-[10px] font-normal text-muted-foreground/70">· {roster.length}</span>
-          {present.size > 0 && (
-            <span className="text-[10px] font-normal" style={{ color: "var(--ok)" }}>
-              · {present.size} here now
-            </span>
-          )}
+        <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
+          <Users size={12} /> Team
+          <span style={{ color: "var(--body-warm)" }}>· {roster.length}</span>
+          {present.size > 0 && <span style={{ color: "var(--ok)" }}>· {present.size} here now</span>}
         </span>
         {collapsible && (
           <ChevronDown
@@ -78,32 +77,31 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
       {(!collapsible || open) && (
       <div className="flex items-center gap-1.5 flex-wrap">
         {roster.map((m) => {
-          const color = colorFor(m.userId);
           const label = m.name?.trim() || m.email?.split("@")[0] || "Member";
           const isHere = present.has(m.userId);
           return (
             <div
               key={m.userId}
-              className="flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full"
-              style={{ background: color + "1f", border: `1px solid ${color}55`, opacity: isHere || present.size === 0 ? 1 : 0.5 }}
+              className="glass-chip flex items-center gap-2 pl-1.5 pr-3 py-1.5"
+              style={{
+                borderColor: isHere ? "oklch(from var(--brand) l c h / 0.45)" : undefined,
+                opacity: isHere || present.size === 0 ? 1 : 0.5,
+              }}
               title={`${m.isOwner ? `${label} · creator` : label}${isHere ? " · here now" : ""}`}
             >
               <span
-                className="relative w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                style={{ background: color + "33", color }}
+                className="relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+                style={{
+                  background: isHere ? "var(--brand-solid)" : "oklch(from var(--ink-warm) l c h / 0.08)",
+                  color: isHere ? "var(--on-accent)" : "var(--body-warm)",
+                }}
               >
                 {initials(m.name, m.email)}
-                {isHere && (
-                  <span
-                    className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full"
-                    style={{ background: "oklch(0.72 0.18 150)", boxShadow: "0 0 0 1.5px var(--card)" }}
-                  />
-                )}
               </span>
-              <span className="text-xs" style={{ color }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink-warm)" }}>
                 {m.userId === currentUserId ? "You" : label}
               </span>
-              {m.isOwner && <Crown size={11} style={{ color }} />}
+              {m.isOwner && <Crown size={12} style={{ color: "var(--brand-text)" }} />}
             </div>
           );
         })}

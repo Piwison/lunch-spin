@@ -24,7 +24,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
   const Title = (
     <div className="flex items-center gap-2">
       <Star size={16} style={{ fill: "var(--star)", color: "var(--star)" }} />
-      <h3 className="text-base font-bold" style={{ fontFamily: "var(--font-display)" }}>Team taste</h3>
+      <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Team taste</h3>
     </div>
   );
 
@@ -37,7 +37,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           Rate places (tap the ⋮ on a restaurant) and this fills in with what your team loves.
         </p>
         <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
-          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "linear-gradient(90deg, var(--brand-2), var(--brand))" }} />
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--brand)" }} />
         </div>
         <p className="text-[11px] text-muted-foreground">{data.totalRatings} of 5 ratings</p>
       </Card>
@@ -51,7 +51,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
       {/* Headline mood */}
       {data.overallAverage != null && (
         <div className="flex items-center gap-3">
-          <span className="text-3xl font-extrabold" style={{ fontFamily: "var(--font-display)" }}>
+          <span className="type-section tabular-nums" style={{ fontSize: 34, color: "var(--ink-warm)" }}>
             {data.overallAverage.toFixed(1)}
           </span>
           <div>
@@ -66,7 +66,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
       {/* Crowd favourites */}
       {data.topPlaces.length > 0 && (
         <div>
-          <div className="text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">Team favourites</div>
+          <div className="type-eyebrow mb-2" style={{ color: "var(--body-warm)" }}>Team favourites</div>
           <div className="space-y-1.5">
             {data.topPlaces.map((p) => (
               <div key={p.restaurantId} className="flex items-center justify-between gap-2">
@@ -83,7 +83,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
         <div className="space-y-3">
           {data.leans.length > 0 && (
             <div>
-              <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">
+              <div className="type-eyebrow flex items-center gap-1.5 mb-2" style={{ color: "var(--body-warm)" }}>
                 <TrendingUp size={13} style={{ color: "var(--ok)" }} /> Leans toward
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -95,7 +95,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           )}
           {data.cools.length > 0 && (
             <div>
-              <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-bold text-muted-foreground mb-2">
+              <div className="type-eyebrow flex items-center gap-1.5 mb-2" style={{ color: "var(--body-warm)" }}>
                 <TrendingDown size={13} style={{ color: "var(--muted-foreground)" }} /> Cools on
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -115,11 +115,14 @@ function CuisineChip({ cuisine, average, tone }: { cuisine: string; average: num
   const up = tone === "up";
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full"
+      className="inline-flex items-center gap-1 px-3 py-1"
       style={{
+        borderRadius: "var(--radius-chip)",
         background: up ? "color-mix(in oklch, var(--star) 15%, transparent)" : "var(--muted)",
-        color: up ? "var(--foreground)" : "var(--muted-foreground)",
+        color: up ? "var(--ink-warm)" : "var(--body-warm)",
         border: up ? "1px solid color-mix(in oklch, var(--star) 35%, transparent)" : "1px solid var(--border)",
+        fontSize: 13,
+        fontWeight: 500,
       }}
     >
       {cuisine}

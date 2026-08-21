@@ -25,7 +25,7 @@ interface RestaurantStatsProps {
 // color IS a restaurant's identity (wheel segment, list dot) — recycling
 // arbitrary hues by rank position here would contradict that language.
 const barColor = (idx: number) =>
-  idx === 0 ? "linear-gradient(90deg, var(--brand), var(--brand-2))" : "oklch(from var(--brand) l c h / 0.45)";
+  idx === 0 ? "var(--brand)" : "oklch(from var(--brand) l c h / 0.35)";
 
 /** "3d ago" / "today" / "never" from a whole-day count. */
 function lastPickedLabel(lastPickedAt: Date | null): string {
@@ -81,21 +81,21 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {/* Summary row */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4">
-          <div className="text-xs font-medium text-muted-foreground">Total spins</div>
-          <div className="text-2xl font-bold mt-1" style={{ color: "var(--brand)", fontFamily: "var(--font-display)" }}>{total}</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Total spins</div>
+          <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>{total}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs font-medium text-muted-foreground">Places tried</div>
-          <div className="text-2xl font-bold mt-1" style={{ fontFamily: "var(--font-display)" }}>
-            {placesTried}<span className="text-base text-muted-foreground font-normal">/{stats.length}</span>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Places tried</div>
+          <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>
+            {placesTried}<span style={{ fontSize: 16, fontWeight: 400, color: "var(--body-warm)" }}>/{stats.length}</span>
           </div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs font-medium text-muted-foreground">Favourite</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Favourite</div>
           <div
-            className="text-sm font-bold mt-1.5 leading-tight line-clamp-2 break-words"
+            className="mt-1.5 leading-tight line-clamp-2 break-words"
             title={favorite?.name}
-            style={{ fontFamily: "var(--font-display)" }}
+            style={{ fontSize: 15, fontWeight: 600, color: "var(--ink-warm)" }}
           >
             {favorite?.name ?? "—"}
           </div>
@@ -106,19 +106,22 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {overdue.length > 0 && (
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={15} style={{ color: "var(--brand-2)" }} />
-            <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>DUE FOR A COMEBACK</h3>
+            <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
+            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Due for a comeback</h3>
           </div>
           <p className="text-xs text-muted-foreground mb-3">Spots you haven't had in a while (or ever) — maybe spin one of these.</p>
           <div className="flex flex-wrap gap-2">
             {overdue.map(({ stat, daysSince }) => (
               <span
                 key={stat.id}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
+                className="flex items-center gap-1.5 px-3 py-1.5"
                 style={{
-                  background: "oklch(from var(--brand-2) l c h / 0.10)",
-                  border: "1px solid oklch(from var(--brand-2) l c h / 0.25)",
-                  color: "var(--foreground)",
+                  borderRadius: "var(--radius-chip)",
+                  background: "oklch(from var(--brand) l c h / 0.08)",
+                  border: "1px solid oklch(from var(--brand) l c h / 0.22)",
+                  color: "var(--ink-warm)",
+                  fontSize: 13,
+                  fontWeight: 500,
                 }}
               >
                 {stat.name}
@@ -134,8 +137,8 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {/* Most picked — horizontal bars (clear even with only a handful of spins) */}
       <Card className="p-5">
         <div className="flex items-center gap-2 mb-4">
-          <Crown size={15} style={{ color: "var(--brand)" }} />
-          <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>MOST PICKED</h3>
+          <Crown size={15} style={{ color: "var(--brand-text)" }} />
+          <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Most picked</h3>
         </div>
         <div className="space-y-3">
           {top.map((r, idx) => {
@@ -164,8 +167,8 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {people.length > 1 && (
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
-            <Users size={15} style={{ color: "oklch(0.70 0.20 160)" }} />
-            <h3 className="text-sm font-bold tracking-wide" style={{ fontFamily: "var(--font-display)" }}>WHO'S BEEN PICKING</h3>
+            <Users size={15} style={{ color: "var(--brand-text)" }} />
+            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Who&apos;s been picking</h3>
           </div>
           <p className="text-xs text-muted-foreground mb-3">Who's been driving the spins — keep it balanced.</p>
           <div className="space-y-3">

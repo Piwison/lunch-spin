@@ -5,6 +5,9 @@ import { cachedUserId, clearBootCache, readBootCache, saveBootCache } from "@/li
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
+import WinnerSurface from "@/components/WinnerSurface";
+import { labelTier } from "@shared/wheelGeometry";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar from "@/components/FilterBar";
 import BrandLoader from "@/components/BrandLoader";
@@ -15,7 +18,7 @@ import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Check, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
+import { X, AlertTriangle, MapPin, RotateCw, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -101,6 +104,7 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -620,6 +624,25 @@ export default function WheelApp() {
     () => new Set((restaurants ?? []).flatMap((r) => r.tags.map((t) => t.id))),
     [restaurants],
   );
+  // The camera is in from the first frame of the spin until the result clears.
+  // Reduced motion never pushes in, so the chrome never recedes either.
+  const cameraIn = (isSpinning || showResult) && !prefersReducedMotion;
+  /** Everything except the wheel recedes while the camera is pushed in. The
+   *  header has carried this since item 7; on the tablet layout the supporting
+   *  column sits *beside* the wheel, where a 1.9x disc overlaps it, so it
+   *  recedes on the same curve rather than staying sharp under the zoom. */
+  const recedeStyle: React.CSSProperties = {
+    transform: cameraIn ? "translateY(-12px)" : "none",
+    filter: cameraIn ? "blur(1.6px)" : "none",
+    opacity: cameraIn ? 0.5 : 1,
+    transition:
+      "transform var(--dur-windup) var(--ease-standard), filter var(--dur-windup) var(--ease-standard), opacity var(--dur-windup) var(--ease-standard)",
+    pointerEvents: cameraIn ? "none" : undefined,
+  };
+
+  const pointerTier = labelTier(Math.max(wheelSegments.length, 1));
+  const spinDisabled = isSpinning || createSpin.isPending || wheelSegments.length === 0;
+
   const cuisineTags = (tags ?? []).filter((t) => t.category === "cuisine" && usedTagIds.has(t.id));
   const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
@@ -645,25 +668,24 @@ export default function WheelApp() {
   const defaultWheel = wheels?.find((w) => w.id === user.defaultWheelId);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--ground)" }}>
       {/* ── HEADER ── */}
       <header
-        className="border-b border-border/40 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
-        style={{ background: "oklch(from var(--background) l c h / 0.85)", backdropFilter: "blur(20px)" }}
+        className="glass-bar glass-bar--bottom px-4 py-2.5 flex items-center justify-between sticky top-0 z-30"
+        style={{
+          // Everything except the wheel recedes while the camera is pushed in.
+          transform: cameraIn ? "translateY(-12px)" : "none",
+          filter: cameraIn ? "blur(1.6px)" : "none",
+          opacity: cameraIn ? 0.5 : 1,
+          transition:
+            "transform var(--dur-windup) var(--ease-standard), filter var(--dur-windup) var(--ease-standard), opacity var(--dur-windup) var(--ease-standard)",
+          pointerEvents: cameraIn ? "none" : undefined,
+        }}
       >
         <div className="flex items-center gap-3">
-          <div
-            className="w-7 h-7 orb-wheel flex-shrink-0 animate-orb-spin"
-            style={{
-              boxShadow: "0 0 12px oklch(from var(--brand) l c h / 0.5)",
-              animationDuration: "20s",
-            }}
-          />
-          <span
-            className="font-black text-base tracking-tight gradient-text"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            LUNCH WHEEL
+          <div className="w-7 h-7 orb-wheel flex-shrink-0" style={{ animationDuration: "20s" }} />
+          <span className="type-section" style={{ fontSize: 17, color: "var(--ink-warm)" }}>
+            Lunch Wheel
           </span>
         </div>
 
@@ -680,18 +702,18 @@ export default function WheelApp() {
             <DropdownMenuTrigger asChild>
               <button
                 aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
-                className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors flex-shrink-0"
+                className="relative w-11 h-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors flex-shrink-0"
               >
                 <Bell size={18} />
                 {unreadCount > 0 && (
                   <span
                     className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
-                    style={{ background: "#ef4444", boxShadow: "0 0 0 2px var(--background)" }}
+                    style={{ background: "var(--brand)", boxShadow: "0 0 0 2px var(--background)" }}
                   />
                 )}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="glass border-border/50 w-80 p-0">
+            <DropdownMenuContent align="end" className="glass-card w-80 p-0 overflow-hidden">
               <DropdownMenuLabel className="px-3 py-2.5 text-sm">Notifications</DropdownMenuLabel>
               <DropdownMenuSeparator className="my-0" />
               <div className="max-h-[60vh] overflow-y-auto">
@@ -716,7 +738,7 @@ export default function WheelApp() {
                       <span className="text-xs text-muted-foreground">
                         {n.wheelName} · {formatTimeAgo(new Date(n.createdAt))}
                       </span>
-                      <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--brand)" }}>
+                      <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--brand-text)" }}>
                         <MapPin size={11} /> Open in Google Maps
                       </span>
                     </button>
@@ -729,13 +751,13 @@ export default function WheelApp() {
             <DropdownMenuTrigger asChild>
               <button
                 aria-label="Account menu"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-transform active:scale-90 hover:brightness-110"
-                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+                className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-transform active:scale-[var(--press-scale)] hover:brightness-105"
+                style={{ background: "var(--brand-solid)", color: "var(--on-accent)" }}
               >
                 {user.name?.charAt(0).toUpperCase() ?? "?"}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="glass border-border/50 w-56">
+            <DropdownMenuContent align="end" className="glass-card w-56">
               <DropdownMenuLabel className="flex flex-col gap-0.5">
                 <span className="text-sm font-semibold truncate">{user.name || "-"}</span>
                 <span className="text-xs text-muted-foreground font-normal truncate">{user.email || "-"}</span>
@@ -743,7 +765,7 @@ export default function WheelApp() {
               <DropdownMenuSeparator />
               {defaultWheel ? (
                 <DropdownMenuItem onClick={() => { setSelectedWheelId(defaultWheel.id); navigate(`/app/${defaultWheel.id}`); }} className="gap-2.5">
-                  <Star size={14} fill="var(--brand)" style={{ color: "var(--brand)" }} />
+                  <Star size={14} fill="var(--brand)" style={{ color: "var(--brand-text)" }} />
                   <span className="flex flex-col">
                     <span>Default wheel</span>
                     <span className="text-xs text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
@@ -810,7 +832,7 @@ export default function WheelApp() {
         }
       />
 
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-col xl:flex-row flex-1 overflow-hidden">
         {/* ── WHEEL SWITCHER (desktop rail · mobile pill+sheet) ── */}
         <WheelSelector
           selectedWheelId={selectedWheelId}
@@ -831,28 +853,34 @@ export default function WheelApp() {
         {/* ── MAIN CONTENT ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* ── VIEW TABS (desktop) — floating glass segmented control ── */}
-          <div className="hidden md:flex px-4 py-2.5 flex-shrink-0">
-            <div className="inline-flex items-center gap-1 p-1 rounded-full glass-nav">
+          {/* ── VIEW TABS (desktop) — floating glass segmented control ──
+              Ember: one glass bar, solid persimmon on the active segment (no
+              gradient, no glow — persimmon is the only saturated colour and it
+              is flat), and 56px of height like every other control. */}
+          <div className="hidden md:flex px-4 py-2.5 flex-shrink-0 md:justify-center xl:justify-start">
+            <div
+              className="inline-flex items-center gap-1 p-1.5 glass-bar"
+              style={{ borderRadius: "var(--radius-control)" }}
+            >
               {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
                 const isActive = activeTab === id;
                 return (
                   <button
                     key={id}
                     onClick={() => setActiveTab(id)}
-                    className="relative flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-200 active:scale-95"
+                    className="relative flex items-center gap-2 px-5 transition-colors duration-200 active:scale-[var(--press-scale)]"
                     style={{
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.08em",
-                      color: isActive ? "white" : "var(--muted-foreground)",
-                      background: isActive
-                        ? "linear-gradient(135deg, var(--brand), var(--brand-2))"
-                        : "transparent",
-                      boxShadow: isActive ? "0 0 16px oklch(from var(--brand) l c h / 0.45)" : "none",
+                      minHeight: 56,
+                      borderRadius: "calc(var(--radius-control) - 6px)",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      letterSpacing: "0.05em",
+                      color: isActive ? "var(--on-accent)" : "var(--body-warm)",
+                      background: isActive ? "var(--brand-solid)" : "transparent",
                     }}
                   >
-                    <Icon size={13} />
-                    {label.toUpperCase()}
+                    <Icon size={15} />
+                    {label}
                   </button>
                 );
               })}
@@ -872,8 +900,16 @@ export default function WheelApp() {
               <button
                 onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
                 disabled={!selectedWheelId || addShared.isPending}
-                className="px-3 py-1 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 flex-shrink-0"
-                style={{ background: "var(--brand)", color: "white", fontFamily: "var(--font-display)" }}
+                className="px-4 flex items-center transition-colors active:scale-[var(--press-scale)] disabled:opacity-40 flex-shrink-0"
+                style={{
+                  minHeight: 44,
+                  borderRadius: "var(--radius-chip)",
+                  background: "var(--brand-solid)",
+                  color: "var(--on-accent)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  letterSpacing: "0.05em",
+                }}
               >
                 {addShared.isPending ? "Adding…" : "Add"}
               </button>
@@ -884,7 +920,7 @@ export default function WheelApp() {
           )}
 
           {/* ── TAB CONTENT ── (pb clears the fixed mobile nav) */}
-          <div className="flex-1 overflow-y-auto pb-28 md:pb-0">
+          <div className="flex-1 overflow-y-auto overflow-x-clip pb-28 md:pb-0">
             {!selectedWheelId ? (
               wheelsLoading ? (
                 /* Hold a neutral state until we know if this is a first run —
@@ -913,8 +949,8 @@ export default function WheelApp() {
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
                   <div className="w-20 h-20 orb-wheel opacity-20" />
                   <div>
-                    <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
-                      NO WHEEL SELECTED
+                    <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
+                      No wheel selected
                     </p>
                     <p className="text-sm text-muted-foreground">Pick a wheel from the menu or create a new one</p>
                   </div>
@@ -925,7 +961,14 @@ export default function WheelApp() {
 
                 {/* ══ TAB 1: WHEEL ══ */}
                 {activeTab === "wheel" && (
-                  <div className="flex flex-col items-center gap-4 px-4 py-4 pb-8 max-w-2xl mx-auto">
+                  /* Ember item 14 — tablet (768–1279) is two columns: the wheel
+                     holds the left column at its drawn size, everything that
+                     supports it (settings, team, round, filter) stacks in a
+                     fixed column on the right. Below 768 and at 1280+ this is
+                     the single centred column it has always been, and the
+                     children keep their DOM order either way, so the wheel is
+                     mounted exactly once at every width. */
+                  <div className="flex flex-col items-center gap-4 px-4 py-4 pb-8 max-w-2xl mx-auto md:grid md:max-w-4xl md:items-start md:gap-6 md:grid-cols-[minmax(0,1fr)_340px] lg:grid-cols-[minmax(0,1fr)_380px] xl:flex xl:max-w-2xl xl:items-center">
 
                     {/* Settings shortcut — same dialog as the sidebar's kebab menu
                         (registerSettingsOpener), just faster once you're already
@@ -935,7 +978,7 @@ export default function WheelApp() {
                         row above Team/Round, so the gear lives in the
                         wheel-picker pill row instead (WheelSelector.tsx). */}
                     {selectedWheelId && (
-                      <div className="hidden md:flex w-full justify-end -mb-2">
+                      <div className="hidden md:flex w-full justify-end -mb-2 md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <button
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
                           aria-label="Wheel settings"
@@ -949,7 +992,7 @@ export default function WheelApp() {
 
                     {/* Team roster */}
                     {isShared && wheelData && (
-                      <div className="w-full">
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <WheelMembers
                           ownerId={wheelData.ownerId}
                           owner={wheelData.owner}
@@ -963,7 +1006,7 @@ export default function WheelApp() {
 
                     {/* Round panel (shared wheels) */}
                     {isShared && (
-                      <div className="w-full">
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <RoundPanel
                           restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
                           tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color }))}
@@ -979,6 +1022,7 @@ export default function WheelApp() {
                     )}
 
                     {/* ── FILTER BAR (compact, collapsible) — tags + distance ── */}
+                    <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                     <FilterBar
                       open={showFilters}
                       onOpenChange={setShowFilters}
@@ -996,6 +1040,7 @@ export default function WheelApp() {
                       totalCount={restaurants?.length ?? 0}
                       emptyMessage="No restaurants match your filters. Try removing some."
                     />
+                    </div>
 
                     {/* ── WHEEL + SPIN CTA ── */}
                     {restaurantsLoading ? (
@@ -1006,7 +1051,7 @@ export default function WheelApp() {
                          reading as a spinner and just looks like a broken wheel
                          that failed to draw its labels. The pill below stands in
                          for the SPIN button. */
-                      <div className="flex flex-col items-center gap-8 py-16 w-full">
+                      <div className="flex flex-col items-center gap-8 py-16 w-full md:col-start-1 md:row-start-1 md:row-span-5 xl:col-auto xl:row-auto">
                         <BrandLoader label="Warming up your wheel" size={72} />
                         {/* Token background, not bg-white/5: on the light theme a
                             5%-white pill over a near-white page is invisible, so
@@ -1019,26 +1064,42 @@ export default function WheelApp() {
                         <p className="text-sm text-muted-foreground">Couldn't load restaurants: {restaurantsError.message}</p>
                         <button
                           onClick={() => refetchRestaurants()}
-                          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95"
-                          style={{
-                            background: "var(--muted)",
-                            border: "1px solid var(--border)",
-                            color: "var(--foreground)",
-                            fontFamily: "var(--font-display)",
-                          }}
+                          className="glass-chip flex items-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
+                          style={{ minHeight: 56, color: "var(--ink-warm)", fontSize: 15, fontWeight: 500 }}
                         >
-                          <RefreshCw size={14} /> RETRY
+                          <RefreshCw size={15} /> Retry
                         </button>
                       </div>
                     ) : (
-                      <div className="w-full flex flex-col items-center gap-5">
-                        {/* Wheel canvas */}
+                      <div className="w-full flex flex-col items-center gap-5 md:col-start-1 md:row-start-1 md:row-span-5 xl:col-auto xl:row-auto">
+                        {/* Screen title, as the design leads with. The app bar
+                            names the product; this names what you are looking
+                            at, which is the thing the user actually needs. */}
+                        <div className="w-full max-w-sm">
+                          <p className="type-eyebrow mb-1.5" style={{ color: "var(--brand-text)" }}>
+                            Today&apos;s wheel
+                          </p>
+                          <h1
+                            className="type-title truncate"
+                            style={{ color: "var(--ink-warm)" }}
+                          >
+                            {wheelData?.name ?? "Lunch Wheel"}
+                          </h1>
+                        </div>
+
+                        {/* The wheel. The camera holds its zoom from the moment
+                            the spin starts until Lock it in or Respin clears the
+                            result — one owner for that fact, passed down, rather
+                            than the wheel inferring it from its own state. */}
                         <SpinWheel
                           segments={wheelSegments}
                           onSpinEnd={handleSpinEnd}
                           isSpinning={isSpinning}
                           onSpinStart={handleSpin}
                           targetId={targetId}
+                          zoomed={isSpinning || showResult}
+                          winnerId={spinResult?.id ?? null}
+                          receded={showResult}
                         />
 
                         {(restaurants?.length ?? 0) === 0 ? (
@@ -1046,92 +1107,83 @@ export default function WheelApp() {
                           <div className="flex flex-col items-center gap-3 text-center">
                             <button
                               onClick={() => setActiveTab("restaurants")}
-                              className="group flex items-center gap-2.5 px-8 py-4 rounded-full font-bold text-sm tracking-widest transition-all duration-200 active:scale-95 hover:-translate-y-0.5 cta-pulse"
+                              className="group flex items-center gap-2.5 px-8 transition-colors duration-200 active:scale-[var(--press-scale)]"
                               style={{
-                                fontFamily: "var(--font-display)",
-                                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                                boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
-                                color: "white",
+                                minHeight: 56,
+                                borderRadius: "var(--radius-control)",
+                                background: "var(--brand-solid)",
+                                color: "var(--on-accent)",
+                                fontSize: 16,
+                                fontWeight: 500,
+                                letterSpacing: "0.05em",
                               }}
                             >
-                              <Plus size={16} /> ADD RESTAURANTS
+                              <Plus size={17} /> Add restaurants
                             </button>
                             <p className="text-xs text-muted-foreground">Add a few places, then spin to decide.</p>
                           </div>
                         ) : (
-                          <>
-                            {/* Spin error chip */}
+                          <div className="w-full max-w-sm flex flex-col" style={{ gap: 20 }}>
                             <ErrorChip error={spinError} onDismiss={() => setSpinError(null)} />
-                            {/* SPIN button */}
+
+                            {/* Above 16 places the disc carries indices, so say
+                                where the names are before the user looks for them. */}
+                            {pointerTier.indexOnly && (
+                              <p className="type-meta" style={{ color: "var(--muted-foreground)" }}>
+                                Names arrive as the wheel passes the pointer, and in full when it lands.
+                              </p>
+                            )}
+
                             <button
                               onClick={handleSpin}
                               disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
-                              className={`relative overflow-hidden px-12 py-4 rounded-full font-black text-base tracking-[0.15em] transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 ${
-                                !(isSpinning || createSpin.isPending || wheelSegments.length === 0)
-                                  ? "cta-pulse hover:-translate-y-1 hover:brightness-110"
-                                  : ""
-                              }`}
+                              className="w-full flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{
-                                fontFamily: "var(--font-display)",
-                                background: isSpinning || createSpin.isPending || wheelSegments.length === 0
-                                  ? "var(--muted)"
-                                  : "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                                boxShadow: isSpinning || createSpin.isPending || wheelSegments.length === 0
-                                  ? "none"
-                                  : "0 0 40px oklch(from var(--brand) l c h / 0.5), 0 0 80px oklch(from var(--brand-2) l c h / 0.2), 0 8px 32px rgba(0,0,0,0.5)",
-                                color: "white",
-                                minWidth: "180px",
+                                minHeight: 56,
+                                borderRadius: "var(--radius-control)",
+                                background: spinDisabled ? "var(--muted)" : "var(--brand-solid)",
+                                color: spinDisabled ? "var(--muted-foreground)" : "var(--on-accent)",
+                                fontSize: 16,
+                                fontWeight: 500,
+                                letterSpacing: "0.05em",
+                                transitionDuration: "var(--dur-tap)",
                               }}
                             >
-                              {/* Shimmer */}
-                              {!(isSpinning || createSpin.isPending) && (
-                                <span
-                                  className="absolute inset-0 rounded-full"
-                                  style={{
-                                    background: "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)",
-                                    backgroundSize: "200% 100%",
-                                    animation: "shimmer 3s linear infinite",
-                                  }}
-                                />
-                              )}
-                              <span className="relative">
-                                {isSpinning || createSpin.isPending ? "SPINNING..." : "SPIN"}
-                              </span>
+                              {isSpinning || createSpin.isPending ? "Spinning…" : "Spin the wheel"}
                             </button>
 
-                            {/* Status line */}
+                            {/* The muted line under the stack: how many are on the
+                                wheel, and why the count is lower than the list —
+                                the closed count answers that, so it belongs here
+                                rather than floating somewhere else on the tab. */}
                             {wheelSegments.length === 0 ? (
                               <div
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs max-w-sm text-center"
-                                style={{
-                                  background: "oklch(from var(--destructive) l c h / 0.10)",
-                                  border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
-                                  color: "var(--brand)",
-                                }}
+                                className="glass-chip flex items-center gap-2 px-4 py-3 w-full"
+                                style={{ color: "var(--destructive)" }}
                               >
-                                <AlertTriangle size={13} className="flex-shrink-0" />
-                                <span>
+                                <AlertTriangle size={14} className="flex-shrink-0" />
+                                <span className="type-meta">
                                   Nothing to spin — every restaurant is
                                   {selectedTagIds.length > 0 ? " filtered out or " : " "}
                                   excluded or vetoed.
                                 </span>
                               </div>
                             ) : (
-                              <p className="text-xs text-muted-foreground">
-                                <span className="font-semibold" style={{ color: "var(--brand)" }}>{filteredRestaurants.length}</span>
+                              <p className="type-meta text-center" style={{ color: "var(--muted-foreground)" }}>
+                                <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{filteredRestaurants.length}</span>
                                 {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
                                 {closedCount > 0 && (
                                   <>
                                     {" · "}
                                     <span className="inline-flex items-center gap-1">
-                                      <Clock3 size={11} className="flex-shrink-0" />
+                                      <Clock3 size={12} className="flex-shrink-0" />
                                       {closedCount} closed now
                                     </span>
                                   </>
                                 )}
                               </p>
                             )}
-                          </>
+                          </div>
                         )}
 
                         {/* Excluded restaurants — collapsed by default to keep the wheel the focus */}
@@ -1145,16 +1197,14 @@ export default function WheelApp() {
                           >
                             <button
                               onClick={() => setShowExcluded((s) => !s)}
-                              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-white/3"
+                              className="w-full flex items-center justify-between gap-2 px-4 text-left transition-colors hover:bg-white/3"
+                              style={{ minHeight: 56 }}
                             >
-                              <div
-                                className="flex items-center gap-2 text-xs font-semibold tracking-widest"
-                                style={{ fontFamily: "var(--font-display)", color: "var(--brand)" }}
-                              >
-                                <Clock size={11} /> SKIPPING (PICKED RECENTLY)
+                              <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
+                                <Clock size={12} /> Skipping (picked recently)
                                 <span
-                                  className="px-2 py-0.5 rounded-full text-[10px]"
-                                  style={{ background: "oklch(from var(--destructive) l c h / 0.12)", color: "var(--brand)" }}
+                                  className="px-2 py-0.5 text-[10px] font-semibold"
+                                  style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
                                 >
                                   {restaurants.filter((r) => r.isExcluded).length}
                                 </span>
@@ -1175,7 +1225,7 @@ export default function WheelApp() {
                                         className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px]"
                                         style={{
                                           background: "oklch(from var(--destructive) l c h / 0.12)",
-                                          color: "var(--brand)",
+                                          color: "var(--brand-text)",
                                         }}
                                       >
                                         back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
@@ -1228,7 +1278,10 @@ export default function WheelApp() {
             }}
             aria-label="Views"
           >
-            <div className="w-full max-w-md flex items-center gap-1 p-1.5 rounded-[1.75rem] glass-nav">
+            <div
+              className="w-full max-w-md flex items-center gap-1 p-1.5 glass-bar"
+              style={{ borderRadius: "var(--radius-sheet)" }}
+            >
               {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
                 const isActive = activeTab === id;
                 return (
@@ -1236,19 +1289,19 @@ export default function WheelApp() {
                     key={id}
                     onClick={() => setActiveTab(id)}
                     aria-current={isActive ? "page" : undefined}
-                    className="flex-1 flex flex-col items-center justify-center gap-1 h-14 rounded-[1.4rem] text-[11px] font-semibold transition-all duration-200 active:scale-95"
+                    className="flex-1 flex flex-col items-center justify-center gap-1 transition-colors duration-200 active:scale-[var(--press-scale)]"
                     style={{
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.04em",
-                      color: isActive ? "white" : "var(--muted-foreground)",
-                      background: isActive
-                        ? "linear-gradient(135deg, var(--brand), var(--brand-2))"
-                        : "transparent",
-                      boxShadow: isActive ? "0 0 16px oklch(from var(--brand) l c h / 0.45)" : "none",
+                      minHeight: 56,
+                      borderRadius: "calc(var(--radius-sheet) - 8px)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      letterSpacing: "0.05em",
+                      color: isActive ? "var(--on-accent)" : "var(--body-warm)",
+                      background: isActive ? "var(--brand-solid)" : "transparent",
                     }}
                   >
                     <Icon size={20} />
-                    {label.toUpperCase()}
+                    {label}
                   </button>
                 );
               })}
@@ -1257,173 +1310,65 @@ export default function WheelApp() {
         </div>
       </div>
 
-      {/* ── RESULT OVERLAY ── */}
-      {showResult && spinResult && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in"
-          style={{ background: "rgba(0,0,0,0.80)", backdropFilter: "blur(12px)" }}
-          onClick={() => setShowResult(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Spin result: ${spinResult.label}`}
-            className="animate-spin-result text-center p-8 rounded-3xl max-w-sm w-full relative overflow-hidden"
-            style={{
-              background: "var(--card)",
-              border: `2px solid ${spinResult.color}`,
-              boxShadow: `0 0 80px ${spinResult.color}55, 0 0 160px ${spinResult.color}22, 0 32px 64px rgba(0,0,0,0.6)`,
-            }}
-            onClick={(e) => e.stopPropagation()}
+      {/* ── RESULT ──
+          No modal and no card: the camera is still holding its zoom on the wheel
+          behind this, and the winning pane unrolls in place into display type.
+          Everything the old overlay carried survives — closing-soon from the real
+          openStatus, the one-time exclusion explainer, the rating capture, and
+          the quiet dismiss that means "not this one, not now" without respinning. */}
+      {showResult && spinResult && (() => {
+        const win = restaurants?.find((r) => r.id === spinResult.id);
+        const walkSeconds = wheelData?.distanceEnabled ? win?.walkSeconds : null;
+        return (
+          <WinnerSurface
+            name={spinResult.label}
+            isClosingSoon={win?.openStatus === "closing_soon"}
+            closingSoonMinutes={win?.minutesUntilClose ?? null}
+            meta={
+              walkSeconds != null ? (
+                <span className="flex items-center gap-1.5">
+                  <Footprints size={14} className="flex-shrink-0" />
+                  {formatWalk(walkSeconds / 60)} from {wheelData?.originLabel || "Office"}
+                </span>
+              ) : null
+            }
+            onAccept={handleAccept}
+            onRespin={handleReSpin}
+            respinDisabled={wheelSegments.length === 0}
+            onDirections={() => openDirections(spinResult)}
+            onDismiss={() => setShowResult(false)}
           >
-            {/* Close [x] — a third choice beyond RE-SPIN / ACCEPT: dismiss this
-                result. The spin is already recorded as rejected (excluded only
-                for the rest of today), so closing = "skip this one today". */}
-            <button
-              onClick={() => setShowResult(false)}
-              aria-label="Close"
-              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
-            >
-              <X size={16} />
-            </button>
-            {/* Background glow blob — kept faint: heavy per-glyph shadows on the
-                title used to stack into a muddy smear behind the winner name. */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background: `radial-gradient(circle at 50% 0%, ${spinResult.color}14 0%, transparent 65%)`,
-              }}
-            />
-            <div className="relative">
-              <div className="text-5xl mb-4 animate-float">🎉</div>
-              <p
-                className="text-xs mb-2 tracking-[0.2em] flex items-center justify-center gap-2"
-                style={{ fontFamily: "var(--font-display)", color: "var(--muted-foreground)" }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
-                TODAY'S LUNCH
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: spinResult.color }} />
-              </p>
-              {/* No text glow: cool-hued halos turn to mud on the warm card —
-                  the segment color already speaks through border, dots, buttons. */}
-              <h2
-                className="text-3xl font-black leading-tight"
-                style={{ fontFamily: "var(--font-display)", color: spinResult.color }}
-              >
-                {spinResult.label}
-              </h2>
-              <div className="mb-8">
-                {wheelData?.distanceEnabled && (() => {
-                  const walkSeconds = restaurants?.find((r) => r.id === spinResult.id)?.walkSeconds;
-                  if (walkSeconds == null) return null;
-                  return (
-                    <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground mt-2">
-                      <Footprints size={12} className="flex-shrink-0" />
-                      {formatWalk(walkSeconds / 60)} from {wheelData.originLabel || "Office"}
-                    </p>
-                  );
-                })()}
+            {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
+              <div className="glass-chip flex items-start gap-2.5 px-4 py-3 w-full text-left">
+                <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand-text)" }} />
+                <span className="type-meta" style={{ color: "var(--body)" }}>
+                  We&apos;ll skip{" "}
+                  <span className="font-semibold" style={{ color: "var(--foreground)" }}>
+                    {spinResult.label}
+                  </span>{" "}
+                  for the next {wheelData.exclusionDays}{" "}
+                  {wheelData.exclusionDays === 1 ? "day" : "days"} so you don&apos;t get it twice.
+                  Change that in wheel settings.
+                </span>
               </div>
-              {/* Closing-soon warning: the winner is open, but not for long. Shown
-                  as a caution, never a block — the spin already stands. */}
-              {(() => {
-                const win = restaurants?.find((r) => r.id === spinResult.id);
-                if (win?.openStatus !== "closing_soon") return null;
-                const mins = win.minutesUntilClose;
-                return (
-                  <div
-                    className="flex items-center justify-center gap-1.5 text-xs font-semibold mb-5 px-3 py-2 rounded-xl"
-                    style={{
-                      background: "oklch(from var(--destructive) l c h / 0.12)",
-                      border: "1px solid oklch(from var(--destructive) l c h / 0.30)",
-                      color: "var(--destructive)",
-                    }}
-                  >
-                    <Clock3 size={13} className="flex-shrink-0" />
-                    {mins != null ? `Closing in ~${mins} min — hurry!` : "Closing soon — hurry!"}
-                  </div>
-                );
-              })()}
-              {/* The one teaching moment in the whole product. Exclusion used to
-                  be a dropdown in the create dialog, asked of someone who had
-                  never spun the wheel; here it's explained at the exact moment
-                  it becomes real, and only on the user's first couple of spins.
-                  After that it's just noise they've already read. */}
-              {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
-                <div
-                  className="flex items-start gap-2 text-xs mb-5 px-3 py-2.5 rounded-xl text-left"
-                  style={{
-                    background: "oklch(from var(--brand) l c h / 0.10)",
-                    border: "1px solid oklch(from var(--brand) l c h / 0.25)",
-                  }}
-                >
-                  <Clock size={13} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
-                  <span className="text-muted-foreground">
-                    We'll skip <span className="text-foreground font-semibold">{spinResult.label}</span> for the next{" "}
-                    {wheelData.exclusionDays} {wheelData.exclusionDays === 1 ? "day" : "days"} so you don't get it
-                    twice. Change that in wheel settings.
-                  </span>
-                </div>
-              )}
-              {/* Post-spin capture — rate the winner right here (per-place rating). */}
-              <div className="flex flex-col items-center gap-1.5 mb-6">
-                <span className="text-[11px] tracking-wide uppercase text-muted-foreground">Rate this place</span>
-                <StarRating
-                  value={myStarsFor(spinResult.id)}
-                  size={26}
-                  disabled={rateRestaurant.isPending}
-                  onChange={(stars) => selectedWheelId && rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })}
-                />
-              </div>
-              <div className="flex flex-col gap-2.5">
-                <button
-                  onClick={() => openDirections(spinResult)}
-                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full text-sm font-semibold transition-all active:scale-95 hover:brightness-110"
-                  style={{
-                    background: spinResult.color + "20",
-                    border: `1px solid ${spinResult.color}60`,
-                    color: spinResult.color,
-                    fontFamily: "var(--font-display)",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  <MapPin size={14} /> DIRECTIONS
-                </button>
-                <div className="flex gap-2.5">
-                  <button
-                    onClick={handleReSpin}
-                    disabled={wheelSegments.length === 0}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 hover:bg-white/8"
-                    style={{
-                      background: "var(--muted)",
-                      border: "1px solid var(--border)",
-                      color: "var(--foreground)",
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    <RotateCw size={12} /> RE-SPIN
-                  </button>
-                  <button
-                    autoFocus
-                    onClick={handleAccept}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-xs font-semibold transition-all active:scale-95 hover:brightness-110"
-                    style={{
-                      background: "oklch(from var(--ok) l c h / 0.15)",
-                      border: "1px solid oklch(from var(--ok) l c h / 0.45)",
-                      color: "var(--ok)",
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    <Check size={12} /> ACCEPT
-                  </button>
-                </div>
-              </div>
+            )}
+            <div className="flex items-center gap-3 w-full">
+              <span className="type-eyebrow" style={{ color: "var(--muted-foreground)" }}>
+                Rate it
+              </span>
+              <StarRating
+                value={myStarsFor(spinResult.id)}
+                size={26}
+                disabled={rateRestaurant.isPending}
+                onChange={(stars) =>
+                  selectedWheelId &&
+                  rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })
+                }
+              />
             </div>
-          </div>
-        </div>
-      )}
+          </WinnerSurface>
+        );
+      })()}
     </div>
   );
 }

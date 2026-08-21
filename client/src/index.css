@@ -1,12 +1,25 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* ─── Warm Appetite — light + dark ────────────────────────────────────────────
-   Tokens resolve through intermediate vars so the SAME utility (bg-card,
-   text-muted-foreground, …) adapts to the mode. `:root` is the warm-cream light
-   default; `.dark` (toggled by ThemeContext on <html>) swaps in warm charcoal.
-   Brand is a single tomato/ember accent; `--brand-2` (amber) is reserved for the
-   hero gradient on the wheel/result only. */
+/* ─── Ember — light + dark ────────────────────────────────────────────────────
+   "Liquid Glass at full strength on a warm paper ground." Tokens resolve through
+   intermediate vars so the SAME utility (bg-card, text-muted-foreground, …)
+   adapts to the mode. `:root` is the light default; `.dark` (toggled by
+   ThemeContext on <html>) is the same system at inverted value.
+
+   Persimmon (`--brand`) is the only saturated colour in the app: primary action,
+   eyebrows, icons, pointer. The Ember spec's names map onto the names this repo
+   already swept ~260 hardcoded values into, so no call site had to change:
+
+     spec --accent → --brand / --primary / --ring      spec --ink    → --foreground
+     spec --hairline → --border / --input              spec --muted  → --muted-foreground
+     spec --ground → --ground (gradient) + --background (its flat mid stop,
+     because bg-background compiles to background-color, which cannot take one)
+
+   `--accent` and `--muted` keep their existing repo meaning — pale hover/panel
+   SURFACES, driving bg-accent and bg-muted across the shadcn primitives. They are
+   deliberately not the spec's persimmon and grey, which live on --brand and
+   --muted-foreground. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -27,96 +40,238 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-paper: var(--paper);
+  --color-ink-strong: var(--ink-strong);
+  --color-body: var(--body);
+  --color-faint: var(--faint);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
   --color-chart-1: var(--brand);
   --color-chart-2: var(--brand-2);
   --color-chart-3: oklch(0.70 0.20 160);
   --color-chart-4: oklch(0.75 0.18 60);
   --color-chart-5: oklch(0.68 0.22 340);
   --radius: 0.75rem;
-  --font-sans: "Poppins", sans-serif;
-  --font-display: "Fredoka", "Poppins", sans-serif;
+  /* One Latin typeface, one CJK fallback chain. Bricolage Grotesque carries
+     display and body alike; the old Fredoka/Poppins pair is gone, so
+     --font-display and --font-sans are the same stack and the ~89
+     `var(--font-display)` call sites keep working.
+
+     The CJK faces sit AFTER Bricolage and BEFORE the generic families. Bricolage
+     has no CJK glyphs, so Chinese falls through it to the first face that does —
+     but only if the named faces come before `ui-sans-serif`/`system-ui`, which
+     would otherwise swallow the fallback and make the result depend on whatever
+     the OS happens to pick. None of them are downloaded: PingFang ships on
+     Apple, JhengHei on Windows, Noto on Android and most Linux, so the chain
+     costs nothing and covers essentially everyone. */
+  --font-cjk: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei";
+  --font-sans: "Bricolage Grotesque", var(--font-cjk), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque", var(--font-cjk), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Radii (spec §2): chip 19, control 20–22, card 28, sheet 34, hub/wheel 999. */
+  --radius-chip: 19px;
+  --radius-control: 22px;
+  --radius-card: 28px;
+  --radius-sheet: 34px;
 }
 
-/* ── Light (default): warm cream ── */
+/* ── Light (default): warm paper ── */
 :root {
-  --background: oklch(0.97 0.015 80);
-  --foreground: oklch(0.26 0.03 50);
-  --card: oklch(0.995 0.008 80);
-  --card-foreground: oklch(0.26 0.03 50);
-  --popover: oklch(0.995 0.008 80);
-  --popover-foreground: oklch(0.26 0.03 50);
-  --primary: oklch(0.64 0.19 38);
-  --primary-foreground: oklch(0.99 0.01 80);
-  --secondary: oklch(0.94 0.015 78);
-  --secondary-foreground: oklch(0.30 0.03 50);
-  --muted: oklch(0.95 0.012 80);
-  --muted-foreground: oklch(0.50 0.03 60);
-  --accent: oklch(0.93 0.03 70);
-  --accent-foreground: oklch(0.30 0.03 50);
-  --destructive: oklch(0.57 0.20 28);
-  --destructive-foreground: oklch(0.99 0.01 80);
-  --border: oklch(0.90 0.02 75);
-  --input: oklch(0.90 0.02 75);
-  --ring: oklch(0.64 0.19 38);
+  /* Ground. The app background is a gradient; --background carries its flat mid
+     stop so `bg-background` (a background-color) still resolves to something. */
+  --ground: linear-gradient(160deg, #f6f2ec 0%, #efe8df 55%, #e7ded2 100%);
+  --background: #efe8df;
+  --paper: #fbf7f2;              /* text on accent; solid cards */
 
-  /* Brand accents (mode-tuned so glows/gradients read right in each mode). */
-  --brand: oklch(0.64 0.19 38);     /* tomato/ember — the single accent */
-  --brand-2: oklch(0.74 0.15 65);   /* amber/mango — hero gradient only */
-  --brand-glow: 0.20;               /* glow opacity multiplier (calmer in light) */
-  --star: oklch(0.72 0.15 72);      /* rating stars (warm gold) */
+  /* Ink */
+  --foreground: #14161c;         /* spec --ink: headings, primary text */
+  --ink-strong: #0d0f14;         /* display type only */
+  --body: #5a626d;               /* body copy */
+  /* Spec --muted. The handoff's #868D97 measured 3.14:1 on --paper, which fails
+     AA for the 12-13px meta it carries, so it is darkened to clear 4.5. */
+  --muted-foreground: #666d77;
+  --faint: #9aa1aa;              /* placeholder, disabled */
+  --border: #c7cbd1;             /* spec --hairline: rules, dividers */
+  --input: #c7cbd1;
 
-  /* Semantic text accents — kept legible against their faint tinted chips by
-     going darker in light mode, brighter in dark. */
-  --ok: oklch(0.52 0.14 150);       /* success text */
-  --info: oklch(0.54 0.13 62);      /* info / notice text */
+  /* Surfaces. --muted and --accent are pale panels/hover fills (repo meaning),
+     NOT the spec's grey and persimmon — those are --muted-foreground and --brand. */
+  --card: #fbf7f2;
+  --card-foreground: #14161c;
+  --popover: #fbf7f2;
+  --popover-foreground: #14161c;
+  --secondary: #e7ded2;
+  --secondary-foreground: #14161c;
+  --muted: #e7ded2;
+  --accent: #e7ded2;
+  --accent-foreground: #14161c;
 
-  /* Glass surfaces (frosted cream). */
-  --glass-bg: oklch(0.99 0.01 80 / 0.72);
-  --glass-border: oklch(0.80 0.03 70 / 0.55);
-  --glass-nav-bg: oklch(0.985 0.012 80 / 0.62);
-  --glass-nav-border: oklch(0.78 0.03 70 / 0.50);
-  --glass-nav-shadow: 0 8px 32px oklch(0.50 0.05 40 / 0.12);
-  --glass-highlight: oklch(1 0 0 / 0.55);
-  --glass-opaque: oklch(0.985 0.012 80 / 0.98);
+  /* Persimmon — the only saturated colour in the app. */
+  --primary: #de5c1f;
+  --primary-foreground: #fbf7f2;
+  --ring: #de5c1f;
+  /* Persimmon has three roles and light mode needs three values, because the
+     spec's single #DE5C1F only clears AA in one of them (measured on --paper:
+     3.48:1). --brand keeps the spec value and is used where 3:1 is the right
+     bar — fills, icons, the pointer, the winning-pane wash. The other two are
+     text and solid-button roles, which need 4.5:1. In dark mode all three
+     collapse back to one value; #F2703A on charcoal clears AA in every role. */
+  --brand: #de5c1f;
+  --brand-text: #b0431a;         /* persimmon TEXT on paper/glass — 5.37:1 */
+  --brand-solid: #b64614;        /* persimmon FILL under --on-accent — 5.08:1 */
+  --accent-ink: #b0431a;         /* accent TEXT on light glass (winner label) */
+  /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
+     --foreground is right for Latin display type but reads hard against the
+     ground under the denser strokes of a Chinese character. Scoped to the wheel
+     labels and the readout's secondary line — not the whole app. */
+  --ink-warm: #2e2a27;
+  /* #78716C measured 4.50:1 on --paper but only 3.95:1 on --background, and
+     this token carries meta text on both. Darkened until the worse of the two
+     clears AA. */
+  --body-warm: #6f6862;
+  --on-accent: #fbf7f2;          /* ink on a persimmon fill */
+  /* Reserved for the hero gradient on wheel/result. A lighter persimmon rather
+     than the old amber, so a gradient never introduces a second hue. */
+  --brand-2: #f0894a;
+  --brand-glow: 0.2;             /* glow opacity multiplier (calmer in light) */
+
+  /* Semantic. Deliberately desaturated so nothing competes with persimmon. */
+  --destructive: #b3261e;
+  --destructive-foreground: #fbf7f2;
+  /* Rating gold. The old #C98A2E was 2.75:1 on paper — below even the 3:1 bar
+     a graphical indicator has to clear, and the star sits next to the average
+     as a pair. Darkened to clear 3:1 on both paper and the ground. */
+  --star: #a97120;
+  --ok: #2f6b4f;                 /* success text */
+  --info: #7a5b33;               /* info / notice text */
+
+  /* Glass surfaces — see the four named recipes below. */
+  /* Four glass surfaces, and only four (spec §2). Every recipe is a token so no
+     component ever hand-rolls a backdrop-filter. */
+  --glass-bar-bg: rgb(255 255 255 / 0.55);
+  --glass-bar-blur: blur(28px) saturate(1.4);
+  --glass-bar-border: rgb(255 255 255 / 0.9);
+
+  --glass-sheet-bg: rgb(255 255 255 / 0.72);
+  --glass-sheet-blur: blur(34px) saturate(1.4);
+  --glass-sheet-border: rgb(255 255 255 / 0.95);
+
+  --glass-card-bg: rgb(255 255 255 / 0.62);
+  --glass-card-blur: blur(28px);
+  --glass-card-border: rgb(255 255 255 / 0.95);
+  --glass-card-shadow: 0 18px 40px rgb(20 22 28 / 0.14);
+
+  --glass-chip-bg: rgb(255 255 255 / 0.62);
+  --glass-chip-blur: blur(24px);
+  --glass-chip-border: rgb(255 255 255 / 0.95);
+
+  --glass-highlight: rgb(255 255 255 / 0.55);
+  --glass-opaque: #fbf7f2;
+
+  /* Pane separation on the wheel: a hairline of ground showing between two
+     sheets of glass, not a drawn border. */
+  --wheel-hairline: rgb(20 22 28 / 0.1);
+  /* The gap between panes. It is the GROUND showing through, which is what makes
+     the panes read as separate petals rather than a pie cut by hairlines. */
+  --pane-gap: #f6f2ec;
+  --pane-heavy: rgb(255 255 255 / 0.78);
+  --pane-light: rgb(255 255 255 / 0.4);
+  --wheel-highlight: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.55),
+    rgb(255 255 255 / 0) 42%,
+    oklch(from var(--brand) l c h / 0.07)
+  );
+  --wheel-shadow: 0 24px 60px rgb(20 22 28 / 0.18);
+  --pane-win: oklch(from var(--brand) l c h / 0.22);
+  --pane-win-edge: oklch(from var(--brand) l c h / 0.75);
 }
 
-/* ── Dark: warm charcoal ── */
+/* ── Dark: same system at inverted value ──
+   Persimmon is lifted so it holds its weight against charcoal. */
 .dark {
-  --background: oklch(0.16 0.02 50);
-  --foreground: oklch(0.95 0.01 80);
-  --card: oklch(0.20 0.022 50);
-  --card-foreground: oklch(0.95 0.01 80);
-  --popover: oklch(0.20 0.022 50);
-  --popover-foreground: oklch(0.95 0.01 80);
-  --primary: oklch(0.70 0.19 40);
-  --primary-foreground: oklch(0.16 0.02 50);
-  --secondary: oklch(0.24 0.025 50);
-  --secondary-foreground: oklch(0.90 0.01 80);
-  --muted: oklch(0.22 0.022 50);
-  --muted-foreground: oklch(0.62 0.02 70);
-  --accent: oklch(0.27 0.03 50);
-  --accent-foreground: oklch(0.92 0.01 80);
-  --destructive: oklch(0.60 0.20 28);
-  --destructive-foreground: oklch(0.98 0.01 80);
-  --border: oklch(0.30 0.022 55);
-  --input: oklch(0.26 0.025 55);
-  --ring: oklch(0.70 0.19 40);
+  --ground: linear-gradient(160deg, #191b20 0%, #15171c 55%, #101216 100%);
+  --background: #15171c;
+  --paper: #1e2127;
 
-  --brand: oklch(0.70 0.19 40);
-  --brand-2: oklch(0.78 0.15 65);
+  --foreground: #f6f3ee;
+  --ink-strong: #fcfaf7;
+  --body: #e6e2db;
+  --muted-foreground: #9ba0a8;
+  --faint: #7c838c;
+  --border: #2e323a;
+  --input: #2e323a;
+
+  --card: #1e2127;
+  --card-foreground: #f6f3ee;
+  --popover: #1e2127;
+  --popover-foreground: #f6f3ee;
+  --secondary: #23262c;
+  --secondary-foreground: #f6f3ee;
+  --muted: #23262c;
+  --accent: #23262c;
+  --accent-foreground: #f6f3ee;
+
+  --primary: #f2703a;
+  --primary-foreground: #16120f;
+  --ring: #f2703a;
+  --brand: #f2703a;
+  --brand-text: #f2703a;         /* 5.49:1 on --paper */
+  --brand-solid: #f2703a;        /* 6.35:1 under --on-accent */
+  --accent-ink: #f2703a;         /* on dark glass the accent reads as itself */
+  /* The same warm pair inverted — the light-mode values are near-black and
+     would be invisible here. */
+  --ink-warm: #f2ede8;
+  --body-warm: #a8a29e;
+  --on-accent: #16120f;
+  --brand-2: #f79463;
   --brand-glow: 0.45;
-  --star: oklch(0.80 0.14 76);      /* rating stars (brighter in dark) */
 
-  --ok: oklch(0.80 0.15 148);
-  --info: oklch(0.82 0.14 70);
+  --destructive: #e5654f;
+  --destructive-foreground: #16120f;
+  --star: #e0a544;
+  --ok: #6fbf95;
+  --info: #c9a97a;
 
-  --glass-bg: oklch(0.22 0.022 50 / 0.70);
-  --glass-border: oklch(0.40 0.03 55 / 0.50);
-  --glass-nav-bg: oklch(0.21 0.022 50 / 0.55);
-  --glass-nav-border: oklch(0.42 0.03 55 / 0.45);
-  --glass-nav-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --glass-highlight: oklch(1 0 0 / 0.08);
-  --glass-opaque: oklch(0.21 0.022 50 / 0.97);
+  --glass-bar-bg: rgb(255 255 255 / 0.08);
+  --glass-bar-blur: blur(28px);
+  --glass-bar-border: rgb(255 255 255 / 0.12);
+
+  --glass-sheet-bg: rgb(255 255 255 / 0.1);
+  --glass-sheet-blur: blur(34px);
+  --glass-sheet-border: rgb(255 255 255 / 0.14);
+
+  --glass-card-bg: rgb(255 255 255 / 0.08);
+  --glass-card-blur: blur(28px);
+  --glass-card-border: rgb(255 255 255 / 0.12);
+  --glass-card-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
+
+  /* Dark chips carry no blur: the spec lists a fill and a border only, and on
+     charcoal an 8% white wash already separates without paying for a filter. */
+  --glass-chip-bg: rgb(255 255 255 / 0.08);
+  --glass-chip-blur: none;
+  --glass-chip-border: rgb(255 255 255 / 0.12);
+
+  --glass-highlight: rgb(255 255 255 / 0.08);
+  --glass-opaque: #1e2127;
+
+  --wheel-hairline: rgb(0 0 0 / 0.3);
+  --pane-gap: #191b20;
+  /* Glass as white at 8–12%, per the dark recipe — not the light alphas, which
+     render as opaque grey card on charcoal. */
+  --pane-heavy: rgb(255 255 255 / 0.12);
+  --pane-light: rgb(255 255 255 / 0.06);
+  --wheel-highlight: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.1),
+    rgb(255 255 255 / 0) 42%,
+    oklch(from var(--brand) l c h / 0.12)
+  );
+  --wheel-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+  --pane-win: oklch(from var(--brand) l c h / 0.3);
+  --pane-win-edge: oklch(from var(--brand) l c h / 0.85);
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────────────────── */
@@ -141,14 +296,140 @@
     color-scheme: dark;
   }
 
+  /* The ground. Painted once here and nowhere else: the Ember rule is that the
+     ground stays flat paper and never blurs, so no glass surface may re-declare
+     it. `fixed` keeps the 160deg ramp anchored to the viewport instead of
+     re-running down a long scroll — the app's real scrollers are inner divs. */
   body {
     @apply bg-background text-foreground font-sans antialiased;
     background-color: var(--background);
+    background-image: var(--ground);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
   }
+}
+
+/* ─── Motion ──────────────────────────────────────────────────────────────────
+   Transform and opacity only. No animated width, height or shadow anywhere.
+   Blur animates in exactly one place — the spin zoom's per-label blur — and is
+   capped there. One moving thing at a time: the spin and the result are the only
+   moments allowed to be dramatic; everything else is a confirmation the user
+   barely notices, and nothing loops. */
+:root {
+  --dur-tap: 120ms;
+  --dur-toggle: 160ms;
+  --dur-view: 200ms;
+  --dur-toast-in: 260ms;
+  --dur-sheet-in: 320ms;
+  --dur-sheet-out: 240ms;
+
+  /* Four curves, no more (spec §3). */
+  --ease-standard: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-settle: cubic-bezier(0.34, 1.26, 0.64, 1); /* overshoot: settle only, nothing else bounces */
+  --ease-decay: cubic-bezier(0.08, 0.82, 0.17, 1);
+
+  --move-enter: 18px;
+  --press-scale: 0.97;
+  --stagger: 60ms;
+
+  /* The spin, end to end (spec §3). Declared here so the CSS-driven half of the
+     sequence and the rAF-driven half read the same numbers — SPIN_TIMELINE in
+     shared/wheelGeometry.ts mirrors these and its test asserts the total. */
+  --dur-windup: 180ms;
+  --dur-travel: 2600ms;
+  --dur-settle: 220ms;
+  --dur-recede: 320ms;
+  --dur-unroll: 460ms;
+
+  /* The zoom camera is the one deliberate fifth curve: §4 names it explicitly
+     for the push into the wheel, distinct from the four-curve UI language. */
+  --dur-zoom: 420ms;
+  --ease-zoom: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ─── Bricolage Grotesque — self-hosted ───────────────────────────────────────
+   One variable file per subset. Google serves the SAME woff2 for weight 500 and
+   600 (the wght axis is in the file), so "preload 500 and 600" is one request,
+   not two — and the 700 the wheel labels want comes free from the same axis.
+   Only latin is preloaded; latin-ext and vietnamese load on demand via
+   unicode-range, which matters here because restaurant names are user data
+   ("Phở 88", "Bánh Mì"). font-display: swap keeps first paint unblocked. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("/fonts/bricolage-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("/fonts/bricolage-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("/fonts/bricolage-vietnamese.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1,
+    U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329,
+    U+1EA0-1EF9, U+20AB;
+}
+
+/* ─── Type scale ──────────────────────────────────────────────────────────────
+   The Ember scale as named classes rather than a raised global base size: the
+   tabs that have no Ember drawing yet (Places, History, entry screens) keep
+   today's density until items 10–11 re-draw them, but inherit the typeface and
+   palette immediately. Sizes are rem-relative so browser text zoom still works. */
+.type-display {
+  font-size: 4.25rem;      /* 68 */
+  line-height: 0.9;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+}
+.type-title {
+  font-size: 2.125rem;     /* 34 */
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+.type-section {
+  font-size: 1.75rem;      /* 28 */
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.type-body {
+  font-size: 1.0625rem;    /* 17 */
+  line-height: 1.45;
+  font-weight: 400;
+}
+.type-meta {
+  font-size: 0.9375rem;    /* 15 */
+  font-weight: 400;
+}
+.type-eyebrow {
+  font-size: 0.6875rem;    /* 11 */
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
 }
 
 /* ─── Flex defaults ─────────────────────────────────────────────────────────── */
@@ -160,25 +441,6 @@
   max-width: 1280px;
 }
 
-/* ─── Glow Utilities ─────────────────────────────────────────────────────────
-   Reserved for the joyful hero moments (wheel / SPIN / result). Glow intensity
-   follows --brand-glow so light mode stays calm and dark mode keeps its punch. */
-.glow-orange {
-  box-shadow:
-    0 0 20px oklch(from var(--brand) l c h / var(--brand-glow)),
-    0 0 60px oklch(from var(--brand) l c h / calc(var(--brand-glow) * 0.4));
-}
-.glow-purple {
-  box-shadow:
-    0 0 20px oklch(from var(--brand-2) l c h / var(--brand-glow)),
-    0 0 60px oklch(from var(--brand-2) l c h / calc(var(--brand-glow) * 0.4));
-}
-.glow-text {
-  text-shadow:
-    0 0 30px oklch(from var(--brand) l c h / calc(var(--brand-glow) + 0.3)),
-    0 0 60px oklch(from var(--brand) l c h / var(--brand-glow));
-}
-
 /* ─── Appetizing Gradient Text ──────────────────────────────────────────────── */
 .gradient-text {
   background: linear-gradient(135deg, var(--brand-2), var(--brand));
@@ -187,60 +449,104 @@
   background-clip: text;
 }
 
-/* ─── Glass Card ────────────────────────────────────────────────────────────── */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
-}
+@layer components {
+  /* ─── Glass ───────────────────────────────────────────────────────────────────
+     Four surfaces, four classes, one place that writes backdrop-filter. Glass is
+     for floating chrome and overlays only — dock, chips, sheets, hub, result card.
+     The ground stays flat paper (see body, above) and never blurs.
 
-/* ─── Liquid Glass navigation layer ──────────────────────────────────────────
-   The floating chrome — rails, tab bars, picker pills — above content. A
-   translucent, light-refracting lens (top highlight + float shadow). */
-.glass-nav {
-  background: var(--glass-nav-bg);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid var(--glass-nav-border);
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    var(--glass-nav-shadow);
-}
+     `.glass` and `.glass-nav` are the names the app already uses across the
+     header, dropdowns, tab bar and picker pills; they stay as thin aliases of the
+     card and bar recipes so every existing call site re-skins without being
+     touched. New work should use the components in components/ui/glass.tsx. */
+  .glass-bar {
+    background: var(--glass-bar-bg);
+    backdrop-filter: var(--glass-bar-blur);
+    -webkit-backdrop-filter: var(--glass-bar-blur);
+    border: 1px solid var(--glass-bar-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      var(--glass-card-shadow);
+  }
 
-/* Accessibility: when the user asks for less transparency, drop the see-through
-   glass for a near-opaque surface (Liquid Glass legibility fallback). */
-@media (prefers-reduced-transparency: reduce) {
-  .glass,
+  .glass-sheet {
+    background: var(--glass-sheet-bg);
+    backdrop-filter: var(--glass-sheet-blur);
+    -webkit-backdrop-filter: var(--glass-sheet-blur);
+    border: 1px solid var(--glass-sheet-border);
+    border-radius: var(--radius-sheet);
+  }
+
+  .glass-card {
+    background: var(--glass-card-bg);
+    backdrop-filter: var(--glass-card-blur);
+    -webkit-backdrop-filter: var(--glass-card-blur);
+    border: 1px solid var(--glass-card-border);
+    box-shadow: var(--glass-card-shadow);
+    border-radius: var(--radius-card);
+  }
+
+  .glass-chip {
+    background: var(--glass-chip-bg);
+    backdrop-filter: var(--glass-chip-blur);
+    -webkit-backdrop-filter: var(--glass-chip-blur);
+    border: 1px solid var(--glass-chip-border);
+    border-radius: var(--radius-chip);
+  }
+
+  .glass {
+    background: var(--glass-card-bg);
+    backdrop-filter: var(--glass-card-blur);
+    -webkit-backdrop-filter: var(--glass-card-blur);
+    border: 1px solid var(--glass-card-border);
+  }
+
   .glass-nav {
-    background: var(--glass-opaque);
+    background: var(--glass-bar-bg);
+    backdrop-filter: var(--glass-bar-blur);
+    -webkit-backdrop-filter: var(--glass-bar-blur);
+    border: 1px solid var(--glass-bar-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      var(--glass-card-shadow);
+  }
+
+  /* A bar that meets content on one edge only — the sticky app header — keeps the
+     recipe's fill and blur but draws its hairline on the bottom and stays square. */
+  .glass-bar--bottom {
+    border-width: 0 0 1px;
+    border-radius: 0;
+  }
+
+  /* Stacking limit, enforced rather than documented. Two blurred layers is the
+     budget; a glass surface nested three deep drops its own blur and rides the
+     one above it. Costs nothing when the rule is obeyed and silently protects the
+     frame rate when a future layout nests one sheet too many. */
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
+    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
+    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip) {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+
+  /* Accessibility: when the user asks for less transparency, drop the see-through
+     glass for a near-opaque surface (Liquid Glass legibility fallback). */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass,
+    .glass-nav,
+    .glass-bar,
+    .glass-sheet,
+    .glass-card,
+    .glass-chip {
+      background: var(--glass-opaque);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
   }
 }
 
 /* ─── Animations ────────────────────────────────────────────────────────────── */
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
-}
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-@keyframes spin-result {
-  0% { transform: scale(0.8) rotate(-5deg); opacity: 0; }
-  60% { transform: scale(1.05) rotate(2deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
-}
-@keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
-}
 
-.animate-float { animation: float 3s ease-in-out infinite; }
-.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
-.animate-spin-result { animation: spin-result 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
 
 /* ─── Motion primitives ─────────────────────────────────────────────────────────
    These back the animation classes used across the app (reveal, fade-in,
@@ -251,19 +557,18 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes orb-spin { to { transform: rotate(360deg); } }
-@keyframes ring-rotate { to { transform: rotate(1turn); } }
 @keyframes tab-enter {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes cta-pulse {
-  0%, 100% { box-shadow: 0 0 22px oklch(from var(--brand) l c h / var(--brand-glow)), 0 4px 20px oklch(0.30 0.04 40 / 0.25); }
-  50%      { box-shadow: 0 0 40px oklch(from var(--brand) l c h / calc(var(--brand-glow) + 0.15)), 0 0 64px oklch(from var(--brand-2) l c h / calc(var(--brand-glow) * 0.5)), 0 4px 20px oklch(0.30 0.04 40 / 0.25); }
-}
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .reveal { opacity: 0; animation: reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-.animate-orb-spin { animation: orb-spin 28s linear infinite; }
+/* The one loading indicator in the app (see components/BrandLoader.tsx). It used
+   to default to 28s because it doubled as ambient rotation in the header and
+   hero; those are gone for the 0-idle-frames budget, and at 28s the three
+   remaining loading orbs were turning too slowly to read as moving at all. */
+.animate-orb-spin { animation: orb-spin 1.4s linear infinite; }
 
 /* The brand mark: a miniature lunch wheel. Eight hard-stop slices from the
    segment palette (client/src/lib/palette.ts) around a theme-colored hub, so
@@ -284,17 +589,33 @@
       #e2674f 315deg 360deg
     );
 }
-.animate-ring-rotate { animation: ring-rotate 12s linear infinite; }
 .tab-enter { animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
-.cta-pulse { animation: cta-pulse 2.6s ease-in-out infinite; }
 .fade-in { animation: fade-in 0.25s ease-out; }
+
+/* The winning pane unrolling into display type. Transform and opacity only,
+   and it starts partway into the disc's recede so the name resolves while the
+   disc is still travelling back — see SPIN_TOTAL_MS in shared/wheelGeometry.ts. */
+@keyframes unroll {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-enter));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-unroll {
+  animation: unroll var(--dur-unroll) var(--ease-standard) var(--dur-unroll-delay, 160ms) both;
+}
 
 /* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .reveal, .animate-float, .animate-orb-spin, .animate-ring-rotate,
-  .animate-pulse-glow, .tab-enter, .cta-pulse, .fade-in, .animate-spin-result {
+  .reveal, .animate-orb-spin, .tab-enter, .fade-in, .animate-unroll {
     animation: none !important;
   }
+  /* Under reduced motion the result appears; it does not unroll. */
+  .animate-unroll { opacity: 1 !important; transform: none !important; }
   .reveal { opacity: 1 !important; transform: none !important; }
 }
 

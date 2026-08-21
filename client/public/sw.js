@@ -6,7 +6,7 @@
 //   to the cached shell.
 // - Hashed static assets are cache-first (safe: new builds get new URLs).
 
-const CACHE = "lunch-wheel-v2";
+const CACHE = "lunch-wheel-v3";
 const SHELL = "/app";
 
 self.addEventListener("install", (event) => {

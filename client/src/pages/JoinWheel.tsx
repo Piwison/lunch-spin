@@ -11,7 +11,7 @@ import { Loader2 } from "lucide-react";
  *  instead of centered. min-h-dvh (not vh) tracks the mobile browser chrome. */
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh grid place-items-center px-6 text-center" style={{ background: "var(--background)" }}>
+    <div className="min-h-dvh grid place-items-center px-6 text-center" style={{ background: "var(--ground)" }}>
       <div className="flex flex-col items-center gap-5 max-w-sm w-full">{children}</div>
     </div>
   );
@@ -53,7 +53,7 @@ export default function JoinWheel() {
   if (loading || (user && joinWheel.isPending)) {
     return (
       <Centered>
-        <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand)" }} />
+        <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand-text)" }} />
         <p className="text-muted-foreground">Joining wheel…</p>
       </Centered>
     );
@@ -63,27 +63,27 @@ export default function JoinWheel() {
     return (
       <Centered>
         <div
-          className="w-20 h-20 orb-wheel animate-orb-spin"
-          style={{ boxShadow: "0 0 40px oklch(from var(--brand) l c h / 0.4)" }}
-        />
+          className="w-20 h-20 orb-wheel animate-orb-spin" />
         <div>
-          <h1 className="text-2xl font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>
-            YOU'VE BEEN INVITED
+          <h1 className="type-title mb-2" style={{ color: "var(--ink-warm)" }}>
+            You&apos;ve been invited
           </h1>
           <p className="text-muted-foreground">Sign in to join this lunch wheel.</p>
         </div>
         <a
           href={getLoginUrl(`/join/${params.token}`)}
-          className="w-full max-w-xs px-8 py-3 rounded-full font-bold text-sm transition-all active:scale-95 hover:-translate-y-0.5"
+          className="w-full max-w-xs inline-flex items-center justify-center px-8 transition-colors active:scale-[var(--press-scale)]"
           style={{
-            background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-            color: "white",
-            fontFamily: "var(--font-display)",
+            minHeight: 56,
+            borderRadius: "var(--radius-control)",
+            background: "var(--brand-solid)",
+            color: "var(--on-accent)",
+            fontSize: 16,
+            fontWeight: 500,
             letterSpacing: "0.05em",
-            boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.35)",
           }}
         >
-          SIGN IN TO JOIN
+          Sign in to join
         </a>
       </Centered>
     );
@@ -92,10 +92,10 @@ export default function JoinWheel() {
   if (joined) {
     return (
       <Centered>
-        <div className="text-6xl animate-float">🎉</div>
+        <div className="text-6xl">🎉</div>
         <div>
-          <h1 className="text-3xl font-black mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--brand)" }}>
-            JOINED!
+          <h1 className="type-title mb-1.5" style={{ color: "var(--brand-text)" }}>
+            Joined!
           </h1>
           <p className="text-muted-foreground">
             {joinWheel.data?.wheelName
@@ -103,7 +103,7 @@ export default function JoinWheel() {
               : "Taking you to the wheel…"}
           </p>
         </div>
-        <Loader2 className="animate-spin" size={20} style={{ color: "var(--brand)" }} />
+        <Loader2 className="animate-spin" size={20} style={{ color: "var(--brand-text)" }} />
       </Centered>
     );
   }
@@ -113,15 +113,23 @@ export default function JoinWheel() {
       <Centered>
         <div className="text-6xl">😕</div>
         <div>
-          <h1 className="text-2xl font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>INVALID INVITE</h1>
+          <h1 className="type-title mb-2" style={{ color: "var(--ink-warm)" }}>Invalid invite</h1>
           <p className="text-muted-foreground">{error}</p>
         </div>
         <button
           onClick={() => navigate("/app")}
-          className="px-6 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95"
-          style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+          className="px-6 transition-colors active:scale-[var(--press-scale)]"
+          style={{
+            minHeight: 56,
+            borderRadius: "var(--radius-control)",
+            background: "var(--paper)",
+            border: "1px solid var(--border)",
+            color: "var(--ink-warm)",
+            fontSize: 15,
+            fontWeight: 500,
+          }}
         >
-          Go to App
+          Go to the app
         </button>
       </Centered>
     );
