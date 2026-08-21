@@ -71,7 +71,7 @@ function exclusionOptionsFor(current: number) {
  *  controls into scannable sections (Basics / Sharing / Spin rules / Distance). */
 function SettingsSection({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[10px] font-bold tracking-[0.12em] uppercase text-muted-foreground/70 pt-1 first:pt-0">
+    <div className="type-eyebrow pt-2 first:pt-0" style={{ color: "var(--brand)" }}>
       {children}
     </div>
   );
@@ -102,14 +102,14 @@ function WheelActionsMenu({
         <button
           aria-label="Wheel actions"
           onClick={(e) => e.stopPropagation()}
-          className={`flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ${
-            large ? "h-11 w-11" : "h-9 w-9"
+          className={`flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ${
+            large ? "h-14 w-12" : "h-11 w-10"
           }`}
         >
           <MoreVertical size={large ? 18 : 16} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="glass border-border/50 min-w-44">
+      <DropdownMenuContent align="end" className="glass-card min-w-44">
         {/* Public wheels can be shared with anyone — no sign-in, no token. */}
         {wheel.isPublic && (
           <DropdownMenuItem onClick={onCopyPublic} className="gap-2.5">
@@ -441,8 +441,9 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
     return (
       <div
         key={wheel.id}
-        className="group relative flex items-center gap-1 rounded-xl transition-all duration-150"
+        className="group relative flex items-center gap-1 transition-colors duration-150"
         style={{
+          borderRadius: "var(--radius-control)",
           background: isSelected ? "oklch(from var(--brand) l c h / 0.15)" : "transparent",
           border: isSelected ? "1px solid oklch(from var(--brand) l c h / 0.3)" : "1px solid transparent",
         }}
@@ -450,15 +451,16 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
         <button
           onClick={select}
           aria-current={isSelected}
-          className={`flex-1 min-w-0 flex items-center gap-2.5 px-2.5 rounded-xl text-left ${inSheet ? "min-h-[56px] py-2" : "py-2"}`}
+          className="flex-1 min-w-0 flex items-center gap-2.5 px-3 text-left"
+          style={{ minHeight: 56, borderRadius: "var(--radius-control)" }}
         >
           <span
             className={`w-6 h-6 rounded-full flex-shrink-0 ${isSelected ? "orb-wheel" : ""}`}
             style={isSelected ? undefined : { background: "var(--border)" }}
           />
           <span
-            className="flex-1 truncate text-sm"
-            style={{ color: isSelected ? "var(--foreground)" : "var(--muted-foreground)" }}
+            className="flex-1 truncate"
+            style={{ fontSize: 15, fontWeight: 500, color: isSelected ? "var(--ink-warm)" : "var(--body-warm)" }}
           >
             {wheel.name}
           </span>
@@ -475,7 +477,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
           disabled={setDefaultWheel.isPending}
           aria-label={isDefault ? "Unset default wheel" : "Set as default wheel"}
           title={isDefault ? "Default wheel — opens automatically. Click to unset." : "Set as default wheel (opens automatically on entry)"}
-          className={`flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors ${inSheet ? "h-11 w-9" : "h-9 w-8"}`}
+          className={`flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors ${inSheet ? "h-14 w-11" : "h-11 w-10"}`}
         >
           <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
         </button>
@@ -502,10 +504,13 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
   return (
     <>
       {/* ── DESKTOP RAIL — floating Liquid Glass panel ── */}
-      <aside className="hidden md:flex w-56 flex-col gap-1 m-2 p-2 rounded-2xl glass-nav overflow-y-auto flex-shrink-0">
-        <div className="px-2 pt-1 pb-2">
-          <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-            MY WHEELS
+      <aside
+        className="hidden md:flex w-60 flex-col gap-1 m-2 p-2 glass-bar overflow-y-auto flex-shrink-0"
+        style={{ borderRadius: "var(--radius-card)" }}
+      >
+        <div className="px-3 pt-2 pb-3">
+          <span className="type-eyebrow" style={{ color: "var(--brand)" }}>
+            My wheels
           </span>
         </div>
 
@@ -513,10 +518,11 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
 
         <button
           onClick={() => setShowCreate(true)}
-          className="mt-1 flex items-center gap-2 px-2.5 py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-150"
+          className="mt-1 flex items-center gap-2.5 px-3 text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors duration-150"
+          style={{ minHeight: 56, borderRadius: "var(--radius-control)" }}
         >
-          <Plus size={16} className="flex-shrink-0" />
-          <span className="text-sm">New Wheel</span>
+          <Plus size={17} className="flex-shrink-0" />
+          <span style={{ fontSize: 15, fontWeight: 500 }}>New wheel</span>
         </button>
       </aside>
 
@@ -524,12 +530,15 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
       <div className="md:hidden px-3 pt-3 pb-1 flex-shrink-0 flex items-center gap-2">
         <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
           <SheetTrigger asChild>
-            <button className="flex-1 min-w-0 flex items-center gap-2.5 px-3.5 h-14 rounded-2xl glass-nav text-left transition-transform active:scale-[0.99]">
+            <button
+              className="flex-1 min-w-0 flex items-center gap-2.5 px-4 glass-bar text-left transition-transform active:scale-[var(--press-scale)]"
+              style={{ minHeight: 56, borderRadius: "var(--radius-control)" }}
+            >
               <span
                 className={`w-7 h-7 rounded-full flex-shrink-0 ${selectedWheel ? "orb-wheel" : ""}`}
                 style={selectedWheel ? undefined : { background: "var(--border)" }}
               />
-              <span className="flex-1 truncate text-sm font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+              <span className="flex-1 truncate" style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)" }}>
                 {selectedWheel?.name ?? "Select a wheel"}
               </span>
               <ChevronDown size={16} className="text-muted-foreground flex-shrink-0" />
@@ -537,18 +546,25 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
           </SheetTrigger>
           <SheetContent
             side="bottom"
-            className="glass-nav border-border/50 rounded-t-3xl max-h-[80vh] gap-0 px-3"
-            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+            className="glass-sheet max-h-[80vh] gap-0 px-3"
+            /* Bottom sheet: square off the edge that meets the viewport floor so
+               only the top corners carry the sheet radius. */
+            style={{
+              paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
+              borderBottomLeftRadius: 0,
+              borderBottomRightRadius: 0,
+            }}
           >
-            <SheetHeader className="flex-row items-center justify-between pl-1 pr-11 pb-1">
-              <SheetTitle className="text-xs tracking-widest text-muted-foreground" style={{ fontFamily: "var(--font-display)" }}>
-                MY WHEELS
+            <SheetHeader className="flex-row items-center justify-between pl-2 pr-12 pb-1">
+              <SheetTitle className="type-eyebrow" style={{ color: "var(--brand)" }}>
+                My wheels
               </SheetTitle>
               <button
                 onClick={() => { setShowSwitcher(false); setShowCreate(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-foreground hover:bg-white/10 transition-colors"
+                className="flex items-center gap-1.5 px-4 hover:bg-white/10 transition-colors"
+                style={{ minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 15, fontWeight: 500, color: "var(--ink-warm)" }}
               >
-                <Plus size={14} /> New
+                <Plus size={16} /> New
               </button>
             </SheetHeader>
             <div className="flex flex-col gap-1 overflow-y-auto py-1">
@@ -565,18 +581,19 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
             onClick={() => openSettingsFor(selectedWheel)}
             aria-label="Wheel settings"
             title={isSelectedWheelOwner ? "Wheel settings" : "Wheel settings (view only)"}
-            className="flex-shrink-0 flex items-center justify-center h-14 w-14 rounded-2xl glass-nav text-muted-foreground hover:text-foreground transition-transform active:scale-95"
+            className="flex-shrink-0 flex items-center justify-center glass-bar text-muted-foreground hover:text-foreground transition-transform active:scale-[var(--press-scale)]"
+            style={{ minHeight: 56, minWidth: 56, borderRadius: "var(--radius-control)" }}
           >
-            <Settings size={18} />
+            <Settings size={19} />
           </button>
         )}
       </div>
 
       {/* Create wheel dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="glass-sheet max-w-sm">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>CREATE WHEEL</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Create wheel</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
             <Input
@@ -635,12 +652,20 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
             <Button
               onClick={() => { setCreateError(null); newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines }); }}
               disabled={!newName.trim() || createWheel.isPending}
-              className="relative overflow-hidden transition-all duration-200 active:scale-[0.97]"
-              style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+              className="relative overflow-hidden transition-colors duration-200 active:scale-[var(--press-scale)]"
+              style={{
+                minHeight: 56,
+                borderRadius: "var(--radius-control)",
+                background: "var(--brand)",
+                color: "var(--on-accent)",
+                fontSize: 16,
+                fontWeight: 500,
+                letterSpacing: "0.05em",
+              }}
             >
               {createWheel.isPending ? (
-                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating...</span>
-              ) : "Create Wheel"}
+                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />Creating…</span>
+              ) : "Create wheel"}
             </Button>
           </div>
         </DialogContent>
@@ -648,9 +673,9 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
 
       {/* Invite link dialog */}
       <Dialog open={!!showInvite} onOpenChange={() => setShowInvite(null)}>
-        <DialogContent className="glass border-border/50 max-w-sm">
+        <DialogContent className="glass-sheet max-w-sm">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>INVITE LINK</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Invite link</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
             <p className="text-sm text-muted-foreground">Share this link with your team to join <strong className="text-foreground">{showInvite?.name}</strong>:</p>
@@ -671,9 +696,9 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
             pinned title, a single scrolling body, and a pinned footer so Save is
             always reachable no matter how many sections are expanded. (p-0 +
             flex-col overrides DialogContent's default grid/padding.) */}
-        <DialogContent className="glass border-border/50 max-w-sm p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <DialogContent className="glass-sheet max-w-sm p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
           <DialogHeader className="px-5 pt-5 pb-3 flex-shrink-0">
-            <DialogTitle style={{ fontFamily: "var(--font-display)" }}>WHEEL SETTINGS</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Wheel settings</DialogTitle>
           </DialogHeader>
           {editWheel && (
             /* A BLOCK with space-y — deliberately not `flex flex-col gap-4`. As a
@@ -726,7 +751,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
                       <Users size={14} className="flex-shrink-0" /> Team invite
                     </div>
                     {!sharedLive ? (
-                      <p className="text-[11px] text-muted-foreground">Press Save Settings to turn on sharing — you'll get an invite link right away.</p>
+                      <p className="text-[11px] text-muted-foreground">Press Save settings to turn on sharing — you'll get an invite link right away.</p>
                     ) : token ? (
                       <>
                         <div className="flex items-center gap-2">
@@ -793,7 +818,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
                     </div>
                     <p className={`text-[11px] flex items-center gap-1.5 ${live ? "" : "text-muted-foreground"}`} style={live ? { color: "var(--ok)" } : undefined}>
                       <Globe size={12} className="flex-shrink-0" />
-                      {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save Settings."}
+                      {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save settings."}
                     </p>
                   </div>
                 );
@@ -896,7 +921,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="text-sm truncate">{editWheel.originLabel.trim() || "Office"}</span>
                             <span className="text-[11px] flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand)" }}>
-                              {isPersisted ? "Saved" : "Press Save Settings to apply"}
+                              {isPersisted ? "Saved" : "Press Save settings to apply"}
                               <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
                                 view on map
                               </a>
@@ -956,12 +981,20 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
                 <Button
                   onClick={saveWheelSettings}
                   disabled={!editWheel.name.trim() || savingWheelSettings}
-                  className="w-full transition-all duration-200 active:scale-[0.97]"
-                  style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+                  className="w-full transition-colors duration-200 active:scale-[var(--press-scale)]"
+                  style={{
+                    minHeight: 56,
+                    borderRadius: "var(--radius-control)",
+                    background: "var(--brand)",
+                    color: "var(--on-accent)",
+                    fontSize: 16,
+                    fontWeight: 500,
+                    letterSpacing: "0.05em",
+                  }}
                 >
                   {savingWheelSettings ? (
-                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</span>
-                  ) : "Save Settings"}
+                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving…</span>
+                  ) : "Save settings"}
                 </Button>
               ) : (
                 /* Members see the settings but can't change them — no Save at

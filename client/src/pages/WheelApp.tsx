@@ -671,18 +671,9 @@ export default function WheelApp() {
         }}
       >
         <div className="flex items-center gap-3">
-          <div
-            className="w-7 h-7 orb-wheel flex-shrink-0"
-            style={{
-              boxShadow: "0 0 12px oklch(from var(--brand) l c h / 0.5)",
-              animationDuration: "20s",
-            }}
-          />
-          <span
-            className="font-black text-base tracking-tight gradient-text"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            LUNCH WHEEL
+          <div className="w-7 h-7 orb-wheel flex-shrink-0" style={{ animationDuration: "20s" }} />
+          <span className="type-section" style={{ fontSize: 17, color: "var(--ink-warm)" }}>
+            Lunch Wheel
           </span>
         </div>
 
@@ -699,7 +690,7 @@ export default function WheelApp() {
             <DropdownMenuTrigger asChild>
               <button
                 aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
-                className="relative w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors flex-shrink-0"
+                className="relative w-11 h-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors flex-shrink-0"
               >
                 <Bell size={18} />
                 {unreadCount > 0 && (
@@ -710,7 +701,7 @@ export default function WheelApp() {
                 )}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="glass border-border/50 w-80 p-0">
+            <DropdownMenuContent align="end" className="glass-card w-80 p-0 overflow-hidden">
               <DropdownMenuLabel className="px-3 py-2.5 text-sm">Notifications</DropdownMenuLabel>
               <DropdownMenuSeparator className="my-0" />
               <div className="max-h-[60vh] overflow-y-auto">
@@ -748,13 +739,13 @@ export default function WheelApp() {
             <DropdownMenuTrigger asChild>
               <button
                 aria-label="Account menu"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-transform active:scale-90 hover:brightness-110"
-                style={{ background: "linear-gradient(135deg, var(--brand), var(--brand-2))", color: "white" }}
+                className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-transform active:scale-[var(--press-scale)] hover:brightness-105"
+                style={{ background: "var(--brand)", color: "var(--on-accent)" }}
               >
                 {user.name?.charAt(0).toUpperCase() ?? "?"}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="glass border-border/50 w-56">
+            <DropdownMenuContent align="end" className="glass-card w-56">
               <DropdownMenuLabel className="flex flex-col gap-0.5">
                 <span className="text-sm font-semibold truncate">{user.name || "-"}</span>
                 <span className="text-xs text-muted-foreground font-normal truncate">{user.email || "-"}</span>
@@ -850,28 +841,34 @@ export default function WheelApp() {
         {/* ── MAIN CONTENT ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* ── VIEW TABS (desktop) — floating glass segmented control ── */}
+          {/* ── VIEW TABS (desktop) — floating glass segmented control ──
+              Ember: one glass bar, solid persimmon on the active segment (no
+              gradient, no glow — persimmon is the only saturated colour and it
+              is flat), and 56px of height like every other control. */}
           <div className="hidden md:flex px-4 py-2.5 flex-shrink-0">
-            <div className="inline-flex items-center gap-1 p-1 rounded-full glass-nav">
+            <div
+              className="inline-flex items-center gap-1 p-1.5 glass-bar"
+              style={{ borderRadius: "var(--radius-control)" }}
+            >
               {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
                 const isActive = activeTab === id;
                 return (
                   <button
                     key={id}
                     onClick={() => setActiveTab(id)}
-                    className="relative flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-200 active:scale-95"
+                    className="relative flex items-center gap-2 px-5 transition-colors duration-200 active:scale-[var(--press-scale)]"
                     style={{
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.08em",
-                      color: isActive ? "white" : "var(--muted-foreground)",
-                      background: isActive
-                        ? "linear-gradient(135deg, var(--brand), var(--brand-2))"
-                        : "transparent",
-                      boxShadow: isActive ? "0 0 16px oklch(from var(--brand) l c h / 0.45)" : "none",
+                      minHeight: 56,
+                      borderRadius: "calc(var(--radius-control) - 6px)",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      letterSpacing: "0.05em",
+                      color: isActive ? "var(--on-accent)" : "var(--body-warm)",
+                      background: isActive ? "var(--brand)" : "transparent",
                     }}
                   >
-                    <Icon size={13} />
-                    {label.toUpperCase()}
+                    <Icon size={15} />
+                    {label}
                   </button>
                 );
               })}
@@ -891,8 +888,16 @@ export default function WheelApp() {
               <button
                 onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
                 disabled={!selectedWheelId || addShared.isPending}
-                className="px-3 py-1 rounded-full text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 flex-shrink-0"
-                style={{ background: "var(--brand)", color: "white", fontFamily: "var(--font-display)" }}
+                className="px-4 flex items-center transition-colors active:scale-[var(--press-scale)] disabled:opacity-40 flex-shrink-0"
+                style={{
+                  minHeight: 44,
+                  borderRadius: "var(--radius-chip)",
+                  background: "var(--brand)",
+                  color: "var(--on-accent)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  letterSpacing: "0.05em",
+                }}
               >
                 {addShared.isPending ? "Adding…" : "Add"}
               </button>
@@ -932,8 +937,8 @@ export default function WheelApp() {
                 <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
                   <div className="w-20 h-20 orb-wheel opacity-20" />
                   <div>
-                    <p className="font-semibold text-foreground/60 mb-1" style={{ fontFamily: "var(--font-display)" }}>
-                      NO WHEEL SELECTED
+                    <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
+                      No wheel selected
                     </p>
                     <p className="text-sm text-muted-foreground">Pick a wheel from the menu or create a new one</p>
                   </div>
@@ -1038,15 +1043,10 @@ export default function WheelApp() {
                         <p className="text-sm text-muted-foreground">Couldn't load restaurants: {restaurantsError.message}</p>
                         <button
                           onClick={() => refetchRestaurants()}
-                          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95"
-                          style={{
-                            background: "var(--muted)",
-                            border: "1px solid var(--border)",
-                            color: "var(--foreground)",
-                            fontFamily: "var(--font-display)",
-                          }}
+                          className="glass-chip flex items-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
+                          style={{ minHeight: 56, color: "var(--ink-warm)", fontSize: 15, fontWeight: 500 }}
                         >
-                          <RefreshCw size={14} /> RETRY
+                          <RefreshCw size={15} /> Retry
                         </button>
                       </div>
                     ) : (
@@ -1086,15 +1086,18 @@ export default function WheelApp() {
                           <div className="flex flex-col items-center gap-3 text-center">
                             <button
                               onClick={() => setActiveTab("restaurants")}
-                              className="group flex items-center gap-2.5 px-8 py-4 rounded-full font-bold text-sm tracking-widest transition-all duration-200 active:scale-95 hover:-translate-y-0.5"
+                              className="group flex items-center gap-2.5 px-8 transition-colors duration-200 active:scale-[var(--press-scale)]"
                               style={{
-                                fontFamily: "var(--font-display)",
-                                background: "linear-gradient(135deg, var(--brand), var(--brand-2))",
-                                boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4), 0 8px 24px rgba(0,0,0,0.4)",
-                                color: "white",
+                                minHeight: 56,
+                                borderRadius: "var(--radius-control)",
+                                background: "var(--brand)",
+                                color: "var(--on-accent)",
+                                fontSize: 16,
+                                fontWeight: 500,
+                                letterSpacing: "0.05em",
                               }}
                             >
-                              <Plus size={16} /> ADD RESTAURANTS
+                              <Plus size={17} /> Add restaurants
                             </button>
                             <p className="text-xs text-muted-foreground">Add a few places, then spin to decide.</p>
                           </div>
@@ -1173,16 +1176,14 @@ export default function WheelApp() {
                           >
                             <button
                               onClick={() => setShowExcluded((s) => !s)}
-                              className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-white/3"
+                              className="w-full flex items-center justify-between gap-2 px-4 text-left transition-colors hover:bg-white/3"
+                              style={{ minHeight: 56 }}
                             >
-                              <div
-                                className="flex items-center gap-2 text-xs font-semibold tracking-widest"
-                                style={{ fontFamily: "var(--font-display)", color: "var(--brand)" }}
-                              >
-                                <Clock size={11} /> SKIPPING (PICKED RECENTLY)
+                              <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand)" }}>
+                                <Clock size={12} /> Skipping (picked recently)
                                 <span
-                                  className="px-2 py-0.5 rounded-full text-[10px]"
-                                  style={{ background: "oklch(from var(--destructive) l c h / 0.12)", color: "var(--brand)" }}
+                                  className="px-2 py-0.5 text-[10px] font-semibold"
+                                  style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
                                 >
                                   {restaurants.filter((r) => r.isExcluded).length}
                                 </span>
@@ -1256,7 +1257,10 @@ export default function WheelApp() {
             }}
             aria-label="Views"
           >
-            <div className="w-full max-w-md flex items-center gap-1 p-1.5 rounded-[1.75rem] glass-nav">
+            <div
+              className="w-full max-w-md flex items-center gap-1 p-1.5 glass-bar"
+              style={{ borderRadius: "var(--radius-sheet)" }}
+            >
               {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
                 const isActive = activeTab === id;
                 return (
@@ -1264,19 +1268,19 @@ export default function WheelApp() {
                     key={id}
                     onClick={() => setActiveTab(id)}
                     aria-current={isActive ? "page" : undefined}
-                    className="flex-1 flex flex-col items-center justify-center gap-1 h-14 rounded-[1.4rem] text-[11px] font-semibold transition-all duration-200 active:scale-95"
+                    className="flex-1 flex flex-col items-center justify-center gap-1 transition-colors duration-200 active:scale-[var(--press-scale)]"
                     style={{
-                      fontFamily: "var(--font-display)",
-                      letterSpacing: "0.04em",
-                      color: isActive ? "white" : "var(--muted-foreground)",
-                      background: isActive
-                        ? "linear-gradient(135deg, var(--brand), var(--brand-2))"
-                        : "transparent",
-                      boxShadow: isActive ? "0 0 16px oklch(from var(--brand) l c h / 0.45)" : "none",
+                      minHeight: 56,
+                      borderRadius: "calc(var(--radius-sheet) - 8px)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      letterSpacing: "0.05em",
+                      color: isActive ? "var(--on-accent)" : "var(--body-warm)",
+                      background: isActive ? "var(--brand)" : "transparent",
                     }}
                   >
                     <Icon size={20} />
-                    {label.toUpperCase()}
+                    {label}
                   </button>
                 );
               })}
