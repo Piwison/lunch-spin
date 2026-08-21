@@ -90,15 +90,22 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
               title={`${m.isOwner ? `${label} · creator` : label}${isHere ? " · here now" : ""}`}
             >
               <span
-                className="relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+                /* A monogram is a graphic label, not body copy — it takes the
+                   11px eyebrow rung, not the 15px meta one, or two letters fill
+                   the whole circle. */
+                className="relative w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                data-avatar
                 style={{
                   background: isHere ? "var(--brand-solid)" : "oklch(from var(--ink-warm) l c h / 0.08)",
                   color: isHere ? "var(--on-accent)" : "var(--body-warm)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
                 }}
               >
                 {initials(m.name, m.email)}
               </span>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink-warm)" }}>
+              <span style={{ fontSize: 15, fontWeight: 500, color: "var(--ink-warm)" }}>
                 {m.userId === currentUserId ? "You" : label}
               </span>
               {m.isOwner && <Crown size={12} style={{ color: "var(--brand-text)" }} />}

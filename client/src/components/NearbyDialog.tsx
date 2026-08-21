@@ -168,7 +168,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
         </DialogHeader>
 
         <div className="flex flex-col gap-3 pt-2">
-          <p className="text-xs text-muted-foreground">
+          <p className="type-meta text-muted-foreground">
             Find restaurants near you and drop them straight onto the wheel — ordered by walking time.
           </p>
 
@@ -250,7 +250,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                 <MapPin size={22} style={{ color: "var(--brand-text)" }} />
               </div>
               <span style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)" }}>Use my location</span>
-              <span className="text-xs text-muted-foreground px-6">We only use your location for this search — it's never stored.</span>
+              <span className="type-meta text-muted-foreground px-6">We only use your location for this search — it's never stored.</span>
             </button>
           )}
 
@@ -267,7 +267,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
           {search.data && (search.data.chainsGrouped > 0 || search.data.lowDensity) && (
             <div className="flex flex-col gap-2">
               {search.data.chainsGrouped > 0 && (
-                <p className="text-[11px] text-muted-foreground px-1">
+                <p className="type-meta text-muted-foreground px-1">
                   {search.data.chainsGrouped} chain duplicate{search.data.chainsGrouped > 1 ? "s" : ""} grouped to the nearest location.
                 </p>
               )}
@@ -295,7 +295,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             >
               No restaurants found nearby.
               {radius < 5000 && (
-                <button onClick={widen} className="text-xs font-semibold text-foreground underline underline-offset-2">Widen the search</button>
+                <button onClick={widen} className="type-meta font-semibold text-foreground underline underline-offset-2">Widen the search</button>
               )}
             </div>
           )}
@@ -340,7 +340,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className="block font-semibold text-sm truncate">{p.name}</span>
-                      <span className="flex items-center gap-2 flex-wrap mt-1 text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-2 flex-wrap mt-1 type-meta text-muted-foreground">
                         <span
                           className="flex items-center gap-1"
                           title={p.walkSource === "route" ? "Walking route time" : "Straight-line estimate"}
@@ -354,7 +354,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                         {isAdded && <span style={{ color: "var(--ok)" }}>On the wheel</span>}
                       </span>
                       {p.address && (
-                        <span className="block text-[11px] text-muted-foreground/70 truncate mt-0.5">{p.address}</span>
+                        <span className="block type-meta text-muted-foreground/70 truncate mt-0.5">{p.address}</span>
                       )}
                     </span>
                   </button>

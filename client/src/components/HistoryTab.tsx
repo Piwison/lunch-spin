@@ -100,7 +100,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
           <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>
             Spin history
           </h2>
-          <span className="text-xs text-muted-foreground">
+          <span className="type-meta text-muted-foreground">
             {history?.length ?? 0} spin{history?.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -195,7 +195,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                   }}
                 >
                   {/* Rank / index */}
-                  <span className="text-xs text-muted-foreground/50 w-5 text-right flex-shrink-0">
+                  <span className="type-meta text-muted-foreground/50 w-5 text-right flex-shrink-0">
                     {idx + 1}
                   </span>
 
@@ -207,7 +207,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                       </span>
                       {isCurrentlyExcluded && isLatestForRestaurant && (
                         <span
-                          className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                          className="type-meta px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
                             background: "oklch(from var(--destructive) l c h / 0.15)",
                             color: "var(--brand-text)",
@@ -219,7 +219,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                       )}
                       {entry.manuallyReenabled && (
                         <span
-                          className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                          className="type-meta px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
                             background: "oklch(from var(--ok) l c h / 0.15)",
                             color: "var(--ok)",
@@ -230,7 +230,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="type-meta text-muted-foreground mt-0.5">
                       {timeAgo(spunAtDate)} · by {entry.spunByName ?? "Unknown"}
                     </p>
 
@@ -275,7 +275,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                         background: "oklch(from var(--ok) l c h / 0.15)",
                         border: "1px solid oklch(from var(--ok) l c h / 0.4)",
                         color: "var(--ok)",
-                        fontSize: 13,
+                        fontSize: 15,
                         fontWeight: 500,
                       }}
                     >

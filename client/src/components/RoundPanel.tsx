@@ -62,7 +62,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
             This round
           </span>
-          <span className="text-[10px] font-normal text-muted-foreground/70">· {restaurants.length}</span>
+          <span className="type-meta font-normal text-muted-foreground/70">· {restaurants.length}</span>
           {hasMarks && (
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: "oklch(0.70 0.18 150)" }} title="Votes or vetoes in this round" />
           )}
@@ -77,7 +77,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
         {hasMarks && showBody && (
           <button
             onClick={onClear}
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            className="type-meta text-muted-foreground hover:text-foreground flex items-center gap-1"
           >
             <RotateCcw size={12} /> Clear round
           </button>
@@ -87,7 +87,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
       {/* Dietary constraints — avoid tags for the round */}
       {showBody && tags.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
+          <span className="type-meta text-muted-foreground flex items-center gap-1">
             <Salad size={12} /> Avoid today:
           </span>
           {tags.map((tag) => {
@@ -98,7 +98,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 key={tag.id}
                 onClick={() => onDietary(tag.id)}
                 title={mine ? "You're avoiding this — tap to allow" : "Avoid this today"}
-                className="px-2.5 py-0.5 rounded-full text-xs font-medium transition-all active:scale-95"
+                className="px-2.5 py-0.5 rounded-full type-meta font-medium transition-all active:scale-95"
                 style={{
                   background: avoided ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
                   border: `1px solid ${avoided ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
@@ -139,7 +139,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                 onClick={() => onVote(r.id)}
                 disabled={isVetoed}
                 title={iVoted ? "Remove your vote" : "Vote for this"}
-                className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all active:scale-95 disabled:opacity-40"
+                className="flex items-center gap-1 px-2 py-1 rounded-full type-meta font-medium transition-all active:scale-95 disabled:opacity-40"
                 style={{
                   background: iVoted ? "oklch(0.70 0.18 150 / 0.2)" : "var(--muted)",
                   border: `1px solid ${iVoted ? "oklch(0.70 0.18 150 / 0.5)" : "var(--border)"}`,
@@ -154,7 +154,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
               <button
                 onClick={() => onVeto(r.id)}
                 title={iVetoed ? "Take back your veto" : "Veto — not today"}
-                className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all active:scale-95"
+                className="flex items-center gap-1 px-2 py-1 rounded-full type-meta font-medium transition-all active:scale-95"
                 style={{
                   background: iVetoed ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
                   border: `1px solid ${iVetoed ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,

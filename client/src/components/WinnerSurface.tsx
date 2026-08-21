@@ -1,5 +1,5 @@
-import { Check, Clock3, MapPin, RotateCw, X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { Check, Clock3, MapPin, RotateCw } from "lucide-react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 interface WinnerSurfaceProps {
   /** The winning restaurant's name. Set full bleed, with no card around it. */
@@ -19,7 +19,7 @@ interface WinnerSurfaceProps {
   onDirections: () => void;
   /** The quiet way out. Distinct from Respin: the spin already stands as
    *  rejected for today, so dismissing means "not this one, not now" without
-   *  starting another. Also bound to Esc and to a tap on the ground. */
+   *  starting another. Bound to a downward drag, a tap on the ground, and Esc. */
   onDismiss: () => void;
 }
 
@@ -36,6 +36,9 @@ interface WinnerSurfaceProps {
  * behind — the vote-once and read-only rules differ between them, but none of
  * the presentation does.
  */
+/** How far the panel has to travel before letting go dismisses it. */
+const DISMISS_AFTER_PX = 90;
+
 export default function WinnerSurface({
   name,
   closingSoonMinutes,
@@ -57,6 +60,43 @@ export default function WinnerSurface({
     return () => window.removeEventListener("keydown", onKey);
   }, [onDismiss]);
 
+  /**
+   * Drag down to dismiss.
+   *
+   * This replaced a 44px [x] pinned to `top: 16px` of a full-screen overlay.
+   * That put it under the status bar and the Dynamic Island on every recent
+   * iPhone — it was genuinely unreachable, not just awkward — and even with the
+   * safe-area inset applied, the top-right corner is the furthest point from a
+   * thumb on a big phone. The panel already rises from the bottom, so the
+   * gesture that matches it is pushing it back down: it works from anywhere on
+   * the panel, no aiming required.
+   *
+   * Pointer events, not touch: the same code covers trackpad drags, and setting
+   * pointer capture means a drag that leaves the element still finishes here.
+   */
+  const [dragY, setDragY] = useState(0);
+  const dragFrom = useRef<number | null>(null);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    // Let the actions handle their own taps; a drag starts on the panel itself.
+    if ((e.target as HTMLElement).closest("button, a")) return;
+    dragFrom.current = e.clientY;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: ReactPointerEvent) => {
+    if (dragFrom.current === null) return;
+    // Downward only. Rubber-band upward pulls to nothing rather than lifting the
+    // panel off the bottom of the screen.
+    setDragY(Math.max(0, e.clientY - dragFrom.current));
+  };
+  const endDrag = () => {
+    if (dragFrom.current === null) return;
+    dragFrom.current = null;
+    // A short flick is a mis-grab, not a dismiss.
+    if (dragY > DISMISS_AFTER_PX) onDismiss();
+    setDragY(0);
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col justify-end"
@@ -74,19 +114,43 @@ export default function WinnerSurface({
           "linear-gradient(to top, var(--background) 22%, oklch(from var(--background) l c h / 0.82) 46%, transparent 78%)",
       }}
     >
-      <button
-        onClick={onDismiss}
-        aria-label="Dismiss — not this one, not now"
-        className="absolute top-4 right-4 w-11 h-11 rounded-full flex items-center justify-center transition-opacity opacity-60 hover:opacity-100"
-        style={{ color: "var(--body)" }}
-      >
-        <X size={18} />
-      </button>
-
+      {/* Two nested boxes on purpose. `animate-unroll` animates `transform`, and
+          a CSS animation beats an inline style on the same property — putting
+          the drag offset on the animated element made the panel dismiss
+          correctly while never visibly following the finger, which is the worst
+          of both. The outer box owns the drag, the inner one owns the entrance. */}
       <div
-        className="px-6 pb-8 flex flex-col items-start gap-5 w-full max-w-lg mx-auto animate-unroll"
+        className="w-full touch-none"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        style={{
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          // No transition while the finger is down — the panel tracks the drag
+          // 1:1 — and a spring back to zero when it lifts.
+          transition: dragFrom.current === null ? "transform var(--dur-sheet-out) var(--ease-settle)" : "none",
+        }}
       >
+      <div
+        className="px-6 flex flex-col items-start gap-5 w-full max-w-lg mx-auto animate-unroll"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 2rem)" }}
+      >
+        {/* Grabber. Says "this can be pushed down" without a label, and gives
+            the gesture a visible home even though it works anywhere. */}
+        <div
+          aria-hidden="true"
+          className="self-center"
+          style={{
+            width: 40,
+            height: 4,
+            borderRadius: 2,
+            marginBottom: 4,
+            background: "var(--border)",
+            opacity: 0.9,
+          }}
+        />
         <div className="w-full">
           <p className="type-eyebrow mb-3" style={{ color: "var(--brand-text)" }}>
             Today&apos;s lunch
@@ -165,6 +229,7 @@ export default function WinnerSurface({
             </button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

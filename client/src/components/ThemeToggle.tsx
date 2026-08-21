@@ -15,7 +15,7 @@ export default function ThemeToggle({ large = false }: { large?: boolean }) {
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
       className={`flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent transition-colors ${
-        large ? "h-11 w-11" : "h-9 w-9"
+        large ? "h-11 w-11" : "h-11 w-11"
       }`}
     >
       {isDark ? <Sun size={large ? 18 : 16} /> : <Moon size={large ? 18 : 16} />}

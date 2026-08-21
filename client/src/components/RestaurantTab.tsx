@@ -334,7 +334,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           background: isActive ? tag.color + "33" : "var(--muted)",
           border: `1px solid ${isActive ? tag.color : "var(--border)"}`,
           color: isActive ? tag.color : "var(--body-warm)",
-          fontSize: 13,
+          fontSize: 15,
           fontWeight: 500,
         }}
       >
@@ -371,7 +371,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     type="button"
                     onClick={() => setShowAll(!showAll)}
                     className="px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors duration-150"
-                    style={{ borderRadius: "var(--radius-chip)", border: "1px dashed var(--border)", fontSize: 13, fontWeight: 500 }}
+                    style={{ borderRadius: "var(--radius-chip)", border: "1px dashed var(--border)", fontSize: 15, fontWeight: 500 }}
                   >
                     {showAll ? "Show less" : `+${rest.length} more`}
                   </button>
@@ -383,7 +383,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         <button
           type="button"
           onClick={() => setShowTagCreate(true)}
-          className="self-start flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
+          className="self-start flex items-center gap-1 type-meta text-muted-foreground hover:text-foreground transition-colors mt-1"
         >
           <Plus size={12} /> Create tag
         </button>
@@ -398,7 +398,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         <div className="min-w-0">
           <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>Places</h2>
           {restaurants && restaurants.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-0.5">{restaurants.length} place{restaurants.length !== 1 ? "s" : ""} on this wheel</p>
+            <p className="type-meta text-muted-foreground mt-0.5">{restaurants.length} place{restaurants.length !== 1 ? "s" : ""} on this wheel</p>
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -477,7 +477,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         const hasRatings = (ratingSummaries?.length ?? 0) > 0;
         const sortable = (restaurants?.length ?? 0) > 1;
         return (
-          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap text-xs text-muted-foreground">
+          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap type-meta text-muted-foreground">
             {distanceEnabled && (
               <span className="flex items-center gap-1">
                 <Footprints size={12} className="flex-shrink-0" />
@@ -683,7 +683,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   <span style={{ fontSize: 15, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</span>
                   {r.isExcluded && (
                     <span
-                      className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      className="type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                       style={{
                         background: "oklch(from var(--destructive) l c h / 0.15)",
                         color: "var(--brand-text)",
@@ -694,7 +694,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     </span>
                   )}
                   {distanceEnabled && (
-                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium text-muted-foreground" style={{ background: "var(--muted)" }}>
+                    <span className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium text-muted-foreground" style={{ background: "var(--muted)" }}>
                       <Footprints size={10} className="flex-shrink-0" />
                       {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : "no location"}
                     </span>
@@ -703,7 +703,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       the wheel, so a chip would just be noise. */}
                   {r.openStatus === "closed" && (
                     <span
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                       style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
                       title="Closed right now — off the wheel until it reopens"
                     >
@@ -712,7 +712,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   )}
                   {r.openStatus === "closing_soon" && (
                     <span
-                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
+                      className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                       style={{
                         background: "oklch(from var(--destructive) l c h / 0.12)",
                         color: "var(--destructive)",
@@ -725,13 +725,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     </span>
                   )}
                 </div>
-                {r.notes && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{r.notes}</p>}
+                {r.notes && <p className="type-meta text-muted-foreground mt-0.5 line-clamp-1">{r.notes}</p>}
                 {r.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {r.tags.map((t) => (
                       <span
                         key={t.id}
-                        className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                        className="type-meta px-2 py-0.5 rounded-full font-medium"
                         style={{
                           background: t.color + "18",
                           color: t.color,
@@ -781,27 +781,27 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {r.tags.map((t) => (
-                    <span key={t.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: t.color + "18", color: t.color, border: `1px solid ${t.color}35`, fontSize: 12, fontWeight: 500 }}>{t.name}</span>
+                    <span key={t.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: t.color + "18", color: t.color, border: `1px solid ${t.color}35`, fontSize: 15, fontWeight: 500 }}>{t.name}</span>
                   ))}
                   {distanceEnabled && r.walkSeconds != null && (
                     <span
                       className="flex items-center gap-1.5 px-2.5 py-1"
-                      style={{ borderRadius: "var(--radius-chip)", background: "var(--muted)", color: "var(--body-warm)", fontSize: 13, fontWeight: 400 }}
+                      style={{ borderRadius: "var(--radius-chip)", background: "var(--muted)", color: "var(--body-warm)", fontSize: 15, fontWeight: 400 }}
                     >
                       <Footprints size={12} />{formatWalk(r.walkSeconds / 60)}
                     </span>
                   )}
                   {r.mapUrl && (
-                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand-text)", fontSize: 13, fontWeight: 500 }}>
+                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand-text)", fontSize: 15, fontWeight: 500 }}>
                       <Navigation size={12} />Directions
                     </a>
                   )}
                 </div>
-                {r.notes && <p className="text-xs text-muted-foreground mt-2">{r.notes}</p>}
+                {r.notes && <p className="type-meta text-muted-foreground mt-2">{r.notes}</p>}
 
                 {/* Opening hours — states mirror shared/openHours.ts. "unknown" is
                     stated plainly so nobody thinks the place was dropped. */}
-                <div className="mt-5 flex items-center gap-2 text-xs">
+                <div className="mt-5 flex items-center gap-2 type-meta">
                   <Clock3 size={13} className="flex-shrink-0 text-muted-foreground" />
                   {r.openStatus === "closed" ? (
                     <span className="text-muted-foreground">Closed right now — off the wheel until it reopens</span>
@@ -825,7 +825,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       <span className="type-section tabular-nums" style={{ fontSize: 34, color: "var(--ink-warm)" }}>{avg.toFixed(1)}</span>
                       <div>
                         <StarRating value={avg} size={18} />
-                        <div className="text-[11px] text-muted-foreground mt-0.5">{count} rating{count === 1 ? "" : "s"}</div>
+                        <div className="type-meta text-muted-foreground mt-0.5">{count} rating{count === 1 ? "" : "s"}</div>
                       </div>
                     </div>
                   )}
@@ -859,7 +859,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     </button>
                   )}
                 </div>
-                {!isOwner && <p className="text-[10px] text-muted-foreground text-center mt-2">Only the wheel creator can delete.</p>}
+                {!isOwner && <p className="type-meta text-muted-foreground text-center mt-2">Only the wheel creator can delete.</p>}
               </div>
             );
           })()}
@@ -909,18 +909,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               </div>
 
               {nameGeoError && (
-                <p className="text-[11px] px-1" style={{ color: "var(--destructive)" }}>{nameGeoError}</p>
+                <p className="type-meta px-1" style={{ color: "var(--destructive)" }}>{nameGeoError}</p>
               )}
               {nameAlert && (
                 <p
-                  className="text-[11px] px-1 leading-relaxed"
+                  className="type-meta px-1 leading-relaxed"
                   style={{ color: nameAlert.quota ? "var(--brand-text)" : "var(--destructive)" }}
                 >
                   {nameAlert.message}
                 </p>
               )}
               {nameSearch.data && nameResults.length === 0 && !nameSearchBusy && (
-                <p className="text-[11px] text-muted-foreground px-1">
+                <p className="type-meta text-muted-foreground px-1">
                   Nothing matching that near you — type the name and add it anyway.
                 </p>
               )}
@@ -939,8 +939,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     >
                       <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-xs font-semibold truncate">{p.name}</span>
-                        <span className="block text-[10px] text-muted-foreground truncate">
+                        <span className="block type-meta font-semibold truncate">{p.name}</span>
+                        <span className="block type-meta text-muted-foreground truncate">
                           {formatWalk(p.walkMinutes, p.walkSource !== "route")}
                           {p.cuisine ? ` · ${p.cuisine}` : ""}
                           {p.address ? ` · ${p.address}` : ""}
@@ -984,7 +984,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     : "Look up"}
                 </Button>
               </div>
-              <p className="text-[11px] text-muted-foreground px-1">
+              <p className="type-meta text-muted-foreground px-1">
                 Paste a Google Maps link and tap <span className="font-medium">Look up</span> to fill the name automatically — the link also powers "DIRECTIONS" after a spin.
               </p>
             </div>
@@ -1039,7 +1039,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     borderRadius: "var(--radius-chip)",
                     background: newTagCategory === value ? "var(--brand-solid)" : "var(--muted)",
                     color: newTagCategory === value ? "var(--on-accent)" : "var(--body-warm)",
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: 500,
                   }}
                 >
