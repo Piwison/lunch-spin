@@ -114,7 +114,7 @@ export default function FilterBar({
           {tagGroups.map(({ label, items }) =>
             items.length > 0 ? (
               <div key={label} className="mt-3">
-                <p className="text-[10px] tracking-widest text-muted-foreground mb-2" style={{ fontFamily: "var(--font-display)" }}>{label}</p>
+                <p className="type-eyebrow mb-2" style={{ color: "var(--body-warm)" }}>{label}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {items.map((tag) => {
                     const isActive = selectedTagIds.includes(tag.id);
@@ -142,8 +142,8 @@ export default function FilterBar({
           {distanceEnabled && (
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] tracking-widest text-muted-foreground flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
-                  <Footprints size={11} className="flex-shrink-0" /> DISTANCE
+                <p className="type-eyebrow flex items-center gap-1.5" style={{ color: "var(--body-warm)" }}>
+                  <Footprints size={12} className="flex-shrink-0" /> Distance
                 </p>
                 {distanceActive ? (
                   <span className="text-xs font-medium" style={{ color: "var(--brand-text)" }}>

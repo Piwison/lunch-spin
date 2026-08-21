@@ -61,9 +61,9 @@ export default function ConfirmDangerDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="glass border-border/50 max-w-sm">
+      <AlertDialogContent className="glass-sheet max-w-sm">
         <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2" style={{ fontFamily: "var(--font-display)" }}>
+          <AlertDialogTitle className="type-section flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
             <AlertTriangle size={18} style={{ color: "var(--destructive)" }} className="flex-shrink-0" />
             {title}
           </AlertDialogTitle>
@@ -99,7 +99,7 @@ export default function ConfirmDangerDialog({
               e.preventDefault();
               onConfirm();
             }}
-            style={{ background: "var(--destructive)", color: "white" }}
+            style={{ background: "var(--destructive)", color: "var(--destructive-foreground)", minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 16, fontWeight: 500 }}
           >
             {pending ? "Deleting…" : confirmLabel}
           </AlertDialogAction>

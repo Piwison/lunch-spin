@@ -59,8 +59,8 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           onClick={() => collapsible && setOpen((o) => !o)}
           className={`flex items-center gap-1.5 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         >
-          <span className="text-xs font-semibold text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
-            THIS ROUND
+          <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
+            This round
           </span>
           <span className="text-[10px] font-normal text-muted-foreground/70">· {restaurants.length}</span>
           {hasMarks && (

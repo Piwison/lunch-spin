@@ -23,14 +23,10 @@ export default function BrandLoader({
     <div className="flex flex-col items-center gap-4">
       <div
         className="orb-wheel animate-orb-spin"
-        style={{
-          width: size,
-          height: size,
-          boxShadow: "0 0 30px oklch(from var(--brand) l c h / 0.4)",
-        }}
+        style={{ width: size, height: size }}
       />
       {label ? (
-        <p className="text-sm text-muted-foreground tracking-widest" style={{ fontFamily: "var(--font-display)" }}>
+        <p className="type-meta" style={{ color: "var(--body-warm)" }}>
           {label}
         </p>
       ) : null}
