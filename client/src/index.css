@@ -112,16 +112,20 @@
   --primary: #de5c1f;
   --primary-foreground: #fbf7f2;
   --ring: #de5c1f;
-  /* Persimmon has three roles and light mode needs three values, because the
-     spec's single #DE5C1F only clears AA in one of them (measured on --paper:
-     3.48:1). --brand keeps the spec value and is used where 3:1 is the right
-     bar — fills, icons, the pointer, the winning-pane wash. The other two are
-     text and solid-button roles, which need 4.5:1. In dark mode all three
-     collapse back to one value; #F2703A on charcoal clears AA in every role. */
+  /* One persimmon, all three roles.
+     The three-value split (brand / brand-text / brand-solid at #DE5C1F /
+     #B0431A / #B64614) was introduced to clear WCAG AA: near-white over the
+     spec persimmon measures 3.48:1, under the 4.5:1 body-text bar. It was
+     measured, shown, and REJECTED on sight — the deepened orange read muddy
+     and dull, and the brand is the one thing in this app that has to feel
+     like an ember. So the roles collapse back to the spec value and the app
+     knowingly ships primary-CTA labels at 3.48:1. See AGENTS.md failure mode
+     20 before "fixing" this again: it is a decision, not an oversight.
+     Everything that is NOT persimmon still clears AA — those fixes stay. */
   --brand: #de5c1f;
-  --brand-text: #b0431a;         /* persimmon TEXT on paper/glass — 5.37:1 */
-  --brand-solid: #b64614;        /* persimmon FILL under --on-accent — 5.08:1 */
-  --accent-ink: #b0431a;         /* accent TEXT on light glass (winner label) */
+  --brand-text: #de5c1f;         /* persimmon TEXT on paper/glass — 3.48:1, accepted */
+  --brand-solid: #de5c1f;        /* persimmon FILL under --on-accent — 3.48:1, accepted */
+  --accent-ink: #c04f18;         /* winner display type: 34px+, clears the 3:1 large-text bar */
   /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
      --foreground is right for Latin display type but reads hard against the
      ground under the denser strokes of a Chinese character. Scoped to the wheel
@@ -150,25 +154,72 @@
   /* Glass surfaces — see the four named recipes below. */
   /* Four glass surfaces, and only four (spec §2). Every recipe is a token so no
      component ever hand-rolls a backdrop-filter. */
-  --glass-bar-bg: rgb(255 255 255 / 0.55);
-  --glass-bar-blur: blur(28px) saturate(1.4);
+  /* Blur RADIUS only — never a whole filter list.
+     A custom property holding `blur(16px) saturate(1.9)` is minified to
+     `blur(16px)saturate(1.9)`, which is invalid, and backdrop-filter silently
+     computes to none. That shipped: light mode's bar and sheet have never
+     actually blurred. Radius and saturation are separate tokens now and the
+     classes compose them, so the minifier only ever sees a valid declaration.
+     See AGENTS.md failure mode 21. */
+  --glass-bar-bg: rgb(255 255 255 / 0.36);
+  --glass-bar-blur: 16px;
   --glass-bar-border: rgb(255 255 255 / 0.9);
 
-  --glass-sheet-bg: rgb(255 255 255 / 0.72);
-  --glass-sheet-blur: blur(34px) saturate(1.4);
+  --glass-sheet-bg: rgb(255 255 255 / 0.52);
+  --glass-sheet-blur: 22px;
   --glass-sheet-border: rgb(255 255 255 / 0.95);
 
-  --glass-card-bg: rgb(255 255 255 / 0.62);
-  --glass-card-blur: blur(28px);
+  --glass-card-bg: rgb(255 255 255 / 0.4);
+  --glass-card-blur: 16px;
   --glass-card-border: rgb(255 255 255 / 0.95);
   --glass-card-shadow: 0 18px 40px rgb(20 22 28 / 0.14);
 
-  --glass-chip-bg: rgb(255 255 255 / 0.62);
-  --glass-chip-blur: blur(24px);
+  --glass-chip-bg: rgb(255 255 255 / 0.44);
+  --glass-chip-blur: 12px;
   --glass-chip-border: rgb(255 255 255 / 0.95);
+
+  /* Saturation is one value for the whole material. Light glass over warm paper
+     can push hard; charcoal has less colour behind it to pull through. */
+  --glass-sat: 1.9;
 
   --glass-highlight: rgb(255 255 255 / 0.55);
   --glass-opaque: #fbf7f2;
+
+  /* ── Liquid Glass ──
+     What separates this from frosted glass is that the EDGE behaves like glass
+     and the middle does not. Three parts, all on the rim:
+
+     --glass-rim    a directional specular border. Light arrives from the upper
+                    left, so the border is brightest there, nearly extinguished
+                    at the mid-tone, and picks up a second bounce on the far
+                    corner. A flat 1px white border reads as a drawn outline; a
+                    gradient one reads as a lit object.
+     --glass-lens   the refraction. A ring hugging the border re-samples the
+                    backdrop at a LOWER blur and higher saturation than the
+                    middle, so the rim looks clearer and more colourful than the
+                    frosted centre — which is what a real bevel does. Applied as
+                    an exact inset ring, never a radial fade, so it can never
+                    creep under the content.
+     --glass-depth  three shadows, not one: a 1px contact shadow that anchors the
+                    element, a mid shadow for lift, and a wide ambient one. A
+                    single shadow reads as a sticker. */
+  --glass-rim: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 1) 0%,
+    rgb(255 255 255 / 0.6) 20%,
+    rgb(20 22 28 / 0.11) 46%,
+    rgb(20 22 28 / 0.07) 62%,
+    rgb(255 255 255 / 0.72) 86%,
+    rgb(255 255 255 / 1) 100%
+  );
+  --glass-inner-top: rgb(255 255 255 / 0.95);
+  --glass-inner-bottom: rgb(255 255 255 / 0.35);
+  --glass-lens-blur: 0px;
+  --glass-lens-sat: 1.45;
+  --glass-lens-bright: 1.07;
+  --glass-depth:
+    0 1px 2px rgb(20 22 28 / 0.1), 0 8px 20px rgb(20 22 28 / 0.1),
+    0 20px 44px rgb(20 22 28 / 0.07);
 
   /* Pane separation on the wheel: a hairline of ground showing between two
      sheets of glass, not a drawn border. */
@@ -236,26 +287,51 @@
   --info: #c9a97a;
 
   --glass-bar-bg: rgb(255 255 255 / 0.08);
-  --glass-bar-blur: blur(28px);
+  --glass-bar-blur: 16px;
   --glass-bar-border: rgb(255 255 255 / 0.12);
 
   --glass-sheet-bg: rgb(255 255 255 / 0.1);
-  --glass-sheet-blur: blur(34px);
+  --glass-sheet-blur: 22px;
   --glass-sheet-border: rgb(255 255 255 / 0.14);
 
   --glass-card-bg: rgb(255 255 255 / 0.08);
-  --glass-card-blur: blur(28px);
+  --glass-card-blur: 16px;
   --glass-card-border: rgb(255 255 255 / 0.12);
   --glass-card-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
 
   /* Dark chips carry no blur: the spec lists a fill and a border only, and on
-     charcoal an 8% white wash already separates without paying for a filter. */
+     charcoal an 8% white wash already separates without paying for a filter.
+     0 is a radius, not `none` — the class composes it into a filter list, and
+     the rule below turns the whole filter off so no backdrop root is created. */
   --glass-chip-bg: rgb(255 255 255 / 0.08);
-  --glass-chip-blur: none;
+  --glass-chip-blur: 0px;
   --glass-chip-border: rgb(255 255 255 / 0.12);
+
+  --glass-sat: 1.5;
 
   --glass-highlight: rgb(255 255 255 / 0.08);
   --glass-opaque: #1e2127;
+
+  /* On charcoal the specular is the ONLY thing separating a glass surface from
+     the ground, so the rim carries more of the work and the lens leans on
+     brightness rather than saturation — there is little colour behind it to
+     pull through. */
+  --glass-rim: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.55) 0%,
+    rgb(255 255 255 / 0.16) 34%,
+    rgb(255 255 255 / 0.04) 55%,
+    rgb(255 255 255 / 0.2) 80%,
+    rgb(255 255 255 / 0.42) 100%
+  );
+  --glass-inner-top: rgb(255 255 255 / 0.22);
+  --glass-inner-bottom: rgb(255 255 255 / 0.06);
+  --glass-lens-blur: 0px;
+  --glass-lens-sat: 1.3;
+  --glass-lens-bright: 1.12;
+  --glass-depth:
+    0 1px 2px rgb(0 0 0 / 0.4), 0 12px 28px rgb(0 0 0 / 0.45),
+    0 28px 60px rgb(0 0 0 / 0.35);
 
   --wheel-hairline: rgb(0 0 0 / 0.3);
   --pane-gap: #191b20;
@@ -461,61 +537,127 @@
      touched. New work should use the components in components/ui/glass.tsx. */
   .glass-bar {
     background: var(--glass-bar-bg);
-    backdrop-filter: var(--glass-bar-blur);
-    -webkit-backdrop-filter: var(--glass-bar-blur);
-    border: 1px solid var(--glass-bar-border);
+    backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-sat));
     box-shadow:
-      inset 0 1px 0 var(--glass-highlight),
-      var(--glass-card-shadow);
+      inset 0 1px 0 var(--glass-inner-top),
+      inset 0 -1px 0 var(--glass-inner-bottom),
+      var(--glass-depth);
   }
 
   .glass-sheet {
     background: var(--glass-sheet-bg);
-    backdrop-filter: var(--glass-sheet-blur);
-    -webkit-backdrop-filter: var(--glass-sheet-blur);
-    border: 1px solid var(--glass-sheet-border);
+    backdrop-filter: blur(var(--glass-sheet-blur)) saturate(var(--glass-sat));
     border-radius: var(--radius-sheet);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inner-top),
+      inset 0 -1px 0 var(--glass-inner-bottom),
+      var(--glass-depth);
   }
 
   .glass-card {
     background: var(--glass-card-bg);
-    backdrop-filter: var(--glass-card-blur);
-    -webkit-backdrop-filter: var(--glass-card-blur);
-    border: 1px solid var(--glass-card-border);
-    box-shadow: var(--glass-card-shadow);
+    backdrop-filter: blur(var(--glass-card-blur)) saturate(var(--glass-sat));
     border-radius: var(--radius-card);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inner-top),
+      inset 0 -1px 0 var(--glass-inner-bottom),
+      var(--glass-depth);
   }
 
   .glass-chip {
     background: var(--glass-chip-bg);
-    backdrop-filter: var(--glass-chip-blur);
-    -webkit-backdrop-filter: var(--glass-chip-blur);
-    border: 1px solid var(--glass-chip-border);
+    backdrop-filter: blur(var(--glass-chip-blur)) saturate(var(--glass-sat));
     border-radius: var(--radius-chip);
+    box-shadow:
+      inset 0 1px 0 var(--glass-inner-top),
+      inset 0 -1px 0 var(--glass-inner-bottom),
+      0 1px 2px rgb(20 22 28 / 0.08),
+      0 6px 16px rgb(20 22 28 / 0.08);
   }
 
   .glass {
     background: var(--glass-card-bg);
-    backdrop-filter: var(--glass-card-blur);
-    -webkit-backdrop-filter: var(--glass-card-blur);
-    border: 1px solid var(--glass-card-border);
+    backdrop-filter: blur(var(--glass-card-blur)) saturate(var(--glass-sat));
+    box-shadow:
+      inset 0 1px 0 var(--glass-inner-top),
+      inset 0 -1px 0 var(--glass-inner-bottom),
+      var(--glass-depth);
   }
 
   .glass-nav {
     background: var(--glass-bar-bg);
-    backdrop-filter: var(--glass-bar-blur);
-    -webkit-backdrop-filter: var(--glass-bar-blur);
-    border: 1px solid var(--glass-bar-border);
+    backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-sat));
     box-shadow:
-      inset 0 1px 0 var(--glass-highlight),
-      var(--glass-card-shadow);
+      inset 0 1px 0 var(--glass-inner-top),
+      inset 0 -1px 0 var(--glass-inner-bottom),
+      var(--glass-depth);
   }
 
-  /* A bar that meets content on one edge only — the sticky app header — keeps the
-     recipe's fill and blur but draws its hairline on the bottom and stays square. */
+  /* ── The specular rim ──
+     Every glass surface, including chips. The 1px border is gone: this replaces
+     it with a gradient of the same width, drawn as a ring by masking a padded
+     box against an unpadded one and excluding the overlap. Costs no extra
+     backdrop-filter, so it is free at any element count. */
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip) {
+    position: relative;
+    border: 0;
+  }
+
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.25px;
+    background: var(--glass-rim);
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* ── The refracting edge ──
+     Deliberately NOT on chips. This is a second backdrop-filter, and chips come
+     twenty to a screen on the Places tab while bars and sheets come one or two.
+     The ring is an exact 10px inset rather than a radial fade, so it cannot
+     reach under the content no matter how tall the surface is — every glass
+     surface in the app carries at least 12px of padding. */
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 14px;
+    backdrop-filter: blur(var(--glass-lens-blur)) saturate(var(--glass-lens-sat))
+      brightness(var(--glass-lens-bright));
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* A bar that meets content on one edge only — the sticky app header. It has no
+     rim to catch light on three of its four sides, so the specular ring and the
+     refracting ring are both dropped and the recipe keeps a single lit lip along
+     the bottom edge, which is the only edge that exists. */
   .glass-bar--bottom {
-    border-width: 0 0 1px;
     border-radius: 0;
+    box-shadow:
+      inset 0 -1px 0 var(--glass-inner-top),
+      0 1px 2px rgb(20 22 28 / 0.06),
+      0 10px 24px rgb(20 22 28 / 0.07);
+  }
+  .glass-bar--bottom::before,
+  .glass-bar--bottom::after {
+    content: none;
+  }
+
+  /* Dark chips opt out of the filter entirely rather than blurring by 0 — a
+     zero-radius backdrop-filter still creates a backdrop root and still costs. */
+  .dark .glass-chip {
+    backdrop-filter: none;
   }
 
   /* Stacking limit, enforced rather than documented. Two blurred layers is the
@@ -526,7 +668,12 @@
     :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
     :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip) {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+  }
+  /* The refracting ring counts against the same budget — a nested surface keeps
+     its specular rim (free) but gives up its lens (a second backdrop-filter). */
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
+    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
+    content: none;
   }
 
   /* Accessibility: when the user asks for less transparency, drop the see-through
@@ -540,7 +687,13 @@
     .glass-chip {
       background: var(--glass-opaque);
       backdrop-filter: none;
-      -webkit-backdrop-filter: none;
+      border: 1px solid var(--border);
+    }
+    /* Opaque surfaces have nothing to refract and nothing to be lit through, so
+       both rings go. The plain border above stands in for the rim. */
+    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)::before,
+    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
+      content: none;
     }
   }
 }
