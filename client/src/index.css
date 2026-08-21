@@ -157,6 +157,9 @@
   /* Pane separation on the wheel: a hairline of ground showing between two
      sheets of glass, not a drawn border. */
   --wheel-hairline: rgb(20 22 28 / 0.1);
+  /* The gap between panes. It is the GROUND showing through, which is what makes
+     the panes read as separate petals rather than a pie cut by hairlines. */
+  --pane-gap: #f6f2ec;
   --pane-heavy: rgb(255 255 255 / 0.78);
   --pane-light: rgb(255 255 255 / 0.4);
   --wheel-highlight: linear-gradient(
@@ -237,6 +240,7 @@
   --glass-opaque: #1e2127;
 
   --wheel-hairline: rgb(0 0 0 / 0.3);
+  --pane-gap: #191b20;
   /* Glass as white at 8–12%, per the dark recipe — not the light alphas, which
      render as opaque grey card on charcoal. */
   --pane-heavy: rgb(255 255 255 / 0.12);

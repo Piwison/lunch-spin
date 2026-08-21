@@ -485,8 +485,12 @@ export default function SpinWheel({
         .join(", ")})`
     : "conic-gradient(from 90deg, var(--pane-light) 0deg 360deg)";
 
+  // The gap that makes the panes read as separated petals rather than a pie cut
+  // by hairlines. Held at a constant ARC LENGTH rather than a constant angle, so
+  // a 24-place wheel does not end up mostly gap.
+  const gapDeg = count ? Math.min(1.6, (3.2 / (Math.PI * discPx)) * 360) : 0;
   const separators = count
-    ? `repeating-conic-gradient(from 90deg, var(--wheel-hairline) 0deg 0.35deg, transparent 0.35deg ${360 / count}deg)`
+    ? `repeating-conic-gradient(from 90deg, var(--pane-gap) 0deg ${gapDeg}deg, transparent ${gapDeg}deg ${360 / count}deg)`
     : "none";
 
   return (
@@ -688,18 +692,22 @@ export default function SpinWheel({
 
             {/* Hub — glass, with the count that is actually in play. */}
             <div
-              className="glass-chip absolute left-1/2 top-1/2 rounded-full flex flex-col items-center justify-center"
+              className="absolute left-1/2 top-1/2 rounded-full flex flex-col items-center justify-center"
               style={{
                 width: metrics.hubPx,
                 height: metrics.hubPx,
+                // Solid, not glass. The design's hub is a clean white disc with
+                // no keyline and no backdrop blur — the glass chip put a bright
+                // ring around it that reads as a second circle.
+                background: "var(--paper)",
+                boxShadow: "0 2px 12px rgb(20 22 28 / .06)",
                 // A backdrop-filter inside a subtree that transforms every frame
                 // re-samples its backdrop every frame. The budget's rule for a
                 // cell that will not go green is that the glass on that surface
                 // gets thinner, never that the timing gets shorter — so the hub
                 // drops its blur while the wheel is moving and takes it back the
                 // moment it stops. Worth ~1 fps and 1.2% of slow frames.
-                backdropFilter: moving ? "none" : undefined,
-                WebkitBackdropFilter: moving ? "none" : undefined,
+
                 // Counter-rotates the camera's 90°: the hub is pinned to the disc
                 // centre, but the count is meant to stay readable, not tip over
                 // with the world.
@@ -720,23 +728,10 @@ export default function SpinWheel({
             </div>
           </div>
 
-          {/* Pointer, and the fixed sensing zone behind it. Neither turns. */}
-          <div
-            aria-hidden="true"
-            className="absolute pointer-events-none"
-            style={{
-              opacity: active ? 0 : 1,
-              transition: "opacity var(--dur-view) var(--ease-standard)",
-              left: contactX,
-              top: contactY,
-              width: discPx * 0.2,
-              height: 64,
-              transform: "translateY(-50%)",
-              background:
-                "linear-gradient(90deg, oklch(from var(--brand) l c h / .18), transparent)",
-              borderRadius: "0 999px 999px 0",
-            }}
-          />
+          {/* The pointer. It does not turn, and it carries no visible zone behind
+              it: §4's "fixed sensing zone" is where the winner is READ, not
+              something drawn — the design shows bare ground there, and the
+              orange wash that used to sit here appears nowhere in it. */}
           <div
             className="absolute z-20"
             style={{

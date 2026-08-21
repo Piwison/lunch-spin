@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
-import PointerReadout from "@/components/PointerReadout";
 import { labelTier } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
@@ -106,8 +105,6 @@ export default function WheelApp() {
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
   const prefersReducedMotion = useReducedMotion();
-  /** Which pane the wheel currently has under its pointer. */
-  const [pointerIndex, setPointerIndex] = useState(0);
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -631,13 +628,7 @@ export default function WheelApp() {
   // Reduced motion never pushes in, so the chrome never recedes either.
   const cameraIn = (isSpinning || showResult) && !prefersReducedMotion;
 
-  // What the readout names. The wheel reports an index; the page owns turning
-  // that into a restaurant, because the wheel is only given id/label/colour.
   const pointerTier = labelTier(Math.max(wheelSegments.length, 1));
-  const atPointerSegment = wheelSegments[Math.min(pointerIndex, wheelSegments.length - 1)];
-  const atPointer = atPointerSegment
-    ? restaurants?.find((r) => r.id === atPointerSegment.id) ?? null
-    : null;
   const spinDisabled = isSpinning || createSpin.isPending || wheelSegments.length === 0;
 
   const cuisineTags = (tags ?? []).filter((t) => t.category === "cuisine" && usedTagIds.has(t.id));
@@ -1060,6 +1051,21 @@ export default function WheelApp() {
                       </div>
                     ) : (
                       <div className="w-full flex flex-col items-center gap-5">
+                        {/* Screen title, as the design leads with. The app bar
+                            names the product; this names what you are looking
+                            at, which is the thing the user actually needs. */}
+                        <div className="w-full max-w-sm">
+                          <p className="type-eyebrow mb-1.5" style={{ color: "var(--brand)" }}>
+                            Today&apos;s wheel
+                          </p>
+                          <h1
+                            className="type-title truncate"
+                            style={{ color: "var(--ink-warm)" }}
+                          >
+                            {wheelData?.name ?? "Lunch Wheel"}
+                          </h1>
+                        </div>
+
                         {/* The wheel. The camera holds its zoom from the moment
                             the spin starts until Lock it in or Respin clears the
                             result — one owner for that fact, passed down, rather
@@ -1070,7 +1076,6 @@ export default function WheelApp() {
                           isSpinning={isSpinning}
                           onSpinStart={handleSpin}
                           targetId={targetId}
-                          onPointerIndexChange={setPointerIndex}
                           zoomed={isSpinning || showResult}
                           winnerId={spinResult?.id ?? null}
                           receded={showResult}
@@ -1103,26 +1108,6 @@ export default function WheelApp() {
                               <p className="type-meta" style={{ color: "var(--muted-foreground)" }}>
                                 Names arrive as the wheel passes the pointer, and in full when it lands.
                               </p>
-                            )}
-
-                            {atPointer && (
-                              <PointerReadout
-                                name={atPointer.name}
-                                indexLabel={pointerTier.indexOnly ? `#${pointerIndex + 1}` : null}
-                                meta={
-                                  <>
-                                    {wheelData?.distanceEnabled && atPointer.walkSeconds != null && (
-                                      <span className="flex items-center gap-1.5">
-                                        <Footprints size={13} className="flex-shrink-0" />
-                                        {formatWalk(atPointer.walkSeconds / 60)}
-                                      </span>
-                                    )}
-                                    {atPointer.priceLevel != null && (
-                                      <span>{"$".repeat(atPointer.priceLevel)}</span>
-                                    )}
-                                  </>
-                                }
-                              />
                             )}
 
                             <button
