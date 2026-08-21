@@ -87,18 +87,18 @@ export default function Home() {
       <section className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 pt-16 pb-24">
         <div className="mb-10 flex justify-center reveal" style={{ animationDelay: "40ms" }}>
           <div className="relative">
-            {/* Pointer — the same shape that bites into the rim in the app. */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-3 z-30">
+            {/* Pointer — the same shape that bites into the rim in the app. It
+                sits mostly outside the disc: it and the winning pane are both
+                persimmon, and any more overlap merges the two into one shape. */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-5 z-30">
               <svg width="20" height="24" viewBox="0 0 20 24" fill="none" aria-hidden="true">
                 <path d="M10 22L1.5 4.5H18.5L10 22Z" fill="var(--brand)" strokeLinejoin="round" />
               </svg>
             </div>
-            {/* Wheel face — real palette segments, so the hero IS the product */}
-            <div className="w-36 h-36 orb-wheel" style={{ boxShadow: "0 18px 40px rgb(20 22 28 / 0.14)" }} />
-            <div
-              className="absolute inset-0 m-auto w-9 h-9 rounded-full"
-              style={{ background: "var(--paper)", boxShadow: "0 2px 8px rgb(20 22 28 / 0.18)" }}
-            />
+            {/* Wheel face. The mark carries its own hub and winner pane now
+                (see .orb-wheel), so the hero is the app's resting wheel at
+                144px rather than a separate illustration of one. */}
+            <div className="w-36 h-36 orb-wheel" style={{ boxShadow: "var(--glass-card-shadow)" }} />
           </div>
         </div>
 
