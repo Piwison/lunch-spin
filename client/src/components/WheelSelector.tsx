@@ -71,7 +71,7 @@ function exclusionOptionsFor(current: number) {
  *  controls into scannable sections (Basics / Sharing / Spin rules / Distance). */
 function SettingsSection({ children }: { children: React.ReactNode }) {
   return (
-    <div className="type-eyebrow pt-2 first:pt-0" style={{ color: "var(--brand)" }}>
+    <div className="type-eyebrow pt-2 first:pt-0" style={{ color: "var(--brand-text)" }}>
       {children}
     </div>
   );
@@ -464,7 +464,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
           >
             {wheel.name}
           </span>
-          {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand)" }} className="flex-shrink-0" />}
+          {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand-text)" }} className="flex-shrink-0" />}
           <span
             className="text-muted-foreground/50 flex-shrink-0"
             title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
@@ -514,7 +514,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
         style={{ borderRadius: "var(--radius-card)" }}
       >
         <div className="px-3 pt-2 pb-3">
-          <span className="type-eyebrow" style={{ color: "var(--brand)" }}>
+          <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
             My wheels
           </span>
         </div>
@@ -561,7 +561,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
             }}
           >
             <SheetHeader className="flex-row items-center justify-between pl-2 pr-12 pb-1">
-              <SheetTitle className="type-eyebrow" style={{ color: "var(--brand)" }}>
+              <SheetTitle className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
                 My wheels
               </SheetTitle>
               <button
@@ -661,7 +661,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -925,7 +925,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
                           <MapPin size={14} className="flex-shrink-0" style={{ color: "var(--ok)" }} />
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="text-sm truncate">{editWheel.originLabel.trim() || "Office"}</span>
-                            <span className="text-[11px] flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand)" }}>
+                            <span className="text-[11px] flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand-text)" }}>
                               {isPersisted ? "Saved" : "Press Save settings to apply"}
                               <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
                                 view on map
@@ -990,7 +990,7 @@ export default function WheelSelector({ selectedWheelId, onSelect, onDeleted, re
                   style={{
                     minHeight: 56,
                     borderRadius: "var(--radius-control)",
-                    background: "var(--brand)",
+                    background: "var(--brand-solid)",
                     color: "var(--on-accent)",
                     fontSize: 16,
                     fontWeight: 500,

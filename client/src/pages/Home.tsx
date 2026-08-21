@@ -105,7 +105,7 @@ export default function Home() {
         <div className="text-center mb-6">
           <h1
             className="type-display reveal"
-            style={{ fontSize: "clamp(3.25rem, 12vw, 7rem)", color: "var(--brand)", animationDelay: "120ms" }}
+            style={{ fontSize: "clamp(3.25rem, 12vw, 7rem)", color: "var(--brand-text)", animationDelay: "120ms" }}
           >
             Spin
           </h1>
@@ -134,7 +134,7 @@ export default function Home() {
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -156,7 +156,7 @@ export default function Home() {
         >
           {STATS.map(({ value, label }, i) => (
             <div key={label} className="text-center reveal" style={{ animationDelay: `${i * 80}ms` }}>
-              <div className="type-title mb-1.5" style={{ color: "var(--brand)" }}>{value}</div>
+              <div className="type-title mb-1.5" style={{ color: "var(--brand-text)" }}>{value}</div>
               <div className="type-eyebrow" style={{ color: "var(--body-warm)" }}>{label}</div>
             </div>
           ))}
@@ -166,7 +166,7 @@ export default function Home() {
       {/* ── FEATURES ── */}
       <section className="relative z-10 py-16 px-6">
         <div className="max-w-4xl mx-auto">
-          <p className="type-eyebrow text-center mb-12 reveal" style={{ color: "var(--brand)" }}>
+          <p className="type-eyebrow text-center mb-12 reveal" style={{ color: "var(--brand-text)" }}>
             Built for the 11:45 scramble
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -190,7 +190,7 @@ export default function Home() {
                       border: "1px solid oklch(from var(--brand) l c h / 0.22)",
                     }}
                   >
-                    <Icon size={19} style={{ color: "var(--brand)" }} />
+                    <Icon size={19} style={{ color: "var(--brand-text)" }} />
                   </div>
                   <div>
                     <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)", marginBottom: 4 }}>{label}</h3>
@@ -207,7 +207,7 @@ export default function Home() {
       {popularWheels && popularWheels.length > 0 && (
         <section className="relative z-10 py-16 px-6">
           <div className="max-w-4xl mx-auto">
-            <p className="type-eyebrow text-center mb-3 reveal" style={{ color: "var(--brand)" }}>
+            <p className="type-eyebrow text-center mb-3 reveal" style={{ color: "var(--brand-text)" }}>
               Try without signing in
             </p>
             <h2 className="type-title text-center mb-10 reveal" style={{ color: "var(--ink-warm)" }}>
@@ -235,11 +235,11 @@ export default function Home() {
                         border: "1px solid oklch(from var(--brand) l c h / 0.22)",
                       }}
                     >
-                      <Utensils size={17} style={{ color: "var(--brand)" }} />
+                      <Utensils size={17} style={{ color: "var(--brand-text)" }} />
                     </div>
                     <span
                       className="type-eyebrow flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ color: "var(--brand)" }}
+                      style={{ color: "var(--brand-text)" }}
                     >
                       Spin <Play size={11} />
                     </span>
@@ -275,7 +275,7 @@ export default function Home() {
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,

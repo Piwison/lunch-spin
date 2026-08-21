@@ -133,7 +133,7 @@ export default function GuestWheel() {
               borderRadius: "var(--radius-chip)",
               background: "oklch(from var(--brand) l c h / 0.10)",
               border: "1px solid oklch(from var(--brand) l c h / 0.25)",
-              color: "var(--brand)",
+              color: "var(--brand-text)",
             }}
           >
             <Utensils size={12} /> Public wheel
@@ -170,7 +170,7 @@ export default function GuestWheel() {
                 minHeight: 56,
                 minWidth: 180,
                 borderRadius: "var(--radius-control)",
-                background: isSpinning ? "var(--muted)" : "var(--brand)",
+                background: isSpinning ? "var(--muted)" : "var(--brand-solid)",
                 color: isSpinning ? "var(--body-warm)" : "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -181,7 +181,7 @@ export default function GuestWheel() {
             </button>
 
             <p className="text-xs text-muted-foreground">
-              <span className="font-semibold" style={{ color: "var(--brand)" }}>
+              <span className="font-semibold" style={{ color: "var(--brand-text)" }}>
                 {segments.length}
               </span>{" "}
               restaurant{segments.length !== 1 ? "s" : ""} on the wheel
@@ -249,7 +249,7 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
           fontWeight: 500,
         }}
       >
-        <Sparkles size={15} style={{ color: "var(--brand)" }} />
+        <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
         Make your own wheel
         <ArrowRight size={14} />
       </a>
@@ -262,7 +262,7 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
       style={{
         minHeight: 56,
         borderRadius: "var(--radius-control)",
-        background: "var(--brand)",
+        background: "var(--brand-solid)",
         color: "var(--on-accent)",
         fontSize: 16,
         fontWeight: 500,

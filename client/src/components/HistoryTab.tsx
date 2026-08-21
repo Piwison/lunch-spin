@@ -153,7 +153,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                 style={{
                   minHeight: 56,
                   borderRadius: "var(--radius-control)",
-                  background: "var(--brand)",
+                  background: "var(--brand-solid)",
                   color: "var(--on-accent)",
                   fontSize: 16,
                   fontWeight: 500,
@@ -210,7 +210,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                           className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
                           style={{
                             background: "oklch(from var(--destructive) l c h / 0.15)",
-                            color: "var(--brand)",
+                            color: "var(--brand-text)",
                             border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
                           }}
                         >

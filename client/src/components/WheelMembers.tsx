@@ -61,7 +61,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
         className={`flex items-center justify-between gap-2 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         style={collapsible ? { minHeight: 56 } : undefined}
       >
-        <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand)" }}>
+        <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
           <Users size={12} /> Team
           <span style={{ color: "var(--body-warm)" }}>· {roster.length}</span>
           {present.size > 0 && <span style={{ color: "var(--ok)" }}>· {present.size} here now</span>}
@@ -92,7 +92,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
               <span
                 className="relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
                 style={{
-                  background: isHere ? "var(--brand)" : "oklch(from var(--ink-warm) l c h / 0.08)",
+                  background: isHere ? "var(--brand-solid)" : "oklch(from var(--ink-warm) l c h / 0.08)",
                   color: isHere ? "var(--on-accent)" : "var(--body-warm)",
                 }}
               >
@@ -101,7 +101,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink-warm)" }}>
                 {m.userId === currentUserId ? "You" : label}
               </span>
-              {m.isOwner && <Crown size={12} style={{ color: "var(--brand)" }} />}
+              {m.isOwner && <Crown size={12} style={{ color: "var(--brand-text)" }} />}
             </div>
           );
         })}

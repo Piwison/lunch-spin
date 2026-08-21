@@ -110,7 +110,7 @@ export default function LocationPicker({
         style={{
           minHeight: 56,
           borderRadius: "var(--radius-control)",
-          background: "var(--brand)",
+          background: "var(--brand-solid)",
           color: "var(--on-accent)",
           fontSize: 16,
           fontWeight: 500,
@@ -222,7 +222,7 @@ export default function LocationPicker({
                   className="flex items-center gap-2.5 px-3 rounded-xl text-left transition-colors hover:bg-white/5"
                   style={{ minHeight: 56 }}
                 >
-                  <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand)" }} />
+                  <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
                   <span className="flex-1 min-w-0">
                     <span className="block text-xs font-semibold truncate">{p.name}</span>
                     {p.address && (

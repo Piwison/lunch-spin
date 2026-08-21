@@ -53,7 +53,7 @@ export default function JoinWheel() {
   if (loading || (user && joinWheel.isPending)) {
     return (
       <Centered>
-        <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand)" }} />
+        <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand-text)" }} />
         <p className="text-muted-foreground">Joining wheel…</p>
       </Centered>
     );
@@ -76,7 +76,7 @@ export default function JoinWheel() {
           style={{
             minHeight: 56,
             borderRadius: "var(--radius-control)",
-            background: "var(--brand)",
+            background: "var(--brand-solid)",
             color: "var(--on-accent)",
             fontSize: 16,
             fontWeight: 500,
@@ -94,7 +94,7 @@ export default function JoinWheel() {
       <Centered>
         <div className="text-6xl">🎉</div>
         <div>
-          <h1 className="type-title mb-1.5" style={{ color: "var(--brand)" }}>
+          <h1 className="type-title mb-1.5" style={{ color: "var(--brand-text)" }}>
             Joined!
           </h1>
           <p className="text-muted-foreground">
@@ -103,7 +103,7 @@ export default function JoinWheel() {
               : "Taking you to the wheel…"}
           </p>
         </div>
-        <Loader2 className="animate-spin" size={20} style={{ color: "var(--brand)" }} />
+        <Loader2 className="animate-spin" size={20} style={{ color: "var(--brand-text)" }} />
       </Centered>
     );
   }

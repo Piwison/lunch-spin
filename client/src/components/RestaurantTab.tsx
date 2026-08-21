@@ -414,7 +414,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             style={{
               minHeight: 56,
               borderRadius: "var(--radius-control)",
-              background: "var(--brand)",
+              background: "var(--brand-solid)",
               color: "var(--on-accent)",
               fontSize: 15,
               fontWeight: 500,
@@ -501,7 +501,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   className="flex items-center gap-1 px-2 py-0.5 rounded-full font-medium"
                   style={{
                     background: "oklch(from var(--brand) l c h / 0.12)",
-                    color: "var(--brand)",
+                    color: "var(--brand-text)",
                   }}
                 >
                   <Clock3 size={11} className="flex-shrink-0" />
@@ -609,7 +609,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             className="w-16 h-16 flex items-center justify-center"
             style={{ borderRadius: "var(--radius-card)", background: "oklch(from var(--brand) l c h / 0.12)" }}
           >
-            <MapPin size={26} style={{ color: "var(--brand)" }} />
+            <MapPin size={26} style={{ color: "var(--brand-text)" }} />
           </div>
           <div>
             <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>No places yet</p>
@@ -624,7 +624,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -686,7 +686,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                       style={{
                         background: "oklch(from var(--destructive) l c h / 0.15)",
-                        color: "var(--brand)",
+                        color: "var(--brand-text)",
                         border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
                       }}
                     >
@@ -792,7 +792,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     </span>
                   )}
                   {r.mapUrl && (
-                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand)", fontSize: 13, fontWeight: 500 }}>
+                    <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand-text)", fontSize: 13, fontWeight: 500 }}>
                       <Navigation size={12} />Directions
                     </a>
                   )}
@@ -817,7 +817,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-6">
-                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand)" }}>Team rating</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>Team rating</div>
                   {avg == null ? (
                     <p className="text-sm text-muted-foreground">No ratings yet — be the first.</p>
                   ) : (
@@ -832,7 +832,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-6">
-                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand)" }}>Your rating</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>Your rating</div>
                   <StarRating
                     value={mine}
                     size={30}
@@ -914,7 +914,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               {nameAlert && (
                 <p
                   className="text-[11px] px-1 leading-relaxed"
-                  style={{ color: nameAlert.quota ? "var(--brand)" : "var(--destructive)" }}
+                  style={{ color: nameAlert.quota ? "var(--brand-text)" : "var(--destructive)" }}
                 >
                   {nameAlert.message}
                 </p>
@@ -937,7 +937,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       onClick={() => pickSearchedPlace(p)}
                       className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors hover:bg-white/5"
                     >
-                      <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand)" }} />
+                      <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
                       <span className="flex-1 min-w-0">
                         <span className="block text-xs font-semibold truncate">{p.name}</span>
                         <span className="block text-[10px] text-muted-foreground truncate">
@@ -997,7 +997,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -1037,7 +1037,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   style={{
                     minHeight: 44,
                     borderRadius: "var(--radius-chip)",
-                    background: newTagCategory === value ? "var(--brand)" : "var(--muted)",
+                    background: newTagCategory === value ? "var(--brand-solid)" : "var(--muted)",
                     color: newTagCategory === value ? "var(--on-accent)" : "var(--body-warm)",
                     fontSize: 13,
                     fontWeight: 500,
@@ -1061,7 +1061,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 disabled={!newTagName.trim() || createTag.isPending}
                 size="icon"
                 className="transition-colors duration-200 active:scale-[var(--press-scale)] flex-shrink-0"
-                style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+                style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
               >
                 {createTag.isPending ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Check size={16} />}
               </Button>

@@ -738,7 +738,7 @@ export default function WheelApp() {
                       <span className="text-xs text-muted-foreground">
                         {n.wheelName} · {formatTimeAgo(new Date(n.createdAt))}
                       </span>
-                      <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--brand)" }}>
+                      <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--brand-text)" }}>
                         <MapPin size={11} /> Open in Google Maps
                       </span>
                     </button>
@@ -752,7 +752,7 @@ export default function WheelApp() {
               <button
                 aria-label="Account menu"
                 className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-transform active:scale-[var(--press-scale)] hover:brightness-105"
-                style={{ background: "var(--brand)", color: "var(--on-accent)" }}
+                style={{ background: "var(--brand-solid)", color: "var(--on-accent)" }}
               >
                 {user.name?.charAt(0).toUpperCase() ?? "?"}
               </button>
@@ -765,7 +765,7 @@ export default function WheelApp() {
               <DropdownMenuSeparator />
               {defaultWheel ? (
                 <DropdownMenuItem onClick={() => { setSelectedWheelId(defaultWheel.id); navigate(`/app/${defaultWheel.id}`); }} className="gap-2.5">
-                  <Star size={14} fill="var(--brand)" style={{ color: "var(--brand)" }} />
+                  <Star size={14} fill="var(--brand)" style={{ color: "var(--brand-text)" }} />
                   <span className="flex flex-col">
                     <span>Default wheel</span>
                     <span className="text-xs text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
@@ -876,7 +876,7 @@ export default function WheelApp() {
                       fontWeight: 500,
                       letterSpacing: "0.05em",
                       color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                      background: isActive ? "var(--brand)" : "transparent",
+                      background: isActive ? "var(--brand-solid)" : "transparent",
                     }}
                   >
                     <Icon size={15} />
@@ -904,7 +904,7 @@ export default function WheelApp() {
                 style={{
                   minHeight: 44,
                   borderRadius: "var(--radius-chip)",
-                  background: "var(--brand)",
+                  background: "var(--brand-solid)",
                   color: "var(--on-accent)",
                   fontSize: 13,
                   fontWeight: 500,
@@ -1076,7 +1076,7 @@ export default function WheelApp() {
                             names the product; this names what you are looking
                             at, which is the thing the user actually needs. */}
                         <div className="w-full max-w-sm">
-                          <p className="type-eyebrow mb-1.5" style={{ color: "var(--brand)" }}>
+                          <p className="type-eyebrow mb-1.5" style={{ color: "var(--brand-text)" }}>
                             Today&apos;s wheel
                           </p>
                           <h1
@@ -1111,7 +1111,7 @@ export default function WheelApp() {
                               style={{
                                 minHeight: 56,
                                 borderRadius: "var(--radius-control)",
-                                background: "var(--brand)",
+                                background: "var(--brand-solid)",
                                 color: "var(--on-accent)",
                                 fontSize: 16,
                                 fontWeight: 500,
@@ -1141,7 +1141,7 @@ export default function WheelApp() {
                               style={{
                                 minHeight: 56,
                                 borderRadius: "var(--radius-control)",
-                                background: spinDisabled ? "var(--muted)" : "var(--brand)",
+                                background: spinDisabled ? "var(--muted)" : "var(--brand-solid)",
                                 color: spinDisabled ? "var(--muted-foreground)" : "var(--on-accent)",
                                 fontSize: 16,
                                 fontWeight: 500,
@@ -1170,7 +1170,7 @@ export default function WheelApp() {
                               </div>
                             ) : (
                               <p className="type-meta text-center" style={{ color: "var(--muted-foreground)" }}>
-                                <span className="font-semibold" style={{ color: "var(--brand)" }}>{filteredRestaurants.length}</span>
+                                <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{filteredRestaurants.length}</span>
                                 {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
                                 {closedCount > 0 && (
                                   <>
@@ -1200,11 +1200,11 @@ export default function WheelApp() {
                               className="w-full flex items-center justify-between gap-2 px-4 text-left transition-colors hover:bg-white/3"
                               style={{ minHeight: 56 }}
                             >
-                              <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand)" }}>
+                              <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
                                 <Clock size={12} /> Skipping (picked recently)
                                 <span
                                   className="px-2 py-0.5 text-[10px] font-semibold"
-                                  style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+                                  style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
                                 >
                                   {restaurants.filter((r) => r.isExcluded).length}
                                 </span>
@@ -1225,7 +1225,7 @@ export default function WheelApp() {
                                         className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px]"
                                         style={{
                                           background: "oklch(from var(--destructive) l c h / 0.12)",
-                                          color: "var(--brand)",
+                                          color: "var(--brand-text)",
                                         }}
                                       >
                                         back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
@@ -1297,7 +1297,7 @@ export default function WheelApp() {
                       fontWeight: 500,
                       letterSpacing: "0.05em",
                       color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                      background: isActive ? "var(--brand)" : "transparent",
+                      background: isActive ? "var(--brand-solid)" : "transparent",
                     }}
                   >
                     <Icon size={20} />
@@ -1340,7 +1340,7 @@ export default function WheelApp() {
           >
             {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
               <div className="glass-chip flex items-start gap-2.5 px-4 py-3 w-full text-left">
-                <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand)" }} />
+                <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand-text)" }} />
                 <span className="type-meta" style={{ color: "var(--body)" }}>
                   We&apos;ll skip{" "}
                   <span className="font-semibold" style={{ color: "var(--foreground)" }}>

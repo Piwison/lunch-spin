@@ -81,17 +81,17 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {/* Summary row */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand)" }}>Total spins</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Total spins</div>
           <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>{total}</div>
         </Card>
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand)" }}>Places tried</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Places tried</div>
           <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>
             {placesTried}<span style={{ fontSize: 16, fontWeight: 400, color: "var(--body-warm)" }}>/{stats.length}</span>
           </div>
         </Card>
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand)" }}>Favourite</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Favourite</div>
           <div
             className="mt-1.5 leading-tight line-clamp-2 break-words"
             title={favorite?.name}
@@ -106,8 +106,8 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {overdue.length > 0 && (
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={15} style={{ color: "var(--brand)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--brand)" }}>Due for a comeback</h3>
+            <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
+            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Due for a comeback</h3>
           </div>
           <p className="text-xs text-muted-foreground mb-3">Spots you haven't had in a while (or ever) — maybe spin one of these.</p>
           <div className="flex flex-wrap gap-2">
@@ -137,8 +137,8 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {/* Most picked — horizontal bars (clear even with only a handful of spins) */}
       <Card className="p-5">
         <div className="flex items-center gap-2 mb-4">
-          <Crown size={15} style={{ color: "var(--brand)" }} />
-          <h3 className="type-eyebrow" style={{ color: "var(--brand)" }}>Most picked</h3>
+          <Crown size={15} style={{ color: "var(--brand-text)" }} />
+          <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Most picked</h3>
         </div>
         <div className="space-y-3">
           {top.map((r, idx) => {
@@ -167,8 +167,8 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {people.length > 1 && (
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
-            <Users size={15} style={{ color: "var(--brand)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--brand)" }}>Who&apos;s been picking</h3>
+            <Users size={15} style={{ color: "var(--brand-text)" }} />
+            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Who&apos;s been picking</h3>
           </div>
           <p className="text-xs text-muted-foreground mb-3">Who's been driving the spins — keep it balanced.</p>
           <div className="space-y-3">

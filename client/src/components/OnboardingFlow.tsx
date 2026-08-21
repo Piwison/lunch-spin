@@ -216,7 +216,7 @@ export default function OnboardingFlow({
                   className="px-3.5 py-1.5 transition-colors active:scale-[var(--press-scale)]"
                   style={
                     on
-                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand)", color: "var(--on-accent)", fontSize: 13, fontWeight: 500 }
+                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand-solid)", color: "var(--on-accent)", fontSize: 13, fontWeight: 500 }
                       : { borderRadius: "var(--radius-chip)", background: "var(--paper)", border: "1px solid var(--border)", color: "var(--body-warm)", fontSize: 13, fontWeight: 500 }
                   }
                 >
@@ -269,7 +269,7 @@ export default function OnboardingFlow({
                     className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
                     style={
                       on
-                        ? { background: "var(--brand)", color: "var(--on-accent)" }
+                        ? { background: "var(--brand-solid)", color: "var(--on-accent)" }
                         : { border: "1.5px solid var(--border)" }
                     }
                   >
@@ -281,7 +281,7 @@ export default function OnboardingFlow({
                       <span className="flex items-center gap-1">
                         <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
                       </span>
-                      {p.priceLevel != null && <span style={{ color: "var(--brand)" }}>{"$".repeat(p.priceLevel)}</span>}
+                      {p.priceLevel != null && <span style={{ color: "var(--brand-text)" }}>{"$".repeat(p.priceLevel)}</span>}
                       {p.cuisine && <span>{p.cuisine}</span>}
                       {p.open === true && <span style={{ color: "var(--ok)" }}>Open now</span>}
                       {p.open === false && <span className="opacity-70">Closed</span>}
@@ -317,7 +317,7 @@ export default function OnboardingFlow({
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,

@@ -88,7 +88,7 @@ export default function WinnerSurface({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-full">
-          <p className="type-eyebrow mb-3" style={{ color: "var(--brand)" }}>
+          <p className="type-eyebrow mb-3" style={{ color: "var(--brand-text)" }}>
             Today&apos;s lunch
           </p>
           {/* Full bleed, no frame. --accent-ink is the accent tuned for text on
@@ -127,7 +127,7 @@ export default function WinnerSurface({
             style={{
               minHeight: 56,
               borderRadius: "var(--radius-control)",
-              background: "var(--brand)",
+              background: "var(--brand-solid)",
               color: "var(--on-accent)",
               fontSize: 17,
               transitionDuration: "var(--dur-tap)",

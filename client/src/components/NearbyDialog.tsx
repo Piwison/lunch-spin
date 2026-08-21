@@ -163,7 +163,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
       <DialogContent className="glass-sheet max-w-md max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="type-section flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
-            <Navigation size={18} style={{ color: "var(--brand)" }} /> Add nearby
+            <Navigation size={18} style={{ color: "var(--brand-text)" }} /> Add nearby
           </DialogTitle>
         </DialogHeader>
 
@@ -188,7 +188,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
               onClick={() => (coords ? runSearch(coords, radius) : locateAndSearch())}
               disabled={locating || search.isPending}
               className="flex-shrink-0 transition-colors active:scale-[var(--press-scale)]"
-              style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+              style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
             >
               {locating || search.isPending ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -247,7 +247,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                 className="w-12 h-12 flex items-center justify-center"
                 style={{ borderRadius: "var(--radius-chip)", background: "oklch(from var(--brand) l c h / 0.12)" }}
               >
-                <MapPin size={22} style={{ color: "var(--brand)" }} />
+                <MapPin size={22} style={{ color: "var(--brand-text)" }} />
               </div>
               <span style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)" }}>Use my location</span>
               <span className="text-xs text-muted-foreground px-6">We only use your location for this search — it's never stored.</span>
@@ -332,7 +332,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                         isAdded
                           ? { background: "oklch(from var(--ok) l c h / 0.2)", color: "var(--ok)" }
                           : on
-                            ? { background: "var(--brand)", color: "var(--on-accent)" }
+                            ? { background: "var(--brand-solid)", color: "var(--on-accent)" }
                             : { border: "1.5px solid var(--border)" }
                       }
                     >
@@ -347,7 +347,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                         >
                           <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
                         </span>
-                        {p.priceLevel != null && <span style={{ color: "var(--brand)" }}>{"$".repeat(p.priceLevel)}</span>}
+                        {p.priceLevel != null && <span style={{ color: "var(--brand-text)" }}>{"$".repeat(p.priceLevel)}</span>}
                         {p.cuisine && <span>{p.cuisine}</span>}
                         {p.open === true && <span style={{ color: "var(--ok)" }}>Open now</span>}
                         {p.open === false && <span className="opacity-70">Closed</span>}
@@ -374,7 +374,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand)",
+                background: "var(--brand-solid)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,

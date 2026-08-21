@@ -89,7 +89,9 @@
   --foreground: #14161c;         /* spec --ink: headings, primary text */
   --ink-strong: #0d0f14;         /* display type only */
   --body: #5a626d;               /* body copy */
-  --muted-foreground: #868d97;   /* spec --muted: labels, meta */
+  /* Spec --muted. The handoff's #868D97 measured 3.14:1 on --paper, which fails
+     AA for the 12-13px meta it carries, so it is darkened to clear 4.5. */
+  --muted-foreground: #666d77;
   --faint: #9aa1aa;              /* placeholder, disabled */
   --border: #c7cbd1;             /* spec --hairline: rules, dividers */
   --input: #c7cbd1;
@@ -110,14 +112,25 @@
   --primary: #de5c1f;
   --primary-foreground: #fbf7f2;
   --ring: #de5c1f;
+  /* Persimmon has three roles and light mode needs three values, because the
+     spec's single #DE5C1F only clears AA in one of them (measured on --paper:
+     3.48:1). --brand keeps the spec value and is used where 3:1 is the right
+     bar — fills, icons, the pointer, the winning-pane wash. The other two are
+     text and solid-button roles, which need 4.5:1. In dark mode all three
+     collapse back to one value; #F2703A on charcoal clears AA in every role. */
   --brand: #de5c1f;
+  --brand-text: #b0431a;         /* persimmon TEXT on paper/glass — 5.37:1 */
+  --brand-solid: #b64614;        /* persimmon FILL under --on-accent — 5.08:1 */
   --accent-ink: #b0431a;         /* accent TEXT on light glass (winner label) */
   /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
      --foreground is right for Latin display type but reads hard against the
      ground under the denser strokes of a Chinese character. Scoped to the wheel
      labels and the readout's secondary line — not the whole app. */
   --ink-warm: #2e2a27;
-  --body-warm: #78716c;
+  /* #78716C measured 4.50:1 on --paper but only 3.95:1 on --background, and
+     this token carries meta text on both. Darkened until the worse of the two
+     clears AA. */
+  --body-warm: #6f6862;
   --on-accent: #fbf7f2;          /* ink on a persimmon fill */
   /* Reserved for the hero gradient on wheel/result. A lighter persimmon rather
      than the old amber, so a gradient never introduces a second hue. */
@@ -127,7 +140,10 @@
   /* Semantic. Deliberately desaturated so nothing competes with persimmon. */
   --destructive: #b3261e;
   --destructive-foreground: #fbf7f2;
-  --star: #c98a2e;               /* rating stars — a conventional gold, muted */
+  /* Rating gold. The old #C98A2E was 2.75:1 on paper — below even the 3:1 bar
+     a graphical indicator has to clear, and the star sits next to the average
+     as a pair. Darkened to clear 3:1 on both paper and the ground. */
+  --star: #a97120;
   --ok: #2f6b4f;                 /* success text */
   --info: #7a5b33;               /* info / notice text */
 
@@ -202,6 +218,8 @@
   --primary-foreground: #16120f;
   --ring: #f2703a;
   --brand: #f2703a;
+  --brand-text: #f2703a;         /* 5.49:1 on --paper */
+  --brand-solid: #f2703a;        /* 6.35:1 under --on-accent */
   --accent-ink: #f2703a;         /* on dark glass the accent reads as itself */
   /* The same warm pair inverted — the light-mode values are near-black and
      would be invisible here. */

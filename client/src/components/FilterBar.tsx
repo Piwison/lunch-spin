@@ -89,7 +89,7 @@ export default function FilterBar({
           {activeCount > 0 && (
             <span
               className="px-2 py-0.5 text-[11px] font-semibold"
-              style={{ background: "var(--brand)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+              style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
             >
               {activeCount}
             </span>
@@ -124,8 +124,8 @@ export default function FilterBar({
                         onClick={() => onToggleTag(tag.id)}
                         className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
                         style={{
-                          background: isActive ? "var(--brand)" : "var(--glass-chip-bg)",
-                          border: `1px solid ${isActive ? "var(--brand)" : "var(--glass-chip-border)"}`,
+                          background: isActive ? "var(--brand-solid)" : "var(--glass-chip-bg)",
+                          border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--glass-chip-border)"}`,
                           color: isActive ? "var(--on-accent)" : "var(--body-warm)",
                           borderRadius: "var(--radius-chip)",
                         }}
@@ -146,7 +146,7 @@ export default function FilterBar({
                   <Footprints size={11} className="flex-shrink-0" /> DISTANCE
                 </p>
                 {distanceActive ? (
-                  <span className="text-xs font-medium" style={{ color: "var(--brand)" }}>
+                  <span className="text-xs font-medium" style={{ color: "var(--brand-text)" }}>
                     Within {maxWalkMinutes} min
                   </span>
                 ) : (
@@ -191,7 +191,7 @@ export default function FilterBar({
           style={{
             background: "oklch(from var(--destructive) l c h / 0.12)",
             border: "1px solid oklch(from var(--destructive) l c h / 0.35)",
-            color: "var(--brand)",
+            color: "var(--brand-text)",
           }}
         >
           <AlertTriangle size={13} className="flex-shrink-0" />
