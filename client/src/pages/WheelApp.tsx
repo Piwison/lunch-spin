@@ -848,6 +848,33 @@ export default function WheelApp() {
           }}
           registerCreateOpener={registerCreateOpener}
           registerSettingsOpener={registerSettingsOpener}
+          /* The Wheel tab spends this slot on the filter instead of the gear.
+             Two rows come off the top of the most important screen: the filter
+             stops being a full-width bar, and the duplicate wheel-name title
+             below it is gone (the picker already says which wheel you are on).
+             That is what gets Spin above the fold on a 390x844 phone. */
+          trailing={
+            activeTab === "wheel" && selectedWheelId ? (
+              <FilterBar
+                variant="sheet"
+                open={showFilters}
+                onOpenChange={setShowFilters}
+                tagGroups={[
+                  { label: "Cuisine", items: cuisineTags },
+                  { label: "Food type", items: foodTypeTags },
+                  { label: "Custom", items: customTags },
+                ]}
+                selectedTagIds={selectedTagIds}
+                onToggleTag={toggleTag}
+                distanceEnabled={!!wheelData?.distanceEnabled}
+                maxWalkMinutes={maxWalkMinutes}
+                onChangeMaxWalkMinutes={setMaxWalkMinutes}
+                matchCount={filteredRestaurants.length}
+                totalCount={restaurants?.length ?? 0}
+                emptyMessage="No restaurants match your filters. Try removing some."
+              />
+            ) : undefined
+          }
         />
 
         {/* ── MAIN CONTENT ── */}
@@ -1021,27 +1048,6 @@ export default function WheelApp() {
                       </div>
                     )}
 
-                    {/* ── FILTER BAR (compact, collapsible) — tags + distance ── */}
-                    <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
-                    <FilterBar
-                      open={showFilters}
-                      onOpenChange={setShowFilters}
-                      tagGroups={[
-                        { label: "CUISINE", items: cuisineTags },
-                        { label: "FOOD TYPE", items: foodTypeTags },
-                        { label: "CUSTOM", items: customTags },
-                      ]}
-                      selectedTagIds={selectedTagIds}
-                      onToggleTag={toggleTag}
-                      distanceEnabled={!!wheelData?.distanceEnabled}
-                      maxWalkMinutes={maxWalkMinutes}
-                      onChangeMaxWalkMinutes={setMaxWalkMinutes}
-                      matchCount={filteredRestaurants.length}
-                      totalCount={restaurants?.length ?? 0}
-                      emptyMessage="No restaurants match your filters. Try removing some."
-                    />
-                    </div>
-
                     {/* ── WHEEL + SPIN CTA ── */}
                     {restaurantsLoading ? (
                       /* The same "Warming up your wheel" loader as the entry gate,
@@ -1072,21 +1078,6 @@ export default function WheelApp() {
                       </div>
                     ) : (
                       <div className="w-full flex flex-col items-center gap-5 md:col-start-1 md:row-start-1 md:row-span-5 xl:col-auto xl:row-auto">
-                        {/* Screen title, as the design leads with. The app bar
-                            names the product; this names what you are looking
-                            at, which is the thing the user actually needs. */}
-                        <div className="w-full max-w-sm">
-                          <p className="type-eyebrow mb-1.5" style={{ color: "var(--brand-text)" }}>
-                            Today&apos;s wheel
-                          </p>
-                          <h1
-                            className="type-title truncate"
-                            style={{ color: "var(--ink-warm)" }}
-                          >
-                            {wheelData?.name ?? "Lunch Wheel"}
-                          </h1>
-                        </div>
-
                         {/* The wheel. The camera holds its zoom from the moment
                             the spin starts until Lock it in or Respin clears the
                             result — one owner for that fact, passed down, rather
