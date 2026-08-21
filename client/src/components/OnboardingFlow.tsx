@@ -216,8 +216,8 @@ export default function OnboardingFlow({
                   className="px-3.5 py-1.5 transition-colors active:scale-[var(--press-scale)]"
                   style={
                     on
-                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand-solid)", color: "var(--on-accent)", fontSize: 13, fontWeight: 500 }
-                      : { borderRadius: "var(--radius-chip)", background: "var(--paper)", border: "1px solid var(--border)", color: "var(--body-warm)", fontSize: 13, fontWeight: 500 }
+                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand-solid)", color: "var(--on-accent)", fontSize: 15, fontWeight: 500 }
+                      : { borderRadius: "var(--radius-chip)", background: "var(--paper)", border: "1px solid var(--border)", color: "var(--body-warm)", fontSize: 15, fontWeight: 500 }
                   }
                 >
                   {f.label}
@@ -277,7 +277,7 @@ export default function OnboardingFlow({
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="block font-semibold text-sm truncate">{p.name}</span>
-                    <span className="flex items-center gap-2 flex-wrap mt-0.5 text-[11px] text-muted-foreground">
+                    <span className="flex items-center gap-2 flex-wrap mt-0.5 type-meta text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
                       </span>
@@ -367,7 +367,7 @@ export default function OnboardingFlow({
               A user whose browser won't share a position is not stuck. */}
           <LocationPicker onPicked={(at) => runSearch(at)} />
           {search.isPending && (
-            <p className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5">
+            <p className="type-meta text-muted-foreground flex items-center justify-center gap-1.5">
               <Loader2 size={12} className="animate-spin" /> Looking around…
             </p>
           )}

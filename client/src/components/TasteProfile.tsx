@@ -39,7 +39,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
         <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
           <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--brand)" }} />
         </div>
-        <p className="text-[11px] text-muted-foreground">{data.totalRatings} of 5 ratings</p>
+        <p className="type-meta text-muted-foreground">{data.totalRatings} of 5 ratings</p>
       </Card>
     );
   }
@@ -56,7 +56,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           </span>
           <div>
             <StarRating value={data.overallAverage} size={18} />
-            <div className="text-[11px] text-muted-foreground mt-0.5">
+            <div className="type-meta text-muted-foreground mt-0.5">
               {data.totalRatings} rating{data.totalRatings === 1 ? "" : "s"} across the team
             </div>
           </div>
@@ -121,7 +121,7 @@ function CuisineChip({ cuisine, average, tone }: { cuisine: string; average: num
         background: up ? "color-mix(in oklch, var(--star) 15%, transparent)" : "var(--muted)",
         color: up ? "var(--ink-warm)" : "var(--body-warm)",
         border: up ? "1px solid color-mix(in oklch, var(--star) 35%, transparent)" : "1px solid var(--border)",
-        fontSize: 13,
+        fontSize: 15,
         fontWeight: 500,
       }}
     >

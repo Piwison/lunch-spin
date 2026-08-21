@@ -75,7 +75,7 @@ export function StatusChip({ variant, message, autoDismiss = 0, onDismiss, class
 
   return (
     <div
-      className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl text-xs transition-all duration-250 ${className ?? ""}`}
+      className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl type-meta transition-all duration-250 ${className ?? ""}`}
       style={{
         background: styles.bg,
         border: `1px solid ${styles.border}`,

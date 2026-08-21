@@ -122,7 +122,7 @@ export default function LocationPicker({
       </Button>
 
       {!compact && (
-        <p className="text-[11px] text-muted-foreground text-center px-4">
+        <p className="type-meta text-muted-foreground text-center px-4">
           Only used for this search — it's never stored.
         </p>
       )}
@@ -162,7 +162,7 @@ export default function LocationPicker({
           type="button"
           onClick={() => setShowManual(true)}
           className="text-muted-foreground hover:text-foreground transition-colors"
-          style={{ minHeight: 44, fontSize: 14, fontWeight: 500 }}
+          style={{ minHeight: 44, fontSize: 15, fontWeight: 500 }}
         >
           Or set it another way
         </button>
@@ -170,7 +170,7 @@ export default function LocationPicker({
         <div className="flex flex-col gap-2.5">
           {/* Search by name — an office, a station, a landmark. */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-muted-foreground px-1">
+            <span className="type-meta text-muted-foreground px-1">
               Search for your office or a nearby landmark
             </span>
             <div className="flex gap-2">
@@ -204,7 +204,7 @@ export default function LocationPicker({
           </div>
 
           {searchPlaces.data && results.length === 0 && (
-            <p className="text-[11px] text-muted-foreground px-1">
+            <p className="type-meta text-muted-foreground px-1">
               No places matched that. Try a fuller name, or paste a Maps link below.
             </p>
           )}
@@ -224,9 +224,9 @@ export default function LocationPicker({
                 >
                   <MapPin size={13} className="flex-shrink-0" style={{ color: "var(--brand-text)" }} />
                   <span className="flex-1 min-w-0">
-                    <span className="block text-xs font-semibold truncate">{p.name}</span>
+                    <span className="block type-meta font-semibold truncate">{p.name}</span>
                     {p.address && (
-                      <span className="block text-[10px] text-muted-foreground truncate">{p.address}</span>
+                      <span className="block type-meta text-muted-foreground truncate">{p.address}</span>
                     )}
                   </span>
                 </button>
@@ -236,7 +236,7 @@ export default function LocationPicker({
 
           {/* Paste a Maps link. */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-muted-foreground px-1">Or paste a Google Maps link</span>
+            <span className="type-meta text-muted-foreground px-1">Or paste a Google Maps link</span>
             <div className="flex gap-2">
               <Input
                 id="locpick-link"

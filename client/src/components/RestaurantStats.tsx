@@ -109,7 +109,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
             <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
             <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Due for a comeback</h3>
           </div>
-          <p className="text-xs text-muted-foreground mb-3">Spots you haven't had in a while (or ever) — maybe spin one of these.</p>
+          <p className="type-meta text-muted-foreground mb-3">Spots you haven't had in a while (or ever) — maybe spin one of these.</p>
           <div className="flex flex-wrap gap-2">
             {overdue.map(({ stat, daysSince }) => (
               <span
@@ -120,12 +120,12 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
                   background: "oklch(from var(--brand) l c h / 0.08)",
                   border: "1px solid oklch(from var(--brand) l c h / 0.22)",
                   color: "var(--ink-warm)",
-                  fontSize: 13,
+                  fontSize: 15,
                   fontWeight: 500,
                 }}
               >
                 {stat.name}
-                <span className="text-[10px] text-muted-foreground">
+                <span className="type-meta text-muted-foreground">
                   {daysSince === null ? "never" : `${daysSince}d`}
                 </span>
               </span>
@@ -147,7 +147,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
               <div key={r.id}>
                 <div className="flex items-center justify-between mb-1 gap-2">
                   <span className="text-sm font-medium truncate">{r.name}</span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                  <span className="type-meta text-muted-foreground flex-shrink-0">
                     {r.pickCount} · {lastPickedLabel(r.lastPickedAt)}
                   </span>
                 </div>
@@ -170,7 +170,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
             <Users size={15} style={{ color: "var(--brand-text)" }} />
             <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Who&apos;s been picking</h3>
           </div>
-          <p className="text-xs text-muted-foreground mb-3">Who's been driving the spins — keep it balanced.</p>
+          <p className="type-meta text-muted-foreground mb-3">Who's been driving the spins — keep it balanced.</p>
           <div className="space-y-3">
             {people.map((p, idx) => {
               const pct = maxPersonPicks > 0 ? (p.count / maxPersonPicks) * 100 : 0;
@@ -178,7 +178,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
                 <div key={p.userId}>
                   <div className="flex items-center justify-between mb-1 gap-2">
                     <span className="text-sm font-medium truncate">{p.name ?? "Unknown"}</span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                    <span className="type-meta text-muted-foreground flex-shrink-0">
                       {p.count} spin{p.count !== 1 ? "s" : ""}
                     </span>
                   </div>

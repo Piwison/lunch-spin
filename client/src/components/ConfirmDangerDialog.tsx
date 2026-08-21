@@ -74,7 +74,7 @@ export default function ConfirmDangerDialog({
 
         {confirmWord && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted-foreground">
+            <span className="type-meta text-muted-foreground">
               Type <strong className="text-foreground font-mono">{confirmWord}</strong> to confirm
             </span>
             <Input

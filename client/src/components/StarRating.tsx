@@ -61,7 +61,7 @@ export function RatingChip({ average }: { average: number | null }) {
   if (average == null) {
     return (
       <span
-        className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+        className="inline-flex items-center gap-1 type-meta font-medium px-2 py-0.5 rounded-full flex-shrink-0"
         style={{ border: "1px dashed var(--border)", color: "var(--muted-foreground)" }}
       >
         <Star size={11} style={{ fill: "none", color: "var(--muted-foreground)" }} /> New
@@ -70,7 +70,7 @@ export function RatingChip({ average }: { average: number | null }) {
   }
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+      className="inline-flex items-center gap-1 type-meta font-bold px-2 py-0.5 rounded-full flex-shrink-0"
       style={{ background: "color-mix(in oklch, var(--star) 18%, transparent)", color: "var(--foreground)" }}
     >
       <Star size={12} style={{ fill: "var(--star)", color: "var(--star)" }} /> {average.toFixed(1)}

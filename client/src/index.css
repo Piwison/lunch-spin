@@ -469,43 +469,62 @@
     U+1EA0-1EF9, U+20AB;
 }
 
-/* ─── Type scale ──────────────────────────────────────────────────────────────
-   The Ember scale as named classes rather than a raised global base size: the
-   tabs that have no Ember drawing yet (Places, History, entry screens) keep
-   today's density until items 10–11 re-draw them, but inherit the typeface and
-   palette immediately. Sizes are rem-relative so browser text zoom still works. */
-.type-display {
-  font-size: 4.25rem;      /* 68 */
-  line-height: 0.9;
-  font-weight: 600;
-  letter-spacing: -0.05em;
-}
-.type-title {
-  font-size: 2.125rem;     /* 34 */
-  line-height: 1;
-  font-weight: 600;
-  letter-spacing: -0.035em;
-}
-.type-section {
-  font-size: 1.75rem;      /* 28 */
-  line-height: 1;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.type-body {
-  font-size: 1.0625rem;    /* 17 */
-  line-height: 1.45;
-  font-weight: 400;
-}
-.type-meta {
-  font-size: 0.9375rem;    /* 15 */
-  font-weight: 400;
-}
-.type-eyebrow {
-  font-size: 0.6875rem;    /* 11 */
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+@layer components {
+  /* Inside the components layer ON PURPOSE. These used to sit outside every
+     cascade layer, which put them above Tailwind's utilities — so `type-meta
+     font-semibold` silently rendered at weight 400, and any utility paired with
+     a type class was quietly ignored. In the components layer the type class
+     sets the default and a utility next to it still wins. */
+  /* ─── Type scale ──────────────────────────────────────────────────────────────
+     The Ember scale as named classes rather than a raised global base size: the
+     tabs that have no Ember drawing yet (Places, History, entry screens) keep
+     today's density until items 10–11 re-draw them, but inherit the typeface and
+     palette immediately. Sizes are rem-relative so browser text zoom still works. */
+  /* The winner's name, and the only place 68px type appears.
+     The spec's 0.9 line-height and -0.05em tracking are Latin display settings,
+     and both break on Chinese: a CJK glyph fills its em box, so any line-height
+     under 1 guarantees the second line overlaps the first, and -0.05em at 68px
+     pulls 3.4px out from between characters that are already full-width — 鼎 and
+     泰 physically touch. 1.04 and -0.02em still read as display type in Latin and
+     stop CJK colliding. `word-break: keep-all` keeps a two-character word from
+     splitting across the break. */
+  .type-display {
+    font-size: 4.25rem;      /* 68 */
+    line-height: 1.04;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    word-break: keep-all;
+  }
+  .type-title {
+    font-size: 2.125rem;     /* 34 */
+    line-height: 1.12;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    word-break: keep-all;
+  }
+  .type-section {
+    font-size: 1.75rem;      /* 28 */
+    line-height: 1.14;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    word-break: keep-all;
+  }
+  .type-body {
+    font-size: 1.0625rem;    /* 17 */
+    line-height: 1.45;
+    font-weight: 400;
+  }
+  .type-meta {
+    font-size: 0.9375rem;    /* 15 */
+    line-height: 1.4;
+    font-weight: 400;
+  }
+  .type-eyebrow {
+    font-size: 0.6875rem;    /* 11 */
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
 }
 
 /* ─── Flex defaults ─────────────────────────────────────────────────────────── */

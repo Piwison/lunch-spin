@@ -112,7 +112,7 @@ function WheelActionsMenu({
           aria-label="Wheel actions"
           onClick={(e) => e.stopPropagation()}
           className={`flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ${
-            large ? "h-14 w-12" : "h-11 w-10"
+            large ? "h-14 w-12" : "h-11 w-11"
           }`}
         >
           <MoreVertical size={large ? 18 : 16} />
@@ -493,7 +493,7 @@ export default function WheelSelector({
           disabled={setDefaultWheel.isPending}
           aria-label={isDefault ? "Unset default wheel" : "Set as default wheel"}
           title={isDefault ? "Default wheel — opens automatically. Click to unset." : "Set as default wheel (opens automatically on entry)"}
-          className={`flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors ${inSheet ? "h-14 w-11" : "h-11 w-10"}`}
+          className={`flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors ${inSheet ? "h-14 w-11" : "h-11 w-11"}`}
         >
           <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
         </button>
@@ -653,7 +653,7 @@ export default function WheelSelector({
               <Switch checked={fairnessMode} onCheckedChange={setFairnessMode} />
             </div>
             {fairnessMode && (
-              <p className="-mt-2 text-xs text-muted-foreground">
+              <p className="-mt-2 type-meta text-muted-foreground">
                 Spins lean toward restaurants you haven't picked in a while.
               </p>
             )}
@@ -662,7 +662,7 @@ export default function WheelSelector({
               <Switch checked={rotateCuisines} onCheckedChange={setRotateCuisines} />
             </div>
             {rotateCuisines && (
-              <p className="-mt-2 text-xs text-muted-foreground">
+              <p className="-mt-2 type-meta text-muted-foreground">
                 Spins lean away from a cuisine you just had toward neglected ones.
               </p>
             )}
@@ -702,7 +702,7 @@ export default function WheelSelector({
           <div className="flex flex-col gap-4 pt-2">
             <p className="text-sm text-muted-foreground">Share this link with your team to join <strong className="text-foreground">{showInvite?.name}</strong>:</p>
             <div className="flex gap-2">
-              <Input value={inviteUrl} readOnly className="bg-secondary/50 border-border/50 text-xs" />
+              <Input value={inviteUrl} readOnly className="bg-secondary/50 border-border/50 type-meta" />
               <Button size="icon" variant="outline" onClick={copyInvite}>
                 <Copy size={14} />
               </Button>
@@ -736,7 +736,7 @@ export default function WheelSelector({
               {!canEdit && (
                 <div className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-secondary/30 px-3 py-2.5">
                   <Eye size={14} className="flex-shrink-0 mt-0.5 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="type-meta text-muted-foreground">
                     <strong className="text-foreground">View only.</strong> Only the wheel's creator can change these
                     settings — ask them if something needs updating.
                   </p>
@@ -773,7 +773,7 @@ export default function WheelSelector({
                       <Users size={14} className="flex-shrink-0" /> Team invite
                     </div>
                     {!sharedLive ? (
-                      <p className="text-[11px] text-muted-foreground">Press Save settings to turn on sharing — you'll get an invite link right away.</p>
+                      <p className="type-meta text-muted-foreground">Press Save settings to turn on sharing — you'll get an invite link right away.</p>
                     ) : token ? (
                       <>
                         <div className="flex items-center gap-2">
@@ -781,12 +781,12 @@ export default function WheelSelector({
                             readOnly
                             value={inviteLinkFor(token)}
                             onFocus={(e) => e.currentTarget.select()}
-                            className="h-9 bg-background/60 border-border/50 text-xs font-mono"
+                            className="h-9 bg-background/60 border-border/50 type-meta font-mono"
                           />
-                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Copy invite link" onClick={() => copyLink(inviteLinkFor(token), "Invite link copied!")}>
+                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Copy invite link" onClick={() => copyLink(inviteLinkFor(token), "Invite link copied!")}>
                             <Copy size={14} />
                           </Button>
-                          <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Share invite" onClick={() => shareInviteLink(token, editWheel.name)}>
+                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Share invite" onClick={() => shareInviteLink(token, editWheel.name)}>
                             <Share2 size={14} />
                           </Button>
                         </div>
@@ -794,21 +794,21 @@ export default function WheelSelector({
                             team grows — but issuing a NEW token is owner-only on
                             the server, so don't offer a button that 403s. */}
                         {canEdit && (
-                          <button type="button" onClick={regenerate} className="self-start text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                          <button type="button" onClick={regenerate} className="self-start type-meta text-muted-foreground hover:text-foreground underline underline-offset-2">
                             Regenerate link (invalidates the old one)
                           </button>
                         )}
-                        <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                        <p className="type-meta text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                       </>
                     ) : canEdit ? (
                       <>
                         <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
                           <Share2 size={14} /> Generate invite link
                         </Button>
-                        <p className="text-[11px] text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                        <p className="type-meta text-muted-foreground">Anyone with this link can sign in and join the team.</p>
                       </>
                     ) : (
-                      <p className="text-[11px] text-muted-foreground">No invite link yet — ask the wheel's creator to generate one.</p>
+                      <p className="type-meta text-muted-foreground">No invite link yet — ask the wheel's creator to generate one.</p>
                     )}
                   </div>
                 );
@@ -829,16 +829,16 @@ export default function WheelSelector({
                         readOnly
                         value={publicUrl}
                         onFocus={(e) => e.currentTarget.select()}
-                        className="h-9 bg-background/60 border-border/50 text-xs font-mono"
+                        className="h-9 bg-background/60 border-border/50 type-meta font-mono"
                       />
-                      <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Copy link" onClick={() => copyPublicLink(editWheel.id)}>
+                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Copy link" onClick={() => copyPublicLink(editWheel.id)}>
                         <Copy size={14} />
                       </Button>
-                      <Button size="icon" variant="outline" className="h-9 w-9 flex-shrink-0" title="Share" onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
+                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Share" onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
                         <Share2 size={14} />
                       </Button>
                     </div>
-                    <p className={`text-[11px] flex items-center gap-1.5 ${live ? "" : "text-muted-foreground"}`} style={live ? { color: "var(--ok)" } : undefined}>
+                    <p className={`type-meta flex items-center gap-1.5 ${live ? "" : "text-muted-foreground"}`} style={live ? { color: "var(--ok)" } : undefined}>
                       <Globe size={12} className="flex-shrink-0" />
                       {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save settings."}
                     </p>
@@ -883,7 +883,7 @@ export default function WheelSelector({
                 </div>
                 {editWheel.distanceEnabled && (
                   <>
-                    <p className="-mt-1 text-xs text-muted-foreground">
+                    <p className="-mt-1 type-meta text-muted-foreground">
                       Shows walking time from one point to every restaurant.
                       {editWheel.isShared ? " Shared wheels use a single office/meeting point, visible to the team." : ""}
                     </p>
@@ -925,7 +925,7 @@ export default function WheelSelector({
                       const hasOrigin = editWheel.originLat != null && editWheel.originLng != null;
                       if (!hasOrigin) {
                         return (
-                          <p className="text-xs flex items-center gap-1.5 text-muted-foreground">
+                          <p className="type-meta flex items-center gap-1.5 text-muted-foreground">
                             <MapPin size={12} className="flex-shrink-0" />
                             No location set yet — pick one above
                           </p>
@@ -942,7 +942,7 @@ export default function WheelSelector({
                           <MapPin size={14} className="flex-shrink-0" style={{ color: "var(--ok)" }} />
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="text-sm truncate">{editWheel.originLabel.trim() || "Office"}</span>
-                            <span className="text-[11px] flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand-text)" }}>
+                            <span className="type-meta flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand-text)" }}>
                               {isPersisted ? "Saved" : "Press Save settings to apply"}
                               <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
                                 view on map
@@ -953,7 +953,7 @@ export default function WheelSelector({
                             <button
                               type="button"
                               onClick={() => setEditingOrigin(true)}
-                              className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors"
+                              className="flex-shrink-0 type-meta font-semibold px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors"
                               style={{ color: "var(--foreground)" }}
                             >
                               Edit
@@ -974,12 +974,12 @@ export default function WheelSelector({
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
                     <div className="flex flex-col min-w-0">
                       <span className="text-sm">Delete this wheel</span>
-                      <span className="text-[11px] text-muted-foreground">Permanent — restaurants and history go with it.</span>
+                      <span className="type-meta text-muted-foreground">Permanent — restaurants and history go with it.</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setConfirmDelete({ id: editWheel.id, name: editWheel.name })}
-                      className="flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors hover:bg-destructive/15"
+                      className="flex-shrink-0 flex items-center gap-1.5 type-meta font-semibold px-3 py-1.5 rounded-full transition-colors hover:bg-destructive/15"
                       style={{ color: "var(--destructive)", border: "1px solid oklch(from var(--destructive) l c h / 0.4)" }}
                     >
                       <Trash2 size={13} /> Delete
@@ -1021,7 +1021,7 @@ export default function WheelSelector({
               ) : (
                 /* Members see the settings but can't change them — no Save at
                    all, rather than a button that would only fail server-side. */
-                <p className="text-xs text-muted-foreground text-center py-1">
+                <p className="type-meta text-muted-foreground text-center py-1">
                   Only the wheel's creator can change these settings.
                 </p>
               )}

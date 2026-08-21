@@ -89,7 +89,7 @@ export default function FilterBar({
                       <button
                         key={tag.id}
                         onClick={() => onToggleTag(tag.id)}
-                        className="px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 active:scale-95"
+                        className="px-3 py-1 rounded-full type-meta font-medium transition-all duration-150 active:scale-95"
                         style={{
                           background: isActive ? "var(--brand-solid)" : "var(--glass-chip-bg)",
                           border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--glass-chip-border)"}`,
@@ -113,13 +113,13 @@ export default function FilterBar({
                   <Footprints size={12} className="flex-shrink-0" /> Distance
                 </p>
                 {distanceActive ? (
-                  <span className="text-xs font-medium" style={{ color: "var(--brand-text)" }}>
+                  <span className="type-meta font-medium" style={{ color: "var(--brand-text)" }}>
                     Within {maxWalkMinutes} min
                   </span>
                 ) : (
                   <button
                     onClick={() => onChangeMaxWalkMinutes(MAX_WALK_MINUTES)}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    className="type-meta text-muted-foreground hover:text-foreground transition-colors"
                   >
                     Set a limit
                   </button>
@@ -127,7 +127,7 @@ export default function FilterBar({
               </div>
               {distanceActive && (
                 <div className="flex items-center gap-3 px-1">
-                  <span className="text-[10px] text-muted-foreground tabular-nums flex-shrink-0">{MIN_WALK_MINUTES}m</span>
+                  <span className="type-meta text-muted-foreground tabular-nums flex-shrink-0">{MIN_WALK_MINUTES}m</span>
                   <Slider
                     value={[maxWalkMinutes]}
                     onValueChange={([v]) => onChangeMaxWalkMinutes(v ?? MAX_WALK_MINUTES)}
@@ -135,7 +135,7 @@ export default function FilterBar({
                     max={MAX_WALK_MINUTES}
                     step={1}
                   />
-                  <span className="text-[10px] text-muted-foreground tabular-nums flex-shrink-0">{MAX_WALK_MINUTES}m</span>
+                  <span className="type-meta text-muted-foreground tabular-nums flex-shrink-0">{MAX_WALK_MINUTES}m</span>
                 </div>
               )}
             </div>
@@ -144,7 +144,7 @@ export default function FilterBar({
           {activeCount > 0 && (
             <button
               onClick={clearAll}
-              className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="mt-3 flex items-center gap-1.5 type-meta text-muted-foreground hover:text-foreground transition-colors"
             >
               <X size={11} /> Clear all filters
             </button>

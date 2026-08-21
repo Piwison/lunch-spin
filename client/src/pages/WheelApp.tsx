@@ -718,7 +718,7 @@ export default function WheelApp() {
               <DropdownMenuSeparator className="my-0" />
               <div className="max-h-[60vh] overflow-y-auto">
                 {notifications.length === 0 ? (
-                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                  <div className="px-3 py-6 text-center type-meta text-muted-foreground">
                     No notifications yet — a teammate's accepted pick shows up here.
                   </div>
                 ) : (
@@ -735,10 +735,10 @@ export default function WheelApp() {
                         <strong className="font-semibold">{n.actorName || "Someone"}</strong> accepted{" "}
                         <strong className="font-semibold">{n.restaurantName}</strong>
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="type-meta text-muted-foreground">
                         {n.wheelName} · {formatTimeAgo(new Date(n.createdAt))}
                       </span>
-                      <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--brand-text)" }}>
+                      <span className="type-meta flex items-center gap-1 mt-0.5" style={{ color: "var(--brand-text)" }}>
                         <MapPin size={11} /> Open in Google Maps
                       </span>
                     </button>
@@ -760,7 +760,7 @@ export default function WheelApp() {
             <DropdownMenuContent align="end" className="glass-card w-56">
               <DropdownMenuLabel className="flex flex-col gap-0.5">
                 <span className="text-sm font-semibold truncate">{user.name || "-"}</span>
-                <span className="text-xs text-muted-foreground font-normal truncate">{user.email || "-"}</span>
+                <span className="type-meta text-muted-foreground font-normal truncate">{user.email || "-"}</span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {defaultWheel ? (
@@ -768,13 +768,13 @@ export default function WheelApp() {
                   <Star size={14} fill="var(--brand)" style={{ color: "var(--brand-text)" }} />
                   <span className="flex flex-col">
                     <span>Default wheel</span>
-                    <span className="text-xs text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
+                    <span className="type-meta text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
                   </span>
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem disabled className="gap-2.5">
                   <Star size={14} />
-                  <span className="text-xs">No default wheel — star one in the sidebar</span>
+                  <span className="type-meta">No default wheel — star one in the sidebar</span>
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={toggleTheme} className="gap-2.5">
@@ -800,7 +800,7 @@ export default function WheelApp() {
               <DropdownMenuItem
                 onClick={() => setConfirmDeleteAccount(true)}
                 variant="destructive"
-                className="gap-2.5 mt-0.5 text-xs opacity-65 transition-opacity focus:opacity-100 [&_svg]:size-3.5"
+                className="gap-2.5 mt-0.5 type-meta opacity-65 transition-opacity focus:opacity-100 [&_svg]:size-3.5"
               >
                 <Trash2 /> Delete account
               </DropdownMenuItem>
@@ -899,7 +899,7 @@ export default function WheelApp() {
                     style={{
                       minHeight: 56,
                       borderRadius: "calc(var(--radius-control) - 6px)",
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: 500,
                       letterSpacing: "0.05em",
                       color: isActive ? "var(--on-accent)" : "var(--body-warm)",
@@ -933,7 +933,7 @@ export default function WheelApp() {
                   borderRadius: "var(--radius-chip)",
                   background: "var(--brand-solid)",
                   color: "var(--on-accent)",
-                  fontSize: 13,
+                  fontSize: 15,
                   fontWeight: 500,
                   letterSpacing: "0.05em",
                 }}
@@ -1010,7 +1010,7 @@ export default function WheelApp() {
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
                           aria-label="Wheel settings"
                           title={isOwner ? "Wheel settings" : "Wheel settings (view only)"}
-                          className="flex items-center justify-center h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors active:scale-90"
+                          className="flex items-center justify-center h-11 w-11 rounded-full text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors active:scale-90"
                         >
                           <Settings size={16} />
                         </button>
@@ -1111,7 +1111,7 @@ export default function WheelApp() {
                             >
                               <Plus size={17} /> Add restaurants
                             </button>
-                            <p className="text-xs text-muted-foreground">Add a few places, then spin to decide.</p>
+                            <p className="type-meta text-muted-foreground">Add a few places, then spin to decide.</p>
                           </div>
                         ) : (
                           <div className="w-full max-w-sm flex flex-col" style={{ gap: 20 }}>
@@ -1194,7 +1194,7 @@ export default function WheelApp() {
                               <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
                                 <Clock size={12} /> Skipping (picked recently)
                                 <span
-                                  className="px-2 py-0.5 text-[10px] font-semibold"
+                                  className="px-2 py-0.5 type-meta font-semibold"
                                   style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
                                 >
                                   {restaurants.filter((r) => r.isExcluded).length}
@@ -1209,11 +1209,11 @@ export default function WheelApp() {
                             {showExcluded && (
                               <ul className="flex flex-col gap-1.5 px-4 pb-3 border-t border-border/30 pt-2.5">
                                 {restaurants.filter((r) => r.isExcluded).map((r) => (
-                                  <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
+                                  <li key={r.id} className="flex items-center justify-between gap-2 type-meta">
                                     <span className="truncate text-muted-foreground">{r.name}</span>
                                     {r.excludedUntil && (
                                       <span
-                                        className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px]"
+                                        className="flex-shrink-0 px-2 py-0.5 rounded-full type-meta"
                                         style={{
                                           background: "oklch(from var(--destructive) l c h / 0.12)",
                                           color: "var(--brand-text)",

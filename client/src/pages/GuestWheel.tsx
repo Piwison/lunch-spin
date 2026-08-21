@@ -180,7 +180,7 @@ export default function GuestWheel() {
               {isSpinning ? "Spinning…" : "Spin"}
             </button>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="type-meta text-muted-foreground">
               <span className="font-semibold" style={{ color: "var(--brand-text)" }}>
                 {segments.length}
               </span>{" "}
