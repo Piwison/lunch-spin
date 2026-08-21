@@ -30,11 +30,13 @@ export default function PointerReadout({ name, meta, indexLabel }: PointerReadou
         <p
           className="truncate"
           style={{
-            fontSize: 21,
+            // 17/600 rather than 21/600: at 21px a Chinese name is heavier than
+            // anything else on the screen and competes with the wheel itself.
+            fontSize: 17,
             fontWeight: 600,
-            letterSpacing: "-0.03em",
-            lineHeight: 1.1,
-            color: "var(--foreground)",
+            letterSpacing: "0.01em",
+            lineHeight: 1.3,
+            color: "var(--ink-warm)",
           }}
         >
           {name}
@@ -42,11 +44,11 @@ export default function PointerReadout({ name, meta, indexLabel }: PointerReadou
       </div>
       {(meta || indexLabel) && (
         <div
-          className="flex-none text-right type-meta flex flex-col items-end gap-0.5"
-          style={{ color: "var(--body)" }}
+          className="flex-none text-right flex flex-col items-end gap-0.5"
+          style={{ fontSize: 13, fontWeight: 400, color: "var(--body-warm)" }}
         >
           {meta}
-          {indexLabel && <span style={{ color: "var(--muted-foreground)" }}>{indexLabel}</span>}
+          {indexLabel && <span style={{ color: "var(--body-warm)" }}>{indexLabel}</span>}
         </div>
       )}
     </div>

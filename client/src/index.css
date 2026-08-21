@@ -54,11 +54,21 @@
   --color-chart-4: oklch(0.75 0.18 60);
   --color-chart-5: oklch(0.68 0.22 340);
   --radius: 0.75rem;
-  /* One typeface. Bricolage Grotesque carries display and body alike; the old
-     Fredoka/Poppins pair is gone, so --font-display and --font-sans are the same
-     stack and the ~89 `var(--font-display)` call sites keep working. */
-  --font-sans: "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* One Latin typeface, one CJK fallback chain. Bricolage Grotesque carries
+     display and body alike; the old Fredoka/Poppins pair is gone, so
+     --font-display and --font-sans are the same stack and the ~89
+     `var(--font-display)` call sites keep working.
+
+     The CJK faces sit AFTER Bricolage and BEFORE the generic families. Bricolage
+     has no CJK glyphs, so Chinese falls through it to the first face that does —
+     but only if the named faces come before `ui-sans-serif`/`system-ui`, which
+     would otherwise swallow the fallback and make the result depend on whatever
+     the OS happens to pick. None of them are downloaded: PingFang ships on
+     Apple, JhengHei on Windows, Noto on Android and most Linux, so the chain
+     costs nothing and covers essentially everyone. */
+  --font-cjk: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei";
+  --font-sans: "Bricolage Grotesque", var(--font-cjk), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque", var(--font-cjk), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   /* Radii (spec §2): chip 19, control 20–22, card 28, sheet 34, hub/wheel 999. */
   --radius-chip: 19px;
@@ -102,6 +112,12 @@
   --ring: #de5c1f;
   --brand: #de5c1f;
   --accent-ink: #b0431a;         /* accent TEXT on light glass (winner label) */
+  /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
+     --foreground is right for Latin display type but reads hard against the
+     ground under the denser strokes of a Chinese character. Scoped to the wheel
+     labels and the readout's secondary line — not the whole app. */
+  --ink-warm: #2e2a27;
+  --body-warm: #78716c;
   --on-accent: #fbf7f2;          /* ink on a persimmon fill */
   /* Reserved for the hero gradient on wheel/result. A lighter persimmon rather
      than the old amber, so a gradient never introduces a second hue. */
@@ -184,6 +200,10 @@
   --ring: #f2703a;
   --brand: #f2703a;
   --accent-ink: #f2703a;         /* on dark glass the accent reads as itself */
+  /* The same warm pair inverted — the light-mode values are near-black and
+     would be invisible here. */
+  --ink-warm: #f2ede8;
+  --body-warm: #a8a29e;
   --on-accent: #16120f;
   --brand-2: #f79463;
   --brand-glow: 0.45;

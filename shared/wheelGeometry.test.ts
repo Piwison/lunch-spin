@@ -232,20 +232,28 @@ describe("resting wheel metrics", () => {
 });
 
 describe("label tiers", () => {
+  it("keeps every dense tier inside the 11-12.5px CJK range", () => {
+    // Chinese strokes fill their em box, so the sizes that read for Latin are
+    // too big and too tight for CJK. Sparse wheels keep a larger size because
+    // a 45-degree wedge has the room for it.
+    for (const n of [9, 12, 16, 17, 24, 25, 40]) {
+      const t = labelTier(n);
+      expect(t.fontPx).toBeGreaterThanOrEqual(11);
+      expect(t.fontPx).toBeLessThanOrEqual(12.5);
+    }
+  });
+
   it("wraps to two lines up to 8 places, one line to 16, index only above", () => {
     for (const n of [2, 5, 8]) {
       const t = labelTier(n);
       expect(t.lines).toBe(2);
-      expect(t.fontPx).toBe(15);
-      expect(t.lineHeightPx).toBe(17);
-      expect(t.bandHeightPx).toBe(36);
+      expect(t.fontPx).toBe(14);
       expect(t.indexOnly).toBe(false);
     }
     for (const n of [9, 12, 16]) {
       const t = labelTier(n);
       expect(t.lines).toBe(1);
-      expect(t.fontPx).toBe(13);
-      expect(t.bandHeightPx).toBe(22);
+      expect(t.fontPx).toBe(12.5);
       expect(t.indexOnly).toBe(false);
     }
     // 17-24 still carries NAMES. The 16-place ceiling was reasoned about long
@@ -276,7 +284,7 @@ describe("label tiers", () => {
 
   it("never interpolates type size — it is fixed per tier", () => {
     const sizes = new Set([2, 3, 8, 9, 12, 16, 17, 24, 25, 40].map((n) => labelTier(n).fontPx));
-    expect([...sizes].sort((a, b) => b - a)).toEqual([15, 13, 12, 11]);
+    expect([...sizes].sort((a, b) => b - a)).toEqual([14, 12.5, 12, 11]);
   });
 });
 
@@ -290,14 +298,36 @@ describe("bandStartFits", () => {
     expect(bandStartFits(16, 36, 58)).toBe(false);
   });
 
+  it("never renders CJK below 11px, however small the frame", () => {
+    // Type scales with the frame like everything else, and on a 320px phone that
+    // took the dense tiers to 8-9px — small enough that a Chinese character is a
+    // smudge. Geometry still scales; type has a floor.
+    for (const frameW of [288, 320, 328, 358, 390, 398, 430]) {
+      for (let n = 2; n <= 40; n++) {
+        const m = restingWheelMetrics(frameW, n);
+        expect(m.tier.fontPx * m.typeScale).toBeGreaterThanOrEqual(11 - 1e-9);
+      }
+    }
+  });
+
+  it("keeps the fit check honest against the floored type, not the scaled type", () => {
+    // The band has to be checked at the size actually drawn. Checking the
+    // scaled-down size would pass while the real type overflowed its wedge.
+    for (const frameW of [288, 320, 358, 390, 430]) {
+      for (let n = 2; n <= 40; n++) {
+        const m = restingWheelMetrics(frameW, n);
+        expect(bandStartFits(n, m.tier.bandHeightPx * m.typeScale, m.bandStartPx)).toBe(true);
+      }
+    }
+  });
+
   it("holds for the band start the metrics actually choose, at every count", () => {
     // The load-bearing assertion: whatever tier and count, the band the wheel
     // draws fits inside its own wedge.
     for (const frameW of [320, 360, 390, 412, 430]) {
       for (let n = 2; n <= 60; n++) {
         const m = restingWheelMetrics(frameW, n);
-        const s = frameW / 390;
-        expect(bandStartFits(n, m.tier.bandHeightPx * s, m.bandStartPx)).toBe(true);
+        expect(bandStartFits(n, m.tier.bandHeightPx * m.typeScale, m.bandStartPx)).toBe(true);
       }
     }
   });

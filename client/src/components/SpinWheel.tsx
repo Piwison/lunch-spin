@@ -637,16 +637,24 @@ export default function SpinWheel({
                                 // bisect a glyph. Never rely on the clip to end
                                 // a line.
                                 [ray.flipped ? "right" : "left"]: metrics.bandStartPx,
-                                top: -tier.bandHeightPx * metrics.scale * 0.5,
+                                top: -tier.bandHeightPx * metrics.typeScale * 0.5,
                                 width: metrics.maxTextWidthPx,
                                 maxWidth: metrics.maxTextWidthPx,
-                                height: tier.bandHeightPx * metrics.scale,
+                                height: tier.bandHeightPx * metrics.typeScale,
                                 textAlign: tier.indexOnly ? "center" : ray.flipped ? "right" : "left",
-                                fontSize: tier.fontPx * metrics.scale,
-                                lineHeight: `${tier.lineHeightPx * metrics.scale}px`,
-                                fontWeight: 700,
-                                letterSpacing: "-0.02em",
-                                color: tier.muted ? "var(--muted-foreground)" : "var(--foreground)",
+                                fontSize: tier.fontPx * metrics.typeScale,
+                                lineHeight: `${tier.lineHeightPx * metrics.typeScale}px`,
+                                // 500, not 700. Chinese strokes are dense enough
+                                // that bold at 12px closes the counters and the
+                                // name turns into a blob — and these labels sit
+                                // on translucent glass, the hardest contrast
+                                // case in the app, where a blob is unreadable.
+                                fontWeight: 500,
+                                // Positive tracking, not the Latin display's
+                                // negative: on an arc, adjacent CJK glyphs
+                                // otherwise touch and the strokes run together.
+                                letterSpacing: "0.02em",
+                                color: tier.muted ? "var(--body-warm)" : "var(--ink-warm)",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 // Wrap first, truncate last: two lines where the

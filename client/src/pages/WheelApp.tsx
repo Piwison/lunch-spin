@@ -1134,7 +1134,9 @@ export default function WheelApp() {
                                 borderRadius: "var(--radius-control)",
                                 background: spinDisabled ? "var(--muted)" : "var(--brand)",
                                 color: spinDisabled ? "var(--muted-foreground)" : "var(--on-accent)",
-                                fontSize: 17,
+                                fontSize: 16,
+                                fontWeight: 500,
+                                letterSpacing: "0.05em",
                                 transitionDuration: "var(--dur-tap)",
                               }}
                             >

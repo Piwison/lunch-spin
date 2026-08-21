@@ -210,6 +210,16 @@ const HUB_CLEAR_REF_PX = 8;
 const RIM_MARGIN_REF_PX = 20;
 const TEXT_PAD_REF_PX = 4;
 
+/**
+ * The smallest a Chinese character may ever be drawn.
+ *
+ * Everything else scales with the frame, but type cannot: at a 320px frame that
+ * rule took the dense tiers to 8–9px, and a CJK glyph at 8px is a smudge rather
+ * than a character. Geometry keeps scaling; the type stops here and the band
+ * start absorbs the difference.
+ */
+const MIN_CJK_PX = 11;
+
 /** Below this the band has nowhere to put even a two-digit index. */
 const MIN_INDEX_WIDTH_REF_PX = 18;
 
@@ -251,13 +261,18 @@ const NAME_CEILING = 24;
  * A 45° wedge has far more tangential room than one line of type uses, which is
  * what pays for the two-line band at low counts — ordinary restaurant names fit
  * whole rather than truncating.
+ *
+ * The dense tiers sit in 11–12.5px. A Chinese glyph fills its em box where a
+ * Latin letter leaves side bearings, so a size that reads comfortably in Latin
+ * is crowded in CJK — and these are the counts where crowding actually bites.
+ * Sparse wheels keep a larger size because a 45° wedge has the room for it.
  */
 export function labelTier(count: number): LabelTier {
   if (count <= 8) {
-    return { fontPx: 15, lineHeightPx: 17, bandHeightPx: 36, lines: 2, indexOnly: false, bandStartRefPx: 58, muted: false };
+    return { fontPx: 14, lineHeightPx: 16, bandHeightPx: 34, lines: 2, indexOnly: false, bandStartRefPx: 58, muted: false };
   }
   if (count <= 16) {
-    return { fontPx: 13, lineHeightPx: 22, bandHeightPx: 22, lines: 1, indexOnly: false, bandStartRefPx: 58, muted: false };
+    return { fontPx: 12.5, lineHeightPx: 18, bandHeightPx: 18, lines: 1, indexOnly: false, bandStartRefPx: 58, muted: false };
   }
   if (count <= NAME_CEILING) {
     return { fontPx: 12, lineHeightPx: 16, bandHeightPx: 16, lines: 1, indexOnly: false, bandStartRefPx: 68, muted: false };
@@ -280,6 +295,8 @@ export function bandStartFits(n: number, bandHeightPx: number, bandStartPx: numb
 
 export interface RestingWheelMetrics {
   scale: number;
+  /** Scale for TYPE — the frame scale, floored so CJK never goes under 11px. */
+  typeScale: number;
   discPx: number;
   radiusPx: number;
   hubPx: number;
@@ -304,7 +321,10 @@ export function restingWheelMetrics(frameWidthPx: number, count: number): Restin
   // The band start is CHECKED, not chosen. Where the tier's own start would put
   // the band inside a wedge too narrow to hold it, the start is raised — never
   // the type shrunk, which is the spec's explicit instruction.
-  const bandHeight = tier.bandHeightPx * scale;
+  const typeScale = Math.max(scale, MIN_CJK_PX / tier.fontPx);
+  // Checked at the size actually drawn. Checking the scaled-down size would pass
+  // while the real type overflowed its wedge.
+  const bandHeight = tier.bandHeightPx * typeScale;
   const required = bandHeight / (2 * Math.tan(((180 / count) * Math.PI) / 180));
   const floor = Math.max(tier.bandStartRefPx * scale, hubPx / 2 + HUB_CLEAR_REF_PX * scale);
   const bandStartPx = Math.max(floor, required);
@@ -313,7 +333,7 @@ export function restingWheelMetrics(frameWidthPx: number, count: number): Restin
   const maxTextWidthPx = Math.max(0, bandLengthPx - TEXT_PAD_REF_PX * scale);
 
   return {
-    scale, discPx, radiusPx, hubPx, bandStartPx, bandEndPx, bandLengthPx, maxTextWidthPx, tier,
+    scale, typeScale, discPx, radiusPx, hubPx, bandStartPx, bandEndPx, bandLengthPx, maxTextWidthPx, tier,
     drawLabels: maxTextWidthPx >= MIN_INDEX_WIDTH_REF_PX * scale,
   };
 }
