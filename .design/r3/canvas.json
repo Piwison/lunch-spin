@@ -1,0 +1,69 @@
+{
+  "artboards": [
+    {
+      "file": "Today.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Today \u00b7 the two bugs"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 510,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Spin \u00b7 no square"
+    },
+    {
+      "file": "Winner.dc.html",
+      "x": 1020,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Result \u00b7 glass sheet"
+    },
+    {
+      "file": "GlassRecipe.dc.html",
+      "x": 0,
+      "y": 984,
+      "w": 900,
+      "h": 870,
+      "title": "Why the glass reads flat"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "n-square",
+      "x": 0,
+      "y": -150,
+      "w": 390,
+      "text": "The 741px disc is clipped to a 390x329 box. A circle clipped to a rectangle is a rectangle \u2014 that is the square you are seeing."
+    },
+    {
+      "id": "n-spin",
+      "x": 510,
+      "y": -150,
+      "w": 390,
+      "text": "No wrapper, no clip. The disc runs off three sides of the screen the way a big circle does, and the dock finally has something passing behind it."
+    },
+    {
+      "id": "n-win",
+      "x": 1020,
+      "y": -150,
+      "w": 390,
+      "text": "The wheel stays as the background \u2014 receded, blurred, half opacity. The sheet is the first glass in the app with real content behind it."
+    },
+    {
+      "id": "n-recipe",
+      "x": 960,
+      "y": 984,
+      "w": 380,
+      "text": "The diagnosis. Glass is not a colour you apply, it is a relationship with what is behind it \u2014 which is why every surface in the app looked like a paler rounded rectangle."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

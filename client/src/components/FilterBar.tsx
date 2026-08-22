@@ -91,7 +91,7 @@ export default function FilterBar({
                         onClick={() => onToggleTag(tag.id)}
                         className="px-3 py-1 rounded-full type-meta font-medium transition-all duration-150 active:scale-95"
                         style={{
-                          background: isActive ? "var(--brand-solid)" : "var(--glass-chip-bg)",
+                          background: isActive ? "var(--brand-grad)" : "var(--glass-chip-bg)",
                           border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--glass-chip-border)"}`,
                           color: isActive ? "var(--on-accent)" : "var(--body-warm)",
                           borderRadius: "var(--radius-chip)",
@@ -195,7 +195,7 @@ export default function FilterBar({
                   height: 18,
                   paddingInline: 5,
                   borderRadius: 9,
-                  background: "var(--brand-solid)",
+                  background: "var(--brand-grad)",
                   color: "var(--on-accent)",
                   fontSize: 11,
                   fontWeight: 600,
@@ -256,7 +256,7 @@ export default function FilterBar({
             <span
               className="px-2 py-0.5 tabular-nums"
               style={{
-                background: "var(--brand-solid)",
+                background: "var(--brand-grad)",
                 color: "var(--on-accent)",
                 borderRadius: "var(--radius-chip)",
                 fontSize: 11,

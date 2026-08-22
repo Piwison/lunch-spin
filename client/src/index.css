@@ -124,7 +124,8 @@
      Everything that is NOT persimmon still clears AA — those fixes stay. */
   --brand: #de5c1f;
   --brand-text: #de5c1f;         /* persimmon TEXT on paper/glass — 3.48:1, accepted */
-  --brand-solid: #de5c1f;        /* persimmon FILL under --on-accent — 3.48:1, accepted */
+  --brand-solid: #de5c1f;        /* persimmon as a COLOUR: borders, SVG fills, anything
+                                    that cannot take a gradient value */
   --accent-ink: #c04f18;         /* winner display type: 34px+, clears the 3:1 large-text bar */
   /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
      --foreground is right for Latin display type but reads hard against the
@@ -139,6 +140,14 @@
   /* Reserved for the hero gradient on wheel/result. A lighter persimmon rather
      than the old amber, so a gradient never introduces a second hue. */
   --brand-2: #f0894a;
+  /* The persimmon FILL, and the reason it is a gradient rather than a flat
+     colour: the pre-Ember app shipped `linear-gradient(135deg, brand, brand-2)`
+     on every primary surface, the re-skin flattened all of them on the
+     direction's "persimmon is flat" rule, and the owner asked for the gradient
+     back — the warm run from ember to amber is what makes the colour read as
+     lit rather than printed. Every persimmon BACKGROUND uses this; --brand-solid
+     stays the flat colour for borders and SVG. */
+  --brand-grad: linear-gradient(135deg, var(--brand), var(--brand-2));
   --brand-glow: 0.2;             /* glow opacity multiplier (calmer in light) */
 
   /* Semantic. Deliberately desaturated so nothing competes with persimmon. */
@@ -278,6 +287,7 @@
   --body-warm: #a8a29e;
   --on-accent: #16120f;
   --brand-2: #f79463;
+  --brand-grad: linear-gradient(135deg, var(--brand), var(--brand-2));
   --brand-glow: 0.45;
 
   --destructive: #e5654f;
@@ -637,12 +647,19 @@
   }
 
   /* ── The refracting edge ──
-     Deliberately NOT on chips. This is a second backdrop-filter, and chips come
-     twenty to a screen on the Places tab while bars and sheets come one or two.
-     The ring is an exact 10px inset rather than a radial fade, so it cannot
-     reach under the content no matter how tall the surface is — every glass
-     surface in the app carries at least 12px of padding. */
-  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
+     Sheets and cards only. Two exclusions, for two different reasons:
+
+     Chips, because this is a second backdrop-filter and chips come twenty to a
+     screen on the Places tab while sheets come one or two.
+
+     BARS, because the ring paints OVER the surface's own children, not just its
+     backdrop — a positioned pseudo-element sits above in-flow content. The dock
+     carries 6px of padding around 56px pills, so a 14px ring covered 8px of
+     every pill and put a bright halo around the active one. (An earlier version
+     of this comment claimed "every glass surface carries at least 12px of
+     padding" — the dock does not, and that is exactly where it showed.) Sheets
+     and cards pad 20–24px, so the ring stays on the rim where it belongs. */
+  :is(.glass, .glass-sheet, .glass-card)::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -691,7 +708,7 @@
   /* The refracting ring counts against the same budget — a nested surface keeps
      its specular rim (free) but gives up its lens (a second backdrop-filter). */
   :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)
-    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
+    :is(.glass, .glass-sheet, .glass-card)::after {
     content: none;
   }
 
@@ -711,7 +728,7 @@
     /* Opaque surfaces have nothing to refract and nothing to be lit through, so
        both rings go. The plain border above stands in for the rim. */
     :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card, .glass-chip)::before,
-    :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
+    :is(.glass, .glass-sheet, .glass-card)::after {
       content: none;
     }
   }

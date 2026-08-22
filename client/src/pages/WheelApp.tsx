@@ -752,7 +752,7 @@ export default function WheelApp() {
               <button
                 aria-label="Account menu"
                 className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-transform active:scale-[var(--press-scale)] hover:brightness-105"
-                style={{ background: "var(--brand-solid)", color: "var(--on-accent)" }}
+                style={{ background: "var(--brand-grad)", color: "var(--on-accent)" }}
               >
                 {user.name?.charAt(0).toUpperCase() ?? "?"}
               </button>
@@ -903,7 +903,7 @@ export default function WheelApp() {
                       fontWeight: 500,
                       letterSpacing: "0.05em",
                       color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                      background: isActive ? "var(--brand-solid)" : "transparent",
+                      background: isActive ? "var(--brand-grad)" : "transparent",
                     }}
                   >
                     <Icon size={15} />
@@ -931,7 +931,7 @@ export default function WheelApp() {
                 style={{
                   minHeight: 44,
                   borderRadius: "var(--radius-chip)",
-                  background: "var(--brand-solid)",
+                  background: "var(--brand-grad)",
                   color: "var(--on-accent)",
                   fontSize: 15,
                   fontWeight: 500,
@@ -1102,7 +1102,7 @@ export default function WheelApp() {
                               style={{
                                 minHeight: 56,
                                 borderRadius: "var(--radius-control)",
-                                background: "var(--brand-solid)",
+                                background: "var(--brand-grad)",
                                 color: "var(--on-accent)",
                                 fontSize: 16,
                                 fontWeight: 500,
@@ -1132,7 +1132,7 @@ export default function WheelApp() {
                               style={{
                                 minHeight: 56,
                                 borderRadius: "var(--radius-control)",
-                                background: spinDisabled ? "var(--muted)" : "var(--brand-solid)",
+                                background: spinDisabled ? "var(--muted)" : "var(--brand-grad)",
                                 color: spinDisabled ? "var(--muted-foreground)" : "var(--on-accent)",
                                 fontSize: 16,
                                 fontWeight: 500,
@@ -1195,7 +1195,7 @@ export default function WheelApp() {
                                 <Clock size={12} /> Skipping (picked recently)
                                 <span
                                   className="px-2 py-0.5 type-meta font-semibold"
-                                  style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+                                  style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
                                 >
                                   {restaurants.filter((r) => r.isExcluded).length}
                                 </span>
@@ -1288,7 +1288,7 @@ export default function WheelApp() {
                       fontWeight: 500,
                       letterSpacing: "0.05em",
                       color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                      background: isActive ? "var(--brand-solid)" : "transparent",
+                      background: isActive ? "var(--brand-grad)" : "transparent",
                     }}
                   >
                     <Icon size={20} />
