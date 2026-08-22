@@ -414,7 +414,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             style={{
               minHeight: 56,
               borderRadius: "var(--radius-control)",
-              background: "var(--brand-solid)",
+              background: "var(--brand-grad)",
               color: "var(--on-accent)",
               fontSize: 15,
               fontWeight: 500,
@@ -624,7 +624,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand-solid)",
+                background: "var(--brand-grad)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -997,7 +997,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand-solid)",
+                background: "var(--brand-grad)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -1037,7 +1037,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   style={{
                     minHeight: 44,
                     borderRadius: "var(--radius-chip)",
-                    background: newTagCategory === value ? "var(--brand-solid)" : "var(--muted)",
+                    background: newTagCategory === value ? "var(--brand-grad)" : "var(--muted)",
                     color: newTagCategory === value ? "var(--on-accent)" : "var(--body-warm)",
                     fontSize: 15,
                     fontWeight: 500,
@@ -1061,7 +1061,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 disabled={!newTagName.trim() || createTag.isPending}
                 size="icon"
                 className="transition-colors duration-200 active:scale-[var(--press-scale)] flex-shrink-0"
-                style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+                style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
               >
                 {createTag.isPending ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Check size={16} />}
               </Button>

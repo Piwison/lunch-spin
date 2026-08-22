@@ -216,7 +216,7 @@ export default function OnboardingFlow({
                   className="px-3.5 py-1.5 transition-colors active:scale-[var(--press-scale)]"
                   style={
                     on
-                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand-solid)", color: "var(--on-accent)", fontSize: 15, fontWeight: 500 }
+                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand-grad)", color: "var(--on-accent)", fontSize: 15, fontWeight: 500 }
                       : { borderRadius: "var(--radius-chip)", background: "var(--paper)", border: "1px solid var(--border)", color: "var(--body-warm)", fontSize: 15, fontWeight: 500 }
                   }
                 >
@@ -269,7 +269,7 @@ export default function OnboardingFlow({
                     className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
                     style={
                       on
-                        ? { background: "var(--brand-solid)", color: "var(--on-accent)" }
+                        ? { background: "var(--brand-grad)", color: "var(--on-accent)" }
                         : { border: "1.5px solid var(--border)" }
                     }
                   >
@@ -317,7 +317,7 @@ export default function OnboardingFlow({
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand-solid)",
+                background: "var(--brand-grad)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,

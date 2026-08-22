@@ -40,7 +40,7 @@ export default function NotFound() {
           style={{
             minHeight: 56,
             borderRadius: "var(--radius-control)",
-            background: "var(--brand-solid)",
+            background: "var(--brand-grad)",
             color: "var(--on-accent)",
             fontSize: 16,
             fontWeight: 500,

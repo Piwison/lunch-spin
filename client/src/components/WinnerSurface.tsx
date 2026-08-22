@@ -191,7 +191,7 @@ export default function WinnerSurface({
             style={{
               minHeight: 56,
               borderRadius: "var(--radius-control)",
-              background: "var(--brand-solid)",
+              background: "var(--brand-grad)",
               color: "var(--on-accent)",
               fontSize: 17,
               transitionDuration: "var(--dur-tap)",

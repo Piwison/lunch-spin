@@ -188,7 +188,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
               onClick={() => (coords ? runSearch(coords, radius) : locateAndSearch())}
               disabled={locating || search.isPending}
               className="flex-shrink-0 transition-colors active:scale-[var(--press-scale)]"
-              style={{ background: "var(--brand-solid)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+              style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
             >
               {locating || search.isPending ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -332,7 +332,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                         isAdded
                           ? { background: "oklch(from var(--ok) l c h / 0.2)", color: "var(--ok)" }
                           : on
-                            ? { background: "var(--brand-solid)", color: "var(--on-accent)" }
+                            ? { background: "var(--brand-grad)", color: "var(--on-accent)" }
                             : { border: "1.5px solid var(--border)" }
                       }
                     >
@@ -374,7 +374,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
               style={{
                 minHeight: 56,
                 borderRadius: "var(--radius-control)",
-                background: "var(--brand-solid)",
+                background: "var(--brand-grad)",
                 color: "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,

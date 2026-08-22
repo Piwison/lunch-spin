@@ -170,7 +170,7 @@ export default function GuestWheel() {
                 minHeight: 56,
                 minWidth: 180,
                 borderRadius: "var(--radius-control)",
-                background: isSpinning ? "var(--muted)" : "var(--brand-solid)",
+                background: isSpinning ? "var(--muted)" : "var(--brand-grad)",
                 color: isSpinning ? "var(--body-warm)" : "var(--on-accent)",
                 fontSize: 16,
                 fontWeight: 500,
@@ -262,7 +262,7 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
       style={{
         minHeight: 56,
         borderRadius: "var(--radius-control)",
-        background: "var(--brand-solid)",
+        background: "var(--brand-grad)",
         color: "var(--on-accent)",
         fontSize: 16,
         fontWeight: 500,

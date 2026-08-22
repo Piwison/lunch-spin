@@ -96,7 +96,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
                 className="relative w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
                 data-avatar
                 style={{
-                  background: isHere ? "var(--brand-solid)" : "oklch(from var(--ink-warm) l c h / 0.08)",
+                  background: isHere ? "var(--brand-grad)" : "oklch(from var(--ink-warm) l c h / 0.08)",
                   color: isHere ? "var(--on-accent)" : "var(--body-warm)",
                   fontSize: 11,
                   fontWeight: 600,
