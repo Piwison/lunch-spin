@@ -1,0 +1,37 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1180,
+      "h": 1290
+    },
+    {
+      "file": "Wheel.dc.html",
+      "x": 1300,
+      "y": 0,
+      "w": 1180,
+      "h": 1180
+    },
+    {
+      "file": "Recipe.dc.html",
+      "x": 1300,
+      "y": 1300,
+      "w": 700,
+      "h": 1280
+    }
+  ],
+  "annotations": [
+    {
+      "id": "why-now",
+      "x": 0,
+      "y": -170,
+      "w": 420,
+      "text": "Three rounds of \"make it liquid glass\" changed the tint, the rim and the shadow and never touched the one property that separates the two materials. This round is that property."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

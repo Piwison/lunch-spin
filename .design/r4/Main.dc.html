@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #de5c1f; } a:hover { color: #b0431a; }
+    .shot { display: block; width: 522px; border-radius: 14px; box-shadow: 0 1px 2px rgb(20 22 28 / .1), 0 10px 26px rgb(20 22 28 / .09); }
+  </style>
+</helmet>
+
+<div style="width: 1180px; background: linear-gradient(160deg, #f6f2ec 0%, #efe8df 55%, #e7ded2 100%); padding: 44px 48px 48px; box-sizing: border-box; color: #14161c">
+
+  <div style="display: flex; align-items: baseline; gap: 14px">
+    <div style="font-size: 15px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #de5c1f">Round 4</div>
+    <div style="font-size: 15px; color: #6f6862">Same pixels, one property apart</div>
+  </div>
+
+  <h1 style="font-size: 46px; line-height: 1.06; letter-spacing: -.02em; font-weight: 700; margin: 14px 0 0; max-width: 640px">Glass that bends what is behind it</h1>
+
+  <p style="font-size: 17px; line-height: 1.55; color: #2e2a27; max-width: 620px; margin: 16px 0 0">
+    Every surface in the app was <strong>frosted</strong> glass, and frosted glass is the wrong
+    material. A blur averages what sits behind a panel; it never moves it. Real glass has
+    thickness, so light entering near the rim bends — content behind an edge is displaced and
+    magnified. That bend is the whole read, and nothing in the app had it.
+  </p>
+
+  <p style="font-size: 17px; line-height: 1.55; color: #2e2a27; max-width: 620px; margin: 12px 0 0">
+    The only variable between each pair below is the refracting edge. Same blur, same tint,
+    same rim, same shadow.
+  </p>
+
+  <div style="display: flex; gap: 26px; margin-top: 34px; font-size: 13px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #6f6862">
+    <div style="width: 522px">Before — blur only</div>
+    <div style="width: 522px; color: #de5c1f">After — blur + refracting edge</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 30px; margin-top: 12px">
+
+    <div style="display: flex; gap: 26px; align-items: flex-start">
+      <img class="shot" src="pair-header-before.jpg" alt="App header, blur only">
+      <img class="shot" src="pair-header-after.jpg" alt="App header with a refracting bottom lip">
+    </div>
+    <div style="font-size: 15px; line-height: 1.5; color: #6f6862; max-width: 820px; margin-top: -18px">
+      <strong style="color: #14161c">The header.</strong> Three of its four edges are off-screen, so it gets a
+      strip instead of a ring — the row sliding underneath pinches at the boundary. That pinch is
+      what makes it a pane rather than a painted band.
+    </div>
+
+    <div style="display: flex; gap: 26px; align-items: flex-start">
+      <img class="shot" src="pair-dock-before.jpg" alt="Tab dock, blur only">
+      <img class="shot" src="pair-dock-after.jpg" alt="Tab dock with a refracting rim">
+    </div>
+    <div style="font-size: 15px; line-height: 1.5; color: #6f6862; max-width: 820px; margin-top: -18px">
+      <strong style="color: #14161c">The dock.</strong> Two fixes, not one. The wrapper used to paint a paper
+      scrim to fade the list out underneath — which left the glass nothing but flat paper to work
+      on, and a blurred flat gradient is the same flat gradient. The scrim is gone, so the list is
+      the material. The gutter around the pills also grew 6px → 8px, because the refracting band
+      cannot be wider than the padding without covering them.
+    </div>
+
+    <div style="display: flex; gap: 26px; align-items: flex-start">
+      <img class="shot" src="pair-toast-before.jpg" alt="Toast, blur only">
+      <img class="shot" src="pair-toast-after.jpg" alt="Toast with a refracting rim">
+    </div>
+    <div style="font-size: 15px; line-height: 1.5; color: #6f6862; max-width: 820px; margin-top: -18px">
+      <strong style="color: #14161c">The toast.</strong> This was the screen you pointed at, and it was not glass
+      at all — a solid <code style="font-size: 13px">--popover</code> card with a 1px border. It is
+      the clearest case in the product: a toast always appears over something.
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

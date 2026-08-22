@@ -16,6 +16,7 @@ import OnboardingFlow from "@/components/OnboardingFlow";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
+import { TabRail } from "@/components/TabRail";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
 import { X, AlertTriangle, MapPin, RotateCw, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
@@ -885,33 +886,7 @@ export default function WheelApp() {
               gradient, no glow — persimmon is the only saturated colour and it
               is flat), and 56px of height like every other control. */}
           <div className="hidden md:flex px-4 py-2.5 flex-shrink-0 md:justify-center xl:justify-start">
-            <div
-              className="inline-flex items-center gap-1 p-1.5 glass-bar"
-              style={{ borderRadius: "var(--radius-control)" }}
-            >
-              {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
-                const isActive = activeTab === id;
-                return (
-                  <button
-                    key={id}
-                    onClick={() => setActiveTab(id)}
-                    className="relative flex items-center gap-2 px-5 transition-colors duration-200 active:scale-[var(--press-scale)]"
-                    style={{
-                      minHeight: 56,
-                      borderRadius: "calc(var(--radius-control) - 6px)",
-                      fontSize: 15,
-                      fontWeight: 500,
-                      letterSpacing: "0.05em",
-                      color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                      background: isActive ? "var(--brand-grad)" : "transparent",
-                    }}
-                  >
-                    <Icon size={15} />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            <TabRail items={TAB_CONFIG} value={activeTab} onChange={setActiveTab} variant="rail" />
           </div>
 
           {/* ── SHARED TEXT BANNER ── */}
@@ -1279,38 +1254,17 @@ export default function WheelApp() {
             className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pt-3"
             style={{
               paddingBottom: "max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem))",
-              background: "linear-gradient(to top, var(--background) 55%, transparent)",
             }}
             aria-label="Views"
           >
-            <div
-              className="w-full max-w-md flex items-center gap-1 p-1.5 glass-bar"
-              style={{ borderRadius: "var(--radius-sheet)" }}
-            >
-              {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
-                const isActive = activeTab === id;
-                return (
-                  <button
-                    key={id}
-                    onClick={() => setActiveTab(id)}
-                    aria-current={isActive ? "page" : undefined}
-                    className="flex-1 flex flex-col items-center justify-center gap-1 transition-colors duration-200 active:scale-[var(--press-scale)]"
-                    style={{
-                      minHeight: 56,
-                      borderRadius: "calc(var(--radius-sheet) - 8px)",
-                      fontSize: 11,
-                      fontWeight: 500,
-                      letterSpacing: "0.05em",
-                      color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                      background: isActive ? "var(--brand-grad)" : "transparent",
-                    }}
-                  >
-                    <Icon size={20} />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* No scrim. This wrapper used to paint
+                `linear-gradient(to top, var(--background) 55%, transparent)` to
+                fade content out under the dock — which put flat paper directly
+                behind the glass and left it nothing to refract or blur. A
+                blurred flat gradient is the same flat gradient, so the dock
+                could only ever read as a slightly paler rectangle. The list
+                running under it IS the material. */}
+            <TabRail items={TAB_CONFIG} value={activeTab} onChange={setActiveTab} variant="dock" />
           </nav>
         </div>
       </div>

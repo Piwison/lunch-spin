@@ -226,6 +226,12 @@
   --glass-lens-blur: 0px;
   --glass-lens-sat: 1.45;
   --glass-lens-bright: 1.07;
+  /* How thick the glass is, in the only sense the eye can check: how wide the
+     rim band is that bends what is behind it. The module pulls the backdrop by
+     this same distance, which is the constraint that matters — measured, a pull
+     WIDER than its band tears the band into two visible steps with a seam
+     between them, and a lens has no seam. So one number, not two. */
+  --glass-lens-band: 14px;
   --glass-depth:
     0 1px 2px rgb(20 22 28 / 0.1), 0 8px 20px rgb(20 22 28 / 0.1),
     0 20px 44px rgb(20 22 28 / 0.07);
@@ -339,6 +345,7 @@
   --glass-lens-blur: 0px;
   --glass-lens-sat: 1.3;
   --glass-lens-bright: 1.12;
+  --glass-lens-band: 14px;
   --glass-depth:
     0 1px 2px rgb(0 0 0 / 0.4), 0 12px 28px rgb(0 0 0 / 0.45),
     0 28px 60px rgb(0 0 0 / 0.35);
@@ -647,31 +654,56 @@
   }
 
   /* ── The refracting edge ──
-     Sheets and cards only. Two exclusions, for two different reasons:
+     The one thing that separates liquid glass from frosted glass, and the one
+     thing a blur cannot do. A blur AVERAGES what is behind a surface; glass has
+     thickness, so light entering near the rim BENDS and the content behind the
+     edge is displaced and magnified. Everything else here — the tint, the
+     specular rim, the three-part shadow — is dressing on top of that fact, and
+     without it every surface in the app read as a paler rounded rectangle.
 
-     Chips, because this is a second backdrop-filter and chips come twenty to a
-     screen on the Places tab while sheets come one or two.
+     `--lens-filter` is an SVG `feDisplacementMap` reference, supplied per element
+     by lib/liquidGlass.ts because the displacement map has to match the
+     surface's measured size and radius. It is deliberately the FIRST function in
+     the list: the backdrop is bent, and only then very lightly blurred, so the
+     rim stays sharper than the interior — which is exactly the read of real
+     glass, and the reverse order washes the bend away.
 
-     BARS, because the ring paints OVER the surface's own children, not just its
-     backdrop — a positioned pseudo-element sits above in-flow content. The dock
-     carries 6px of padding around 56px pills, so a 14px ring covered 8px of
-     every pill and put a bright halo around the active one. (An earlier version
-     of this comment claimed "every glass surface carries at least 12px of
-     padding" — the dock does not, and that is exactly where it showed.) Sheets
-     and cards pad 20–24px, so the ring stays on the rim where it belongs. */
-  :is(.glass, .glass-sheet, .glass-card)::after {
+     The empty `var()` fallback matters. A browser that never gets a filter
+     reference (nothing has attached, or the surface is still measuring) composes
+     a valid filter list without it and loses only the bend; the surface's own
+     blur and fill sit on the element itself and are never touched here.
+
+     Bars are in now. They were excluded when this ring was a brightness trick,
+     because a positioned pseudo-element paints OVER its own element's in-flow
+     children and a 14px ring covered 8px of every 56px dock pill. The fix is not
+     to exclude the surface that most wants a lens — the dock is the app's one
+     piece of chrome that permanently floats over content — but to size the band
+     to the padding it has: `--glass-lens-band` is 6px there, which is the dock's
+     own gutter, so the ring lands between the pills and the rim.
+
+     Chips stay out: this is a second backdrop-filter, and chips come twenty to a
+     screen on Places while sheets come one or two. */
+  :is(.glass, .glass-nav, .glass-bar, .glass-sheet, .glass-card)::after {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    padding: 14px;
-    backdrop-filter: blur(var(--glass-lens-blur)) saturate(var(--glass-lens-sat))
-      brightness(var(--glass-lens-bright));
+    padding: var(--glass-lens-band);
+    backdrop-filter: var(--lens-filter, ) blur(var(--glass-lens-blur))
+      saturate(var(--glass-lens-sat)) brightness(var(--glass-lens-bright));
     mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
     mask-composite: exclude;
     pointer-events: none;
+  }
+
+  /* The dock and the desktop tab row: 8px of gutter around their pills, so 8px
+     of band — the ring cannot be wider than the padding without painting over
+     them. Thinner glass than a sheet, so a shorter pull; the module reads this
+     token and matches the two. */
+  :is(.glass-bar, .glass-nav) {
+    --glass-lens-band: 8px;
   }
 
   /* A bar that meets content on one edge only — the sticky app header. It has no
@@ -685,9 +717,29 @@
       0 1px 2px rgb(20 22 28 / 0.06),
       0 10px 24px rgb(20 22 28 / 0.07);
   }
-  .glass-bar--bottom::before,
-  .glass-bar--bottom::after {
+  .glass-bar--bottom::before {
     content: none;
+  }
+
+  /* …but it keeps a refracting edge on that one edge. A closed ring makes no
+     sense on a bar with three edges off-screen; a strip along the bottom is the
+     same optics applied to the only rim there is, and it is what makes the
+     header read as a pane the page slides under rather than a painted band. The
+     strip sits inside the header's own 10px of vertical padding, so it never
+     covers a control. */
+  .glass-bar--bottom::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    height: var(--glass-lens-band);
+    padding: 0;
+    border-radius: 0;
+    mask: none;
+    backdrop-filter: var(--lens-filter, ) saturate(var(--glass-lens-sat));
+    pointer-events: none;
   }
 
   /* Dark chips opt out of the filter entirely rather than blurring by 0 — a
