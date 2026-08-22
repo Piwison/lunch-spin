@@ -1,5 +1,5 @@
 import { Check, Clock3, MapPin, RotateCw } from "lucide-react";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 interface WinnerSurfaceProps {
   /** The winning restaurant's name. Set full bleed, with no card around it. */
@@ -38,6 +38,25 @@ interface WinnerSurfaceProps {
  */
 /** How far the panel has to travel before letting go dismisses it. */
 const DISMISS_AFTER_PX = 90;
+
+/**
+ * Secondary actions ON the sheet.
+ *
+ * Deliberately not `glass-chip`. Stacking glass on glass gives you two flat
+ * panels — the chip's blur has only the sheet's own uniform fill behind it, so
+ * it cannot refract anything and reads as a lighter rectangle. On a glass
+ * surface the sheet IS the material; the controls on it are drawn with a
+ * highlight and a hairline instead.
+ */
+const GHOST_ON_GLASS: CSSProperties = {
+  minHeight: 56,
+  borderRadius: "var(--radius-control)",
+  color: "var(--ink-warm)",
+  fontSize: 15,
+  background: "rgb(255 255 255 / 0.34)",
+  boxShadow: "inset 0 0 0 1px var(--glass-sheet-border), inset 0 1px 0 var(--glass-inner-top)",
+  transitionDuration: "var(--dur-tap)",
+};
 
 export default function WinnerSurface({
   name,
@@ -105,13 +124,12 @@ export default function WinnerSurface({
       aria-label={`Spin result: ${name}`}
       onClick={onDismiss}
       style={{
-        // A scrim, not a backdrop: the ground fades up from the bottom so the
-        // actions have something to sit on, while the top stays clear and the
-        // zoomed wheel keeps showing through. The ground never blurs, so this
-        // carries no backdrop-filter of its own — the disc does its own
-        // receding behind it.
-        backgroundImage:
-          "linear-gradient(to top, var(--background) 22%, oklch(from var(--background) l c h / 0.82) 46%, transparent 78%)",
+        // No scrim. There used to be a gradient here fading the ground up from
+        // the bottom, because the result was type sitting on bare page with
+        // nothing behind it — you could read the Spin button straight through
+        // the copy. The result is a real glass sheet now, so it occludes what
+        // it covers and the wheel above it is left alone.
+        background: "transparent",
       }}
     >
       {/* Two nested boxes on purpose. `animate-unroll` animates `transform`, and
@@ -133,9 +151,21 @@ export default function WinnerSurface({
           transition: dragFrom.current === null ? "transform var(--dur-sheet-out) var(--ease-settle)" : "none",
         }}
       >
+      {/* The sheet.
+          This is the first glass in the app with real content behind it — the
+          receded wheel — which is the only reason it reads as glass at all. A
+          glass panel over the flat ground can only be a paler rectangle: blur
+          a uniform colour and you get the same uniform colour back. */}
       <div
-        className="px-6 flex flex-col items-start gap-5 w-full max-w-lg mx-auto animate-unroll"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 2rem)" }}
+        className="glass-sheet px-6 flex flex-col items-start gap-5 w-full max-w-lg mx-auto animate-unroll"
+        style={{
+          paddingTop: 12,
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 2rem)",
+          // Square off the edge that meets the viewport floor; only the top
+          // corners carry the sheet radius.
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+        }}
       >
         {/* Grabber. Says "this can be pushed down" without a label, and gives
             the gesture a visible home even though it works anywhere. */}
@@ -203,27 +233,15 @@ export default function WinnerSurface({
             <button
               onClick={onRespin}
               disabled={respinDisabled}
-              className="glass-chip flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                color: "var(--foreground)",
-                fontSize: 15,
-                transitionDuration: "var(--dur-tap)",
-              }}
+              className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40"
+              style={GHOST_ON_GLASS}
             >
               <RotateCw size={16} /> Respin
             </button>
             <button
               onClick={onDirections}
-              className="glass-chip flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                color: "var(--foreground)",
-                fontSize: 15,
-                transitionDuration: "var(--dur-tap)",
-              }}
+              className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)]"
+              style={GHOST_ON_GLASS}
             >
               <MapPin size={16} /> Directions
             </button>

@@ -1114,7 +1114,21 @@ export default function WheelApp() {
                             <p className="type-meta text-muted-foreground">Add a few places, then spin to decide.</p>
                           </div>
                         ) : (
-                          <div className="w-full max-w-sm flex flex-col" style={{ gap: 20 }}>
+                          /* Gone while the camera is in, not merely receded.
+                             The zoomed disc is 741px tall and now runs past
+                             this stack instead of being clipped off above it,
+                             so the wheel is what occupies this space — and a
+                             half-faded Spin button showing through the middle
+                             of it reads as a rendering fault, not a state. */
+                          <div
+                            className="w-full max-w-sm flex flex-col"
+                            style={{
+                              gap: 20,
+                              ...recedeStyle,
+                              opacity: cameraIn ? 0 : 1,
+                              pointerEvents: cameraIn ? "none" : undefined,
+                            }}
+                          >
                             <ErrorChip error={spinError} onDismiss={() => setSpinError(null)} />
 
                             {/* Above 16 places the disc carries indices, so say
