@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Bricolage Grotesque", "PingFang TC", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #de5c1f; } a:hover { color: #c04f18; }
+    .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+    .disc {
+      position: absolute; border-radius: 50%;
+      background:
+        linear-gradient(135deg, rgb(255 255 255 / .55), rgb(255 255 255 / 0) 42%, rgb(222 92 31 / .07)),
+        repeating-conic-gradient(from 90deg, #f6f2ec 0deg 1.6deg, transparent 1.6deg 40deg),
+        conic-gradient(from 90deg,
+          rgb(222 92 31 / .30) 0deg 40deg, rgb(255 255 255 / .40) 40deg 80deg,
+          rgb(255 255 255 / .78) 80deg 120deg, rgb(255 255 255 / .40) 120deg 160deg,
+          rgb(255 255 255 / .78) 160deg 200deg, rgb(255 255 255 / .40) 200deg 240deg,
+          rgb(255 255 255 / .78) 240deg 280deg, rgb(255 255 255 / .40) 280deg 320deg,
+          rgb(255 255 255 / .40) 320deg 360deg);
+    }
+    /* The sheet. This is the only glass on the screen that has real content
+       behind it, which is the entire reason it reads as glass. */
+    .sheet {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      border-radius: 34px 34px 0 0;
+      background: rgb(255 255 255 / .52);
+      backdrop-filter: blur(22px) saturate(1.9);
+      box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / .95),
+        inset 0 -1px 0 rgb(255 255 255 / .35),
+        0 1px 2px rgb(20 22 28 / .1), 0 8px 20px rgb(20 22 28 / .1), 0 -20px 60px rgb(20 22 28 / .10);
+    }
+    /* The specular rim, drawn as a gradient ring rather than a flat 1px line. */
+    .sheet::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.25px;
+      background: linear-gradient(135deg, rgb(255 255 255 / 1) 0%, rgb(255 255 255 / .6) 20%, rgb(20 22 28 / .11) 46%, rgb(20 22 28 / .07) 62%, rgb(255 255 255 / .72) 86%, rgb(255 255 255 / 1) 100%);
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude; pointer-events: none;
+    }
+    /* The refracting edge: a 14px ring that re-samples the wheel brighter and
+       more saturated than the middle, the way a real bevel does. */
+    .sheet::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 14px;
+      backdrop-filter: saturate(1.45) brightness(1.07);
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude; pointer-events: none;
+    }
+    /* Secondary actions are OUTLINED, not glass. Glass on glass reads as two
+       flat panels; on a glass sheet the sheet is the material and the controls
+       sit on it. */
+    .ghost {
+      flex: 1; height: 56px; border-radius: 22px; display: flex; align-items: center;
+      justify-content: center; gap: 8px; font-size: 15px; font-weight: 500; color: #2e2a27;
+      background: rgb(255 255 255 / .34);
+      box-shadow: inset 0 0 0 1px rgb(255 255 255 / .8), inset 0 1px 0 rgb(255 255 255 / .95);
+    }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: linear-gradient(160deg, #f6f2ec 0%, #efe8df 55%, #e7ded2 100%);">
+
+  <div style="filter: blur(1.6px); opacity: .5; transform: translateY(-12px);">
+    <div style="height: 64px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: rgb(255 255 255 / .36); backdrop-filter: blur(16px) saturate(1.9);">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(from 337.5deg, #de5c1f 0deg 45deg, rgb(255 255 255 / .4) 45deg 90deg, rgb(255 255 255 / .78) 90deg 135deg, rgb(255 255 255 / .4) 135deg 180deg, rgb(255 255 255 / .78) 180deg 225deg, rgb(255 255 255 / .4) 225deg 270deg, rgb(255 255 255 / .78) 270deg 315deg, rgb(255 255 255 / .4) 315deg 360deg), #f6f2ec;"></div>
+      <span style="font-size: 17px; font-weight: 600; letter-spacing: -.02em; color: #2e2a27;">Lunch Wheel</span>
+    </div>
+  </div>
+
+  <!-- The wheel STAYS. Receded 52px, scaled back, blurred 14px at half opacity —
+       present enough to be the material behind the sheet, quiet enough that the
+       name is the only thing you read. -->
+  <div class="disc" style="width: 741px; height: 741px; left: -175px; top: 96px; filter: blur(7px); opacity: .72; transform: scale(.94);"></div>
+
+  <svg width="32" height="30" viewBox="0 0 32 30" fill="none" style="position: absolute; left: 195px; top: 96px; transform: translate(-50%, -50%); opacity: .35; filter: blur(3px);">
+    <path d="M16 29L3 3L29 3Z" fill="#de5c1f"></path>
+  </svg>
+
+  <div class="sheet" style="padding: 12px 24px 34px;">
+    <div style="width: 40px; height: 4px; border-radius: 2px; background: #c7cbd1; margin: 0 auto 20px;"></div>
+
+    <div class="eyebrow" style="color: #de5c1f; margin-bottom: 10px;">Today&#39;s lunch</div>
+    <div style="font-size: 68px; line-height: 1.04; font-weight: 600; letter-spacing: -.02em; word-break: keep-all; color: #c04f18; margin-bottom: 14px;">Taco Truck</div>
+
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; color: #5a626d; margin-bottom: 22px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 4a2 2 0 1 0 0-.1"></path><path d="M9 21l2-5-2-3 1-4 3 2 3 1"></path><path d="M6 11l2-3"></path></svg>
+      8 min from Office
+      <span style="color: #c7cbd1;">·</span>
+      <span style="color: #b3261e; font-weight: 500;">Closing in ~18 min</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 22px;">
+      <span class="eyebrow" style="color: #6f6862;">Rate it</span>
+      <div style="display: flex; gap: 4px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="#a97120" stroke="none"><path d="M12 2l3 6.5 7 .9-5 4.8 1.2 7L12 17.8 5.8 21.2 7 14.2 2 9.4l7-.9z"></path></svg>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="#a97120" stroke="none"><path d="M12 2l3 6.5 7 .9-5 4.8 1.2 7L12 17.8 5.8 21.2 7 14.2 2 9.4l7-.9z"></path></svg>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="#a97120" stroke="none"><path d="M12 2l3 6.5 7 .9-5 4.8 1.2 7L12 17.8 5.8 21.2 7 14.2 2 9.4l7-.9z"></path></svg>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="#a97120" stroke="none"><path d="M12 2l3 6.5 7 .9-5 4.8 1.2 7L12 17.8 5.8 21.2 7 14.2 2 9.4l7-.9z"></path></svg>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#c7cbd1" stroke-width="1.8"><path d="M12 2l3 6.5 7 .9-5 4.8 1.2 7L12 17.8 5.8 21.2 7 14.2 2 9.4l7-.9z"></path></svg>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="height: 56px; border-radius: 22px; background: #de5c1f; color: #fbf7f2; display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 17px; font-weight: 600; box-shadow: 0 1px 2px rgb(20 22 28 / .12), 0 8px 20px rgb(222 92 31 / .28);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+        Lock it in
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <div class="ghost">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 3v6h-6"></path></svg>
+          Respin
+        </div>
+        <div class="ghost">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+          Directions
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

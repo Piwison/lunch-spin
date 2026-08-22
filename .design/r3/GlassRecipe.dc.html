@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Bricolage Grotesque", "PingFang TC", ui-sans-serif, system-ui, sans-serif; }
+    a { color: #de5c1f; } a:hover { color: #c04f18; }
+    .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+    .stage { position: relative; height: 190px; border-radius: 28px; overflow: hidden; background: linear-gradient(160deg, #f6f2ec 0%, #efe8df 55%, #e7ded2 100%); }
+    .wheelbg {
+      position: absolute; width: 360px; height: 360px; left: 50%; top: -40px; margin-left: -180px; border-radius: 50%;
+      background:
+        repeating-conic-gradient(from 90deg, #f6f2ec 0deg 2deg, transparent 2deg 40deg),
+        conic-gradient(from 90deg,
+          rgb(222 92 31 / .30) 0deg 40deg, rgb(255 255 255 / .40) 40deg 80deg,
+          rgb(255 255 255 / .78) 80deg 120deg, rgb(255 255 255 / .40) 120deg 160deg,
+          rgb(255 255 255 / .78) 160deg 200deg, rgb(255 255 255 / .40) 200deg 240deg,
+          rgb(255 255 255 / .78) 240deg 280deg, rgb(255 255 255 / .40) 280deg 320deg,
+          rgb(255 255 255 / .40) 320deg 360deg);
+    }
+    .panel {
+      position: absolute; left: 22px; right: 22px; top: 62px; height: 66px; border-radius: 22px;
+      display: flex; align-items: center; padding: 0 20px;
+      font-size: 15px; font-weight: 500; color: #2e2a27;
+      background: rgb(255 255 255 / .40); backdrop-filter: blur(16px) saturate(1.9);
+    }
+    .rim::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.25px;
+      background: linear-gradient(135deg, rgb(255 255 255 / 1) 0%, rgb(255 255 255 / .6) 20%, rgb(20 22 28 / .11) 46%, rgb(20 22 28 / .07) 62%, rgb(255 255 255 / .72) 86%, rgb(255 255 255 / 1) 100%);
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude; pointer-events: none;
+    }
+    .lens::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 14px;
+      backdrop-filter: saturate(1.45) brightness(1.07);
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude; pointer-events: none;
+    }
+    .depth {
+      box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / .95), inset 0 -1px 0 rgb(255 255 255 / .35),
+        0 1px 2px rgb(20 22 28 / .1), 0 8px 20px rgb(20 22 28 / .1), 0 20px 44px rgb(20 22 28 / .07);
+    }
+    .cap { font-size: 15px; line-height: 1.45; color: #5a626d; margin-top: 12px; }
+    .cap b { color: #2e2a27; font-weight: 600; }
+    h3 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: #de5c1f; }
+  </style>
+</helmet>
+
+<div style="width: 900px; min-height: 830px; box-sizing: border-box; padding: 34px; background: #fbf7f2;">
+  <div style="font-size: 28px; line-height: 1.14; font-weight: 600; letter-spacing: -.02em; color: #2e2a27;">Why the glass reads flat</div>
+  <div class="cap" style="max-width: 620px; margin-bottom: 24px;">
+    <code style="background: #efe8df; padding: 2px 6px; border-radius: 5px;">backdrop-filter: blur()</code> works — it is blurring a flat gradient, and a blurred flat gradient is the same flat gradient. Glass only becomes glass when there is <b>content</b> behind it.
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px;">
+    <div>
+      <h3>1 · over flat ground</h3>
+      <div class="stage"><div class="panel">Filter</div></div>
+      <div class="cap">36% white over <b>#EFE8DF</b> is ~3% lighter than the ground. Nothing to blur, nothing to refract — it can only be a paler rectangle.</div>
+    </div>
+    <div>
+      <h3>2 · over the wheel</h3>
+      <div class="stage"><div class="wheelbg"></div><div class="panel">Filter</div></div>
+      <div class="cap">Same panel, same recipe. The wheel behind it is doing all the work — the blur has structure to soften and colour to pull through.</div>
+    </div>
+    <div>
+      <h3>3 · + the edge</h3>
+      <div class="stage"><div class="wheelbg"></div><div class="panel rim lens depth">Filter</div></div>
+      <div class="cap">Plus the rim, the refracting ring and three shadows. This is the target — it now has thickness, not just translucency.</div>
+    </div>
+  </div>
+
+  <div style="height: 1px; background: #e7ded2; margin: 30px 0 24px;"></div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px;">
+    <div>
+      <div class="eyebrow" style="color: #2e2a27; margin-bottom: 8px;">Rim · specular</div>
+      <div class="cap" style="margin: 0;">A gradient ring, not a flat 1px line. Bright at the upper left, <b>dark at 46–62%</b> — a light bevel needs a shadowed side to read on paper.</div>
+    </div>
+    <div>
+      <div class="eyebrow" style="color: #2e2a27; margin-bottom: 8px;">Lens · refraction</div>
+      <div class="cap" style="margin: 0;">A 14px inset ring re-sampling the backdrop at <b>saturate 1.45 / brightness 1.07</b>. Exactly inset, never a radial fade, so it cannot creep under the content.</div>
+    </div>
+    <div>
+      <div class="eyebrow" style="color: #2e2a27; margin-bottom: 8px;">Depth · three shadows</div>
+      <div class="cap" style="margin: 0;">1px contact, 8px lift, 20px ambient. <b>One shadow reads as a sticker</b>; three read as an object above a surface.</div>
+    </div>
+  </div>
+
+  <div style="margin-top: 26px; padding: 16px 20px; border-radius: 22px; background: #efe8df; display: flex; gap: 14px; align-items: flex-start;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#de5c1f" stroke-width="2" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16.5v.01"></path></svg>
+    <div class="cap" style="margin: 0;"><b>The rule that follows:</b> glass goes where it overlaps something — the dock over the wheel, the sheet over the wheel, the switcher over the wheel. A glass panel floating on bare ground should be solid paper instead, and secondary buttons ON a glass sheet are outlined, not glass: stacking glass on glass gives you two flat panels.</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
