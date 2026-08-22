@@ -518,19 +518,18 @@ export default function SpinWheel({
         // desktop column — the spec's "held at its drawn size, not scaled up".
         maxWidth: WHEEL_REF_FRAME_PX,
         marginInline: "auto",
-        // Clip only while the camera is in. At rest the disc breaks the frame by
-        // about 30px, which the page column clips horizontally — and clipping
-        // here instead would cut the disc's own drop shadow square, sitting the
-        // wheel inside a faint rectangle. Zoomed, the clip is doing real work:
-        // it keeps the 740px disc off the content below and gives the hub its
-        // "sinking below the fold" read.
-        overflow: active || receded ? "clip" : "visible",
-        // Once the disc has receded it is a 14px blur at half opacity, and a hard
-        // clip turns that into a visible rectangle of haze. Feathering the frame
-        // edge lets it dissolve into the ground the way a blurred thing should.
-        maskImage: receded
-          ? "radial-gradient(120% 92% at 50% 40%, #000 55%, transparent 100%)"
-          : undefined,
+        // NEVER clipped. The frame is 390x329 and the zoomed disc is 741px, so
+        // `overflow: clip` was clipping a circle to a rectangle — which is a
+        // rectangle, and it is the hard-edged box that showed up on screen the
+        // moment the camera pushed in. The disc is meant to break its edges
+        // here; the only thing that should cut it is the viewport, and the page
+        // column's own overflow-x-clip does that horizontally.
+        overflow: "visible",
+        // No mask either. It existed to feather the hard edge the clip left on
+        // the receded disc — but a mask clips to its own element's box, so with
+        // the disc overflowing the frame it simply put the rectangle back, one
+        // soft gradient later. Nothing to feather now: the disc is a circle and
+        // its own blur dissolves the rim.
       }}
     >
       {frameW > 0 && (
@@ -548,8 +547,13 @@ export default function SpinWheel({
               // The contact point in the disc's own coordinates: top centre.
               // Scaling about it is what keeps the pane being read still.
               transformOrigin: "50% 0%",
-              filter: receded && !reducedMotion ? "blur(14px)" : "none",
-              opacity: receded && !reducedMotion ? 0.5 : 1,
+              // The recede has to stop SHORT of erasing the wheel. At 14px and
+              // half opacity it was effectively gone, which left the result
+              // sheet floating on bare ground with nothing to refract — the
+              // exact reason the glass read flat. It is the sheet's material
+              // now, so it stays legibly present behind it.
+              filter: receded && !reducedMotion ? "blur(7px)" : "none",
+              opacity: receded && !reducedMotion ? 0.72 : 1,
               transition:
                 "transform var(--dur-zoom) var(--ease-zoom), filter var(--dur-recede) var(--ease-standard), opacity var(--dur-recede) var(--ease-standard)",
               willChange: active ? "transform" : undefined,
@@ -746,13 +750,11 @@ export default function SpinWheel({
                 // drops its blur while the wheel is moving and takes it back the
                 // moment it stops. Worth ~1 fps and 1.2% of slow frames.
 
-                // Counter-rotates the camera's 90°: the hub is pinned to the disc
-                // centre, but the count is meant to stay readable, not tip over
-                // with the world.
-                transform: active
-                  ? "translate(-50%, -50%) rotate(-90deg)"
-                  : "translate(-50%, -50%)",
-                transition: "transform var(--dur-zoom) var(--ease-zoom)",
+                // No counter-rotation. This used to undo the camera's 90° turn
+                // so the count stayed upright while the world tipped — and the
+                // camera stopped rotating when the pointer moved to the top, so
+                // all this was still doing was tipping the count over by itself.
+                transform: "translate(-50%, -50%)",
               }}
             >
               <span
