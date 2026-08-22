@@ -1,8 +1,9 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { observeLiquidGlass } from "./lib/liquidGlass";
 import BrandLoader from "./components/BrandLoader";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
@@ -40,7 +41,15 @@ function Router() {
   );
 }
 
-/** Toasts follow the active theme and use the same warm tokens as the app. */
+/**
+ * Toasts follow the active theme and use the same warm tokens as the app.
+ *
+ * They are glass, and they are the clearest case for it in the product: a toast
+ * always appears OVER something — a list of places, a run of history — which is
+ * the one condition the material needs. They used to be `--popover` with a 1px
+ * border, i.e. a solid card, which is why the alert screen was the example given
+ * of "this is not liquid glass".
+ */
 function ThemedToaster() {
   const { theme } = useTheme();
   return (
@@ -49,9 +58,12 @@ function ThemedToaster() {
       closeButton
       toastOptions={{
         duration: 3000,
+        className: "glass-card",
+        // Sonner writes its own background/border inline unless they are cleared
+        // here, and an opaque fill on top of the glass recipe would win.
         style: {
-          background: "var(--popover)",
-          border: "1px solid var(--border)",
+          background: "var(--glass-card-bg)",
+          border: "0",
           color: "var(--popover-foreground)",
         },
       }}
@@ -71,6 +83,12 @@ function isSharedRoute(path: string) {
 function App() {
   const [location] = useLocation();
   const locked = isSharedRoute(location);
+
+  // One observer for the whole document: every surface marked `data-lens` (or
+  // `.lens`) gets a refracting edge sized to its own box, including the ones
+  // that render through portals into a container the tree cannot reach.
+  useEffect(() => observeLiquidGlass(), []);
+
   return (
     <ErrorBoundary>
       <ThemeProvider key={locked ? "locked-light" : "normal"} defaultTheme="light" switchable={!locked}>

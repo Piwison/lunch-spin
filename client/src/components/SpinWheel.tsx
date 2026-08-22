@@ -111,6 +111,16 @@ const ZOOM_DISC_TO_FRAME = 1.9;
 const ZOOM_POINTER_Y = 44;
 
 /**
+ * How far the hub shrinks once the camera is in.
+ *
+ * Not zero. The wedges have to converge on something or the centre reads as a
+ * puncture, and the axle is also what the innermost end of every label stops
+ * against. Small enough that at the zoom's magnification it is a detail rather
+ * than the subject.
+ */
+const HUB_ZOOM_SCALE = 0.26;
+
+/**
  * The Ember wheel.
  *
  * Rendered as DOM rather than canvas. The disc is a conic-gradient, the labels
@@ -732,7 +742,21 @@ export default function SpinWheel({
               })}
             </div>
 
-            {/* Hub — glass, with the count that is actually in play. */}
+            {/* Hub — the count that is actually in play, and only while you can
+                use it.
+
+                At rest the hub answers a real question before you commit: how
+                many places are on this wheel today, after exclusions and
+                filters. The moment the camera goes in, that number is spent —
+                you are reading restaurant names now — and at the zoom's 2.3×
+                it was the largest, highest-contrast object on the screen,
+                sitting in the middle of the four names it was competing with.
+                So it recedes: the disc shrinks to an axle the wedges can
+                converge on, and the count and its eyebrow leave with it.
+
+                Scale and opacity only, both composited, both on the zoom's own
+                timing — the hub travels with the camera rather than
+                disappearing and coming back. */}
             <div
               className="absolute left-1/2 top-1/2 rounded-full flex flex-col items-center justify-center"
               style={{
@@ -754,17 +778,28 @@ export default function SpinWheel({
                 // so the count stayed upright while the world tipped — and the
                 // camera stopped rotating when the pointer moved to the top, so
                 // all this was still doing was tipping the count over by itself.
-                transform: "translate(-50%, -50%)",
+                transform: `translate(-50%, -50%) scale(${active ? HUB_ZOOM_SCALE : 1})`,
+                transition: "transform var(--dur-zoom) var(--ease-zoom)",
               }}
             >
-              <span
-                style={{ fontSize: metrics.hubPx * 0.38, fontWeight: 600, letterSpacing: "-0.04em", lineHeight: 1, color: "var(--ink-strong)" }}
+              <div
+                className="flex flex-col items-center justify-center"
+                style={{
+                  opacity: active ? 0 : 1,
+                  // Out faster than the camera, so the number is gone before the
+                  // names arrive rather than fading through them.
+                  transition: `opacity ${active ? "180ms" : "var(--dur-zoom)"} var(--ease-standard)`,
+                }}
               >
-                {count}
-              </span>
-              <span className="type-eyebrow mt-1" style={{ color: "var(--brand-text)" }}>
-                in play
-              </span>
+                <span
+                  style={{ fontSize: metrics.hubPx * 0.38, fontWeight: 600, letterSpacing: "-0.04em", lineHeight: 1, color: "var(--ink-strong)" }}
+                >
+                  {count}
+                </span>
+                <span className="type-eyebrow mt-1" style={{ color: "var(--brand-text)" }}>
+                  in play
+                </span>
+              </div>
             </div>
           </div>
 
