@@ -461,6 +461,17 @@ async function addWheelMember(wheelId, userId) {
   if (existing.length > 0) return;
   await db.insert(wheelMembers).values({ wheelId, userId });
 }
+async function leaveWheel(wheelId, userId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const wheel = await getWheelById(wheelId);
+  if (!wheel || wheel.ownerId === userId) return false;
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.userId, userId)));
+  await db.delete(wheelPresence).where(and(eq(wheelPresence.wheelId, wheelId), eq(wheelPresence.userId, userId)));
+  await db.delete(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, userId)));
+  await db.update(users).set({ defaultWheelId: null }).where(and(eq(users.id, userId), eq(users.defaultWheelId, wheelId)));
+  return true;
+}
 async function getWheelMembers(wheelId) {
   const db = await getDb();
   if (!db) return [];
@@ -2999,6 +3010,27 @@ var appRouter = router({
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
       await deleteWheel(input.id);
+      return { success: true };
+    }),
+    /**
+     * Leave a wheel you joined.
+     *
+     * Not available to the owner: there is no ownership transfer in this app, so
+     * an owner who left would strand every teammate on a wheel nobody can
+     * administer. They delete it instead, which is the adjacent item in the same
+     * menu.
+     */
+    leave: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.id);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      if (wheel.ownerId === ctx.user.id) {
+        throw new TRPCError3({
+          code: "BAD_REQUEST",
+          message: "You own this wheel \u2014 delete it instead of leaving"
+        });
+      }
+      const left = await leaveWheel(input.id, ctx.user.id);
+      if (!left) throw new TRPCError3({ code: "FORBIDDEN" });
       return { success: true };
     }),
     regenerateInvite: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {

@@ -23,7 +23,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
 
   const Title = (
     <div className="flex items-center gap-2">
-      <Star size={16} style={{ fill: "var(--star)", color: "var(--star)" }} />
+      <Star size={16} style={{ fill: "var(--star)", color: "var(--star-edge)" }} />
       <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Team taste</h3>
     </div>
   );
@@ -127,7 +127,7 @@ function CuisineChip({ cuisine, average, tone }: { cuisine: string; average: num
     >
       {cuisine}
       <span className="inline-flex items-center gap-0.5 opacity-80">
-        <Star size={10} style={{ fill: "var(--star)", color: "var(--star)" }} />
+        <Star size={10} style={{ fill: "var(--star)", color: "var(--star-edge)" }} />
         {average.toFixed(1)}
       </span>
     </span>

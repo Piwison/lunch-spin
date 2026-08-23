@@ -49,6 +49,7 @@ import {
   acceptSpin,
   deleteUserAccount,
   deleteWheel,
+  leaveWheel,
   getExclusions,
   getNotificationsForUser,
   getPopularPublicWheels,
@@ -514,6 +515,30 @@ export const appRouter = router({
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
         if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         await deleteWheel(input.id);
+        return { success: true };
+      }),
+
+    /**
+     * Leave a wheel you joined.
+     *
+     * Not available to the owner: there is no ownership transfer in this app, so
+     * an owner who left would strand every teammate on a wheel nobody can
+     * administer. They delete it instead, which is the adjacent item in the same
+     * menu.
+     */
+    leave: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        if (wheel.ownerId === ctx.user.id) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "You own this wheel — delete it instead of leaving",
+          });
+        }
+        const left = await leaveWheel(input.id, ctx.user.id);
+        if (!left) throw new TRPCError({ code: "FORBIDDEN" });
         return { success: true };
       }),
 

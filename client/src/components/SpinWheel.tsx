@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   EASE_DECAY,
   EASE_EXIT,
@@ -30,6 +30,13 @@ interface SpinWheelProps {
   segments: WheelSegment[];
   onSpinEnd: (segment: WheelSegment) => void;
   isSpinning: boolean;
+  /**
+   * What to say when nothing is in play. Defaults to "add restaurants", which is
+   * only true on a genuinely empty wheel — a wheel whose places are all excluded
+   * or filtered out needs different advice, and the caller is the one that knows
+   * which case this is.
+   */
+  emptyHint?: ReactNode;
   onSpinStart: () => void;
   targetId?: number | null;
   /**
@@ -137,6 +144,7 @@ export default function SpinWheel({
   segments,
   onSpinEnd,
   isSpinning,
+  emptyHint,
   targetId,
   zoomed = false,
   winnerId = null,
@@ -743,7 +751,10 @@ export default function SpinWheel({
             </div>
 
             {/* Hub — the count that is actually in play, and only while you can
-                use it.
+                use it. Hidden entirely on an empty wheel: a hub reading "0 in
+                play" is not information, and it sat exactly where the empty
+                state's own copy goes, so the two printed on top of each other.
+                The message owns the centre when there is nothing to count.
 
                 At rest the hub answers a real question before you commit: how
                 many places are on this wheel today, after exclusions and
@@ -757,6 +768,7 @@ export default function SpinWheel({
                 Scale and opacity only, both composited, both on the zoom's own
                 timing — the hub travels with the camera rather than
                 disappearing and coming back. */}
+            {count > 0 && (
             <div
               className="absolute left-1/2 top-1/2 rounded-full flex flex-col items-center justify-center"
               style={{
@@ -801,6 +813,7 @@ export default function SpinWheel({
                 </span>
               </div>
             </div>
+            )}
           </div>
 
           {/* The pointer. It does not turn, and it carries no visible zone behind
@@ -846,9 +859,13 @@ export default function SpinWheel({
               style={{ left: centerX }}
             >
               <p className="type-meta" style={{ color: "var(--muted-foreground)" }}>
-                Add restaurants
-                <br />
-                to spin the wheel
+                {emptyHint ?? (
+                  <>
+                    Add restaurants
+                    <br />
+                    to spin the wheel
+                  </>
+                )}
               </p>
             </div>
           )}

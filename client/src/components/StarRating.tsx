@@ -27,7 +27,7 @@ export function StarRating({ value, onChange, size = 24, disabled = false }: Sta
         const glyph = (
           <Star
             size={size}
-            style={{ fill: on ? "var(--star)" : "none", color: on ? "var(--star)" : "var(--border)" }}
+            style={{ fill: on ? "var(--star)" : "none", color: on ? "var(--star-edge)" : "var(--border)" }}
           />
         );
         if (readOnly) {
@@ -73,7 +73,7 @@ export function RatingChip({ average }: { average: number | null }) {
       className="inline-flex items-center gap-1 type-meta font-bold px-2 py-0.5 rounded-full flex-shrink-0"
       style={{ background: "color-mix(in oklch, var(--star) 18%, transparent)", color: "var(--foreground)" }}
     >
-      <Star size={12} style={{ fill: "var(--star)", color: "var(--star)" }} /> {average.toFixed(1)}
+      <Star size={12} style={{ fill: "var(--star)", color: "var(--star-edge)" }} /> {average.toFixed(1)}
     </span>
   );
 }

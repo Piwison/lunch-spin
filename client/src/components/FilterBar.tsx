@@ -89,10 +89,17 @@ export default function FilterBar({
                       <button
                         key={tag.id}
                         onClick={() => onToggleTag(tag.id)}
-                        className="px-3 py-1 rounded-full type-meta font-medium transition-all duration-150 active:scale-95"
+                        className="px-4 flex items-center rounded-full type-meta font-medium transition-all duration-150 active:scale-95"
                         style={{
-                          background: isActive ? "var(--brand-grad)" : "var(--glass-chip-bg)",
-                          border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--glass-chip-border)"}`,
+                          // OUTLINED, not filled. These chips sit on a glass
+                          // sheet, and a translucent white fill on translucent
+                          // white glass has nothing behind it to refract — it
+                          // reads as a second flat panel with an invisible
+                          // border. The sheet is the material; controls on it
+                          // are drawn with a line.
+                          minHeight: 44,
+                          background: isActive ? "var(--brand-grad)" : "transparent",
+                          border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--border)"}`,
                           color: isActive ? "var(--on-accent)" : "var(--body-warm)",
                           borderRadius: "var(--radius-chip)",
                         }}
