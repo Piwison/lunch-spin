@@ -9,17 +9,18 @@ import WinnerSurface from "@/components/WinnerSurface";
 import { labelTier } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
-import FilterBar from "@/components/FilterBar";
+import FilterBar, { FilterTrigger } from "@/components/FilterBar";
+import { SpinWheelIcon } from "@/components/SpinWheelIcon";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
-import { TabRail } from "@/components/TabRail";
+import { TabRail, type TabRailItem } from "@/components/TabRail";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, RotateCw, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
+import { X, AlertTriangle, MapPin, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -58,8 +59,11 @@ function formatTimeAgo(d: Date): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const TAB_CONFIG: { id: Tab; label: string; icon: typeof Utensils }[] = [
-  { id: "wheel", label: "Wheel", icon: RotateCw },
+/* `ComponentType`, not `typeof Utensils`: the Wheel tab's icon is drawn in this
+   repo rather than borrowed from lucide, and TabRail only ever asks an icon for
+   a `size`. */
+const TAB_CONFIG: TabRailItem<Tab>[] = [
+  { id: "wheel", label: "Wheel", icon: SpinWheelIcon },
   { id: "restaurants", label: "Restaurants", icon: Utensils },
   { id: "history", label: "History", icon: History },
 ];
@@ -249,7 +253,15 @@ export default function WheelApp() {
     refetch: refetchRestaurants,
   } = trpc.restaurants.list.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && seeded && !!user }
+    {
+      enabled: !!selectedWheelId && seeded && !!user,
+      // Same guard as `wheels.get` below, and for the same reason: losing access
+      // to a wheel is a final answer, not a blip. Without it, leaving a wheel and
+      // then opening it again retried three times and landed on "Couldn't load
+      // restaurants" with a Retry button that could only ever fail.
+      retry: (count, err) =>
+        err.data?.code !== "NOT_FOUND" && err.data?.code !== "FORBIDDEN" && count < 2,
+    }
   );
   const { data: wheelData, error: wheelError } = trpc.wheels.get.useQuery(
     { id: selectedWheelId! },
@@ -270,12 +282,25 @@ export default function WheelApp() {
    *  setState in the same tick already re-runs. */
   const unavailableWheelIds = useRef<Set<number>>(new Set());
 
-  // A wheel that definitively can't be loaded (deleted, or a stale/bad link)
-  // would strand the app on erroring queries — fall back to the wheel picker.
-  // Transient/network errors are retried above and don't eject the user.
+  /**
+   * A wheel that definitively can't be loaded — deleted, a stale link, or one
+   * you just left — would strand the app on erroring queries, so fall back to
+   * the picker. Transient/network errors are retried above and don't eject.
+   *
+   * BOTH queries count. This used to watch `wheels.get` alone, and the two do
+   * not fail together: leaving a wheel revokes access to its restaurants as
+   * well, and whichever of the two lost the race rendered its own error surface
+   * — the restaurant list's "Retry" screen, which is what a member saw after
+   * leaving and reopening a wheel. One fact, read from either query, rather than
+   * one effect per query holding separate opinions about the same wheel.
+   */
+  const accessDeniedCode =
+    [wheelError?.data?.code, restaurantsError?.data?.code].find(
+      (code) => code === "NOT_FOUND" || code === "FORBIDDEN",
+    ) ?? null;
+
   useEffect(() => {
-    const code = wheelError?.data?.code;
-    if (code !== "NOT_FOUND" && code !== "FORBIDDEN") return;
+    if (!accessDeniedCode) return;
     // Record it BEFORE dropping the selection: the entry payload still names
     // this wheel, and without this the auto-open effect hands it straight back.
     if (selectedWheelId != null) unavailableWheelIds.current.add(selectedWheelId);
@@ -283,7 +308,7 @@ export default function WheelApp() {
     setSelectedWheelId(null);
     navigate("/app", { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wheelError]);
+  }, [accessDeniedCode]);
 
   // Erasing the account invalidates this browser's session too — the server
   // clears the cookie in the same response — so wipe every local trace before
@@ -438,7 +463,16 @@ export default function WheelApp() {
   // membership check + one round-trip, replacing three separate 3s polls.
   const realtimeQuery = trpc.wheels.realtime.useQuery(
     { wheelId: selectedWheelId! },
-    { enabled: !!selectedWheelId && isShared, refetchInterval: 3000 }
+    {
+      enabled: !!selectedWheelId && isShared,
+      // Paused while a spin is on screen. Everything this poll feeds — the live
+      // roster, the round's vetoes and votes — is either hidden behind the
+      // camera or already settled for this spin, so a response landing mid-flight
+      // buys nothing and costs a render (plus the parse and the state churn)
+      // during the one animation in the app that has a frame budget. It resumes
+      // on the tick after the result is dismissed.
+      refetchInterval: isSpinning || showResult ? false : 3000,
+    }
   );
   const session: SessionState = realtimeQuery.data?.session ?? EMPTY_SESSION;
 
@@ -647,6 +681,13 @@ export default function WheelApp() {
   const cuisineTags = (tags ?? []).filter((t) => t.category === "cuisine" && usedTagIds.has(t.id));
   const foodTypeTags = (tags ?? []).filter((t) => t.category === "food_type" && usedTagIds.has(t.id));
   const customTags = (tags ?? []).filter((t) => t.category === "custom" && usedTagIds.has(t.id));
+  /* What the filter button shows on its badge, and whether it is worth showing
+     at all. Mirrors FilterBar's own two rules: nothing to filter by means no
+     button, and the badge counts tags plus the distance limit as one each. */
+  const canFilter =
+    (restaurants?.length ?? 0) > 0 &&
+    (cuisineTags.length + foodTypeTags.length + customTags.length > 0 || !!wheelData?.distanceEnabled);
+  const filterActiveCount = selectedTagIds.length + (maxWalkMinutes != null ? 1 : 0);
 
   // Hold the same brand loader until the one-hop bootstrap has seeded the caches,
   // so the children (WheelSelector, RestaurantTab, HistoryTab) mount against warm
@@ -980,7 +1021,23 @@ export default function WheelApp() {
                         row above Team/Round, so the gear lives in the
                         wheel-picker pill row instead (WheelSelector.tsx). */}
                     {selectedWheelId && (
-                      <div className="hidden md:flex w-full justify-end -mb-2 md:col-start-2 xl:col-auto" style={recedeStyle}>
+                      <div className="hidden md:flex w-full justify-end items-center gap-2 -mb-2 md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        {/* Filter, xl and up only. Below xl it already sits in
+                            the wheel-picker row; at xl that row collapses to the
+                            rail and takes the only filter button in the app with
+                            it, which left every wide-screen user — and anyone on
+                            a wheel they had joined rather than created, since
+                            that is who noticed — with no way to reach the
+                            filters at all. This is a second TRIGGER, not a
+                            second FilterBar: one sheet, two buttons. */}
+                        {canFilter && (
+                          <div className="hidden xl:flex">
+                            <FilterTrigger
+                              activeCount={filterActiveCount}
+                              onClick={() => setShowFilters(true)}
+                            />
+                          </div>
+                        )}
                         <button
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
                           aria-label="Wheel settings"
@@ -1039,7 +1096,7 @@ export default function WheelApp() {
                             the SPIN placeholder simply wasn't there. */}
                         <div className="h-14 w-48 rounded-full animate-pulse" style={{ background: "var(--muted)" }} />
                       </div>
-                    ) : restaurantsError ? (
+                    ) : restaurantsError && !accessDeniedCode ? (
                       <div className="flex flex-col items-center gap-4 py-12 text-center">
                         <AlertTriangle size={32} className="text-amber-500/60" />
                         <p className="text-sm text-muted-foreground">Couldn't load restaurants: {restaurantsError.message}</p>
