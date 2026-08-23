@@ -153,10 +153,23 @@
   /* Semantic. Deliberately desaturated so nothing competes with persimmon. */
   --destructive: #b3261e;
   --destructive-foreground: #fbf7f2;
-  /* Rating gold. The old #C98A2E was 2.75:1 on paper — below even the 3:1 bar
-     a graphical indicator has to clear, and the star sits next to the average
-     as a pair. Darkened to clear 3:1 on both paper and the ground. */
-  --star: #a97120;
+  /* Rating gold. Two tokens, because a star is a filled shape with an outline
+     and they owe different things.
+
+     The fill is the ordinary star yellow people expect from every other rating
+     control they have used, asked for by name. Measured, it is 1.5:1 on paper
+     and 1.3:1 on the ground — well under the 3:1 a graphical indicator owes,
+     and the deepened #A97120 that did clear it (3.88:1) read as brown. Same call as the brand
+     persimmon in failure mode 20: the measurement is a fact, the decision went
+     the other way, and this is deliberate.
+
+     What claws the contrast back is the EDGE. The star's outline is a darker
+     gold at 4.15:1 on the worse of the two backgrounds, so the shape's boundary is legible against paper even where
+     its fill is not, and a filled star stays distinguishable from an empty one
+     by more than brightness alone. In dark mode the lifted gold clears
+     everything on charcoal, so both tokens collapse to one value. */
+  --star: #ffc107;
+  --star-edge: #96650f;
   --ok: #2f6b4f;                 /* success text */
   --info: #7a5b33;               /* info / notice text */
 
@@ -191,6 +204,10 @@
      can push hard; charcoal has less colour behind it to pull through. */
   --glass-sat: 1.9;
 
+  /* The scrim behind every modal surface — dialogs, alert dialogs, drawers and
+     sheets. It was `bg-black/50` hardcoded in four separate primitives, which is
+     both a flat 50% black over a warm paper app and four places to forget. */
+  --scrim: rgb(20 22 28 / 0.38);
   --glass-highlight: rgb(255 255 255 / 0.55);
   --glass-opaque: #fbf7f2;
 
@@ -298,7 +315,8 @@
 
   --destructive: #e5654f;
   --destructive-foreground: #16120f;
-  --star: #e0a544;
+  --star: #ffc94a;
+  --star-edge: #ffc94a;
   --ok: #6fbf95;
   --info: #c9a97a;
 
@@ -325,6 +343,7 @@
 
   --glass-sat: 1.5;
 
+  --scrim: rgb(0 0 0 / 0.58);
   --glass-highlight: rgb(255 255 255 / 0.08);
   --glass-opaque: #1e2127;
 
@@ -380,6 +399,22 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+
+  /* Tailwind 4 changed what a bare `border` utility paints: v3 defaulted to
+     gray-200, v4 defaults to CURRENTCOLOR. Thirty-six places across the shadcn
+     primitives use a bare `border`, so every one of them was drawing a hairline
+     in the element's own text colour — which is why the profile menu had a hard
+     near-black keyline in a palette whose hairline is a warm #C7CBD1. This is
+     the upgrade guide's own restoration snippet, pointed at the app's token
+     rather than at gray-200. Anything that sets its own border-color still
+     wins; only the unset case changes. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
   }
 
   html {

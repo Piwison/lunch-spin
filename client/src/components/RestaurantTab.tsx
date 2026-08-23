@@ -531,7 +531,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       onClick={() => { setSortNearest(false); setSortByRating((s) => !s); }}
                       className="gap-2.5"
                     >
-                      <Star size={14} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star)" }} />
+                      <Star size={14} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star-edge)" }} />
                       Top rated first
                       {sortByRating && <Check size={13} className="ml-auto" />}
                     </DropdownMenuItem>

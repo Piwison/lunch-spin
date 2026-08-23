@@ -1066,6 +1066,15 @@ export default function WheelApp() {
                           zoomed={isSpinning || showResult}
                           winnerId={spinResult?.id ?? null}
                           receded={showResult}
+                          emptyHint={
+                            (restaurants?.length ?? 0) > 0 ? (
+                              <>
+                                No places in play
+                                <br />
+                                right now
+                              </>
+                            ) : undefined
+                          }
                         />
 
                         {(restaurants?.length ?? 0) === 0 ? (

@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
-import { Plus, Globe, Lock, Trash2, Share2, Copy, CopyPlus, Settings, MoreVertical, Check, ChevronDown, Star, MapPin, Users, Eye } from "lucide-react";
+import { Plus, Globe, Lock, LogOut, Trash2, Share2, Copy, CopyPlus, Settings, MoreVertical, Check, ChevronDown, Star, MapPin, Users, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -95,6 +95,7 @@ function WheelActionsMenu({
   onCopyWheel,
   onSettings,
   onDelete,
+  onLeave,
 }: {
   wheel: { isShared: boolean; isPublic: boolean };
   isOwner: boolean;
@@ -104,6 +105,7 @@ function WheelActionsMenu({
   onCopyWheel: () => void;
   onSettings: () => void;
   onDelete: () => void;
+  onLeave: () => void;
 }) {
   return (
     <DropdownMenu>
@@ -139,13 +141,19 @@ function WheelActionsMenu({
         <DropdownMenuItem onClick={onSettings} className="gap-2.5">
           <Settings size={14} /> Settings
         </DropdownMenuItem>
-        {isOwner && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onDelete} variant="destructive" className="gap-2.5">
-              <Trash2 size={14} /> Delete
-            </DropdownMenuItem>
-          </>
+        <DropdownMenuSeparator />
+        {/* The owner's exit is Delete and a member's is Leave — never both, and
+            never neither. There is no ownership transfer in this app, so an
+            owner who left would strand the team on a wheel nobody can
+            administer; the server refuses it too. */}
+        {isOwner ? (
+          <DropdownMenuItem onClick={onDelete} variant="destructive" className="gap-2.5">
+            <Trash2 size={14} /> Delete
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={onLeave} variant="destructive" className="gap-2.5">
+            <LogOut size={14} /> Leave wheel
+          </DropdownMenuItem>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -193,6 +201,10 @@ export default function WheelSelector({
   /** The wheel awaiting a delete confirmation. Held here rather than inside the
    *  kebab menu so the confirmation outlives the menu that launched it. */
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; name: string } | null>(null);
+  /** The wheel a member is about to leave. Same shape and same reasoning as
+      `confirmDelete`: held here, not in the row, so the dialog survives the row
+      unmounting when the list refetches. */
+  const [confirmLeave, setConfirmLeave] = useState<{ id: number; name: string } | null>(null);
 
   const utils = trpc.useUtils();
   const { data: wheels } = trpc.wheels.list.useQuery();
@@ -309,6 +321,22 @@ export default function WheelSelector({
       toast.success("Wheel deleted");
     },
     onError: (e) => toast.error(`Failed to delete wheel: ${e.message}`),
+  });
+  const leaveWheel = trpc.wheels.leave.useMutation({
+    onSuccess: (_data, vars) => {
+      // Same ordering as delete, for the same reason: tell the parent before
+      // anything can refetch a wheel this user can no longer read, or the app
+      // learns about its own departure from a 403.
+      onDeleted(vars.id);
+      utils.wheels.list.invalidate();
+      utils.wheels.bootstrap.invalidate();
+      // Leaving clears a starred default that pointed here, so the identity
+      // payload that carries it is stale.
+      utils.auth.me.invalidate();
+      setConfirmLeave(null);
+      toast.success("You left the wheel");
+    },
+    onError: (e) => toast.error(`Failed to leave wheel: ${e.message}`),
   });
   const setDefaultWheel = trpc.wheels.setDefault.useMutation({
     onSuccess: () => { utils.auth.me.invalidate(); },
@@ -511,6 +539,7 @@ export default function WheelSelector({
             onCopyWheel={() => copyWheel.mutate({ id: wheel.id })}
             onSettings={() => openSettingsFor(wheel)}
             onDelete={() => setConfirmDelete({ id: wheel.id, name: wheel.name })}
+            onLeave={() => setConfirmLeave({ id: wheel.id, name: wheel.name })}
           />
         </div>
       </div>
@@ -1033,6 +1062,26 @@ export default function WheelSelector({
       {/* Delete confirmation — one dialog for both entry points (the row kebab
           and the settings danger zone), rendered here at the root so neither of
           those can unmount it mid-decision. */}
+      <ConfirmDangerDialog
+        open={!!confirmLeave}
+        onOpenChange={(open) => { if (!open && !leaveWheel.isPending) setConfirmLeave(null); }}
+        title="LEAVE WHEEL"
+        confirmLabel="Leave wheel"
+        pending={leaveWheel.isPending}
+        onConfirm={() => confirmLeave && leaveWheel.mutate({ id: confirmLeave.id })}
+        body={
+          <>
+            <p>
+              Leave <strong className="text-foreground">{confirmLeave?.name}</strong>? It stays with the rest of the
+              team — you just stop seeing it.
+            </p>
+            <p>
+              Your ratings stay on the places you rated, so rejoining with the invite link brings everything back.
+            </p>
+          </>
+        }
+      />
+
       <ConfirmDangerDialog
         open={!!confirmDelete}
         onOpenChange={(open) => { if (!open && !deleteWheel.isPending) setConfirmDelete(null); }}

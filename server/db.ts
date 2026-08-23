@@ -284,6 +284,47 @@ export async function addWheelMember(wheelId: number, userId: number) {
   await db.insert(wheelMembers).values({ wheelId, userId });
 }
 
+/**
+ * Remove one member from one wheel — the scoped sibling of `deleteUserAccount`'s
+ * "their footprint on wheels they only joined".
+ *
+ * The owner cannot leave: this app has no ownership transfer, and an ownerless
+ * wheel is unreachable for everyone still on it. The caller enforces that; this
+ * returns false so a race (ownership changing under a request) cannot orphan a
+ * wheel by accident.
+ *
+ * What goes: the membership row, and the two things that are only meaningful
+ * while you are in the room — this round's veto/vote/dietary marks, and presence.
+ * There are no foreign keys anywhere in this schema (failure mode 15), so every
+ * one of these has to be named explicitly; nothing cascades.
+ *
+ * What stays: their RATINGS. Leaving a wheel is not deleting yourself —
+ * `deleteUserAccount` drops ratings because the person is gone, but a rating is
+ * a contribution to the team's picture of a place, and pulling it would silently
+ * move averages for everyone still there. It also means rejoining restores your
+ * own stars. Spin history stays for the same reason it survives account
+ * deletion: the exclusion window is computed from it, and removing rows would
+ * un-exclude places the team ate this week.
+ */
+export async function leaveWheel(wheelId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const wheel = await getWheelById(wheelId);
+  if (!wheel || wheel.ownerId === userId) return false;
+
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.userId, userId)));
+  await db.delete(wheelPresence).where(and(eq(wheelPresence.wheelId, wheelId), eq(wheelPresence.userId, userId)));
+  await db.delete(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, userId)));
+
+  // A starred default pointing at a wheel they can no longer read would make
+  // bootstrap resolve a wheel that 403s on the next request.
+  await db
+    .update(users)
+    .set({ defaultWheelId: null })
+    .where(and(eq(users.id, userId), eq(users.defaultWheelId, wheelId)));
+  return true;
+}
+
 export async function getWheelMembers(wheelId: number) {
   const db = await getDb();
   if (!db) return [];
