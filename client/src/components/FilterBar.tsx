@@ -1,3 +1,4 @@
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { AlertTriangle, ChevronDown, Footprints, SlidersHorizontal, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -51,6 +52,64 @@ interface FilterBarProps {
  * filter already behaves: two independent selections, not synced between
  * tabs) and passes callbacks in.
  */
+/**
+ * The 56px filter button, on its own.
+ *
+ * Split out of the sheet variant because the sheet lives in ONE place (the
+ * mobile wheel-picker row) while the button has to appear in two: that row
+ * below xl, and the desktop column at xl and up, where the picker collapses to
+ * a rail and the row is display:none. Mounting a second `FilterBar` for the
+ * desktop case would mount a second Radix Sheet on the same controlled `open`
+ * state, and both would portal an overlay to the body.
+ *
+ * So the desktop copy is a plain button that flips the same state. The one
+ * mounted sheet still opens, because Radix portals its content to the body and
+ * a hidden ancestor cannot hide it.
+ */
+export const FilterTrigger = forwardRef<
+  HTMLButtonElement,
+  { activeCount: number } & ComponentPropsWithoutRef<"button">
+>(function FilterTrigger({ activeCount, ...rest }, ref) {
+  return (
+    <button
+      ref={ref}
+      aria-label={activeCount > 0 ? `Filter (${activeCount} active)` : "Filter"}
+      className="relative flex-shrink-0 flex items-center justify-center glass-bar transition-transform active:scale-[var(--press-scale)]"
+      style={{
+        minHeight: 56,
+        minWidth: 56,
+        borderRadius: "var(--radius-control)",
+        color: activeCount > 0 ? "var(--brand-text)" : "var(--body-warm)",
+      }}
+      {...rest}
+    >
+      <SlidersHorizontal size={19} />
+      {/* The count is the whole point of collapsing the bar: with the controls
+          out of sight, this badge is the only thing telling you the wheel is
+          filtered. */}
+      {activeCount > 0 && (
+        <span
+          className="absolute flex items-center justify-center tabular-nums"
+          style={{
+            top: 8,
+            right: 8,
+            minWidth: 18,
+            height: 18,
+            paddingInline: 5,
+            borderRadius: 9,
+            background: "var(--brand-grad)",
+            color: "var(--on-accent)",
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          {activeCount}
+        </span>
+      )}
+    </button>
+  );
+});
+
 export default function FilterBar({
   open,
   onOpenChange,
@@ -178,40 +237,7 @@ export default function FilterBar({
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetTrigger asChild>
-          <button
-            aria-label={activeCount > 0 ? `Filter (${activeCount} active)` : "Filter"}
-            className="relative flex-shrink-0 flex items-center justify-center glass-bar transition-transform active:scale-[var(--press-scale)]"
-            style={{
-              minHeight: 56,
-              minWidth: 56,
-              borderRadius: "var(--radius-control)",
-              color: activeCount > 0 ? "var(--brand-text)" : "var(--body-warm)",
-            }}
-          >
-            <SlidersHorizontal size={19} />
-            {/* The count is the whole point of collapsing the bar: with the
-                controls out of sight, this badge is the only thing telling you
-                the wheel is filtered. */}
-            {activeCount > 0 && (
-              <span
-                className="absolute flex items-center justify-center tabular-nums"
-                style={{
-                  top: 8,
-                  right: 8,
-                  minWidth: 18,
-                  height: 18,
-                  paddingInline: 5,
-                  borderRadius: 9,
-                  background: "var(--brand-grad)",
-                  color: "var(--on-accent)",
-                  fontSize: 11,
-                  fontWeight: 600,
-                }}
-              >
-                {activeCount}
-              </span>
-            )}
-          </button>
+          <FilterTrigger activeCount={activeCount} />
         </SheetTrigger>
         <SheetContent
           side="bottom"
