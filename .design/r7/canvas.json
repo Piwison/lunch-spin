@@ -1,0 +1,23 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1780,
+      "h": 1860
+    }
+  ],
+  "annotations": [
+    {
+      "id": "ask",
+      "x": 0,
+      "y": -150,
+      "w": 460,
+      "text": "Asked for: bigger hub, centre grazing the nav bar, full restaurant names. Drawn to scale before changing anything \u2014 the geometry has a catch worth seeing first."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

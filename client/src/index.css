@@ -785,6 +785,15 @@
     }
   }
 
+  /* Above md the dock does not exist, so its height is zero — and the wheel's
+     zoom camera, which measures the run from the pointer down to the dock,
+     needs that to be true rather than inferred. */
+  @media (min-width: 768px) {
+    :root {
+      --dock-height: 0px;
+    }
+  }
+
   /* A bar that meets content on one edge only — the sticky app header. It has no
      rim to catch light on three of its four sides, so the specular ring and the
      refracting ring are both dropped and the recipe keeps a single lit lip along

@@ -113,6 +113,31 @@ const MIN_DECAY_MS = 1200;
 /** Zoomed disc diameter, as a multiple of the frame width (spec §4). */
 const ZOOM_DISC_TO_FRAME = 1.9;
 
+/**
+ * The scale the label type was drawn for, and the floor the camera never goes
+ * under. `ZOOM_DISC_TO_FRAME / DISC_TO_FRAME` is what the old fixed camera
+ * resolved to (2.07) — the zoom is measured now, but this is still the size at
+ * which the tier's font sizes were chosen, so it is what the type is held at.
+ */
+const ZOOM_BASE_SCALE = ZOOM_DISC_TO_FRAME / DISC_TO_FRAME;
+
+/**
+ * Ceiling on the measured zoom. A tall desktop viewport with no dock would
+ * otherwise drive the disc to five or six times the frame, which puts the rim
+ * so far outside the column that the neighbouring panes leave the screen and
+ * the wheel stops reading as a wheel.
+ */
+const ZOOM_MAX_SCALE = 3.4;
+
+/**
+ * Breathing room between the disc's centre and the dock, in px.
+ *
+ * The centre lands just ABOVE the dock rather than exactly on it: the hub is a
+ * disc of its own, and parking its middle on the dock's top edge puts half of
+ * it behind the bar.
+ */
+const ZOOM_CENTRE_INSET = 12;
+
 
 /** Where the pointer sits once the camera has pushed in — top centre. */
 const ZOOM_POINTER_Y = 44;
@@ -206,15 +231,49 @@ export default function SpinWheel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segments.length, isSpinning, frameW]);
 
+  /**
+   * How much vertical room the zoom has: from the pointer's reading line down to
+   * the top of the dock.
+   *
+   * The camera used to scale by a constant, which meant the disc's centre landed
+   * wherever that constant put it — on a 390x844 phone, 126px short of the dock,
+   * with the label bands correspondingly short and long names truncated. The run
+   * is a property of the VIEWPORT, not a number anyone can pick: it depends on
+   * how much chrome sits above the wheel and how tall the dock is, and the dock
+   * itself ends in `env(safe-area-inset-bottom)`.
+   *
+   * The dock's height is read by measuring a throwaway element sized to
+   * `--dock-height` — the token is a `calc()` over `env()`, so `getPropertyValue`
+   * hands back the unresolved expression and only layout can resolve it. Above
+   * md the token is 0 because there is no dock (see index.css).
+   */
+  const [zoomRun, setZoomRun] = useState(0);
+
   useLayoutEffect(() => {
     const el = frameRef.current;
     if (!el) return;
-    const measure = () => setFrameW(el.clientWidth);
+    const measure = () => {
+      setFrameW(el.clientWidth);
+      const probe = document.createElement("div");
+      probe.style.cssText =
+        "position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;width:0;height:var(--dock-height)";
+      document.body.appendChild(probe);
+      const dockPx = probe.offsetHeight;
+      probe.remove();
+      const pointerLine = el.getBoundingClientRect().top + ZOOM_POINTER_Y;
+      setZoomRun(window.innerHeight - dockPx - ZOOM_CENTRE_INSET - pointerLine);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+    // `zoomed` re-measures because the frame's own offset in the page changes
+    // when the CTA column below it fades out.
+  }, [zoomed]);
 
   /**
    * The single write that turns the wheel.
@@ -438,9 +497,38 @@ export default function SpinWheel({
    * Scale is against the FRAME width, not the viewport, so a tablet's wheel
    * column zooms against its own column (item 14) rather than the whole screen.
    */
-  const zoomScale = discPx > 0 ? (frameW * ZOOM_DISC_TO_FRAME) / discPx : 1;
+  /**
+   * Scale so the disc's centre lands just above the dock.
+   *
+   * Clamped at the bottom by the scale the old fixed camera used: on a viewport
+   * too short to fit the centre above the dock, sinking the centre BEHIND it is
+   * the better failure — the label bands stay long and the hub is the only thing
+   * lost — where zooming out would shorten every name to buy back a hub nobody
+   * is reading mid-spin.
+   */
+  const zoomScale =
+    discPx > 0
+      ? Math.min(ZOOM_MAX_SCALE, Math.max(ZOOM_BASE_SCALE, zoomRun / (discPx / 2)))
+      : 1;
   // The pointer contact: top centre of the disc, which is the one point on
   // screen that must not move when the camera pushes in.
+  /**
+   * The type is HELD at the size it renders today, rather than scaling with the
+   * disc.
+   *
+   * This is the whole point of the bigger camera, and it is counter-intuitive:
+   * magnifying the wheel on its own buys no extra characters, because the label
+   * band and the font grow by the same factor and their ratio — which is what
+   * decides how much of a name fits — never moves. Measured at 17 places, 6.7
+   * characters before and 6.7 after. Dividing the type back down by the same
+   * factor the camera multiplies by is what converts the extra radius into
+   * extra name: 6.7 characters becomes 9.2.
+   *
+   * Capped at 1 so a viewport too short to reach the baseline scale cannot
+   * inflate the type past its resting size.
+   */
+  const typeHold = zoomScale > 0 ? Math.min(1, ZOOM_BASE_SCALE / zoomScale) : 1;
+
   const contactX = centerX;
   const contactY = 0;
   const discLeft = centerX - discPx / 2;
@@ -655,6 +743,10 @@ export default function SpinWheel({
                   active && tier.indexOnly
                     ? Math.max(metrics.maxTextWidthPx, (frameW - 32) / zoomScale)
                     : metrics.maxTextWidthPx;
+                // In disc units the zoomed type shrinks, which is what makes the
+                // band hold more of a name; on screen the camera multiplies it
+                // straight back to the size it has always rendered at.
+                const labelScale = metrics.typeScale * (active ? typeHold : 1);
                 /** One label span. Identical geometry for the number and the
                  *  name, so a crossfade between them cannot shift anything. */
                 const labelStyle = (muted: boolean): CSSProperties => ({
@@ -662,13 +754,13 @@ export default function SpinWheel({
                   // wedge clip could ever bisect a glyph. Never rely on the clip
                   // to end a line.
                   [ray.flipped ? "right" : "left"]: metrics.bandStartPx,
-                  top: -tier.bandHeightPx * metrics.typeScale * 0.5,
+                  top: -tier.bandHeightPx * labelScale * 0.5,
                   width: bandWidth,
                   maxWidth: bandWidth,
-                  height: tier.bandHeightPx * metrics.typeScale,
+                  height: tier.bandHeightPx * labelScale,
                   textAlign: tier.indexOnly && !active ? "center" : ray.flipped ? "right" : "left",
-                  fontSize: tier.fontPx * metrics.typeScale,
-                  lineHeight: `${tier.lineHeightPx * metrics.typeScale}px`,
+                  fontSize: tier.fontPx * labelScale,
+                  lineHeight: `${tier.lineHeightPx * labelScale}px`,
                   // 500, not 700. Chinese strokes are dense enough that bold at
                   // 12px closes the counters and the name turns into a blob —
                   // and these labels sit on translucent glass, the hardest
@@ -681,7 +773,12 @@ export default function SpinWheel({
                   color: muted ? "var(--body-warm)" : "var(--ink-warm)",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  transition: "width var(--dur-zoom) var(--ease-zoom), opacity var(--dur-zoom) var(--ease-zoom)",
+                  // Size joins the transition. The type is the same on screen
+                  // at both ends but not in disc units, so without this the
+                  // label would re-lay-out in one frame while everything around
+                  // it interpolated — a cut inside a move.
+                  transition:
+                    "width var(--dur-zoom) var(--ease-zoom), opacity var(--dur-zoom) var(--ease-zoom), font-size var(--dur-zoom) var(--ease-zoom), height var(--dur-zoom) var(--ease-zoom), line-height var(--dur-zoom) var(--ease-zoom)",
                   // Wrap first, truncate last: two lines where the wedge affords
                   // them, one where it does not.
                   //
