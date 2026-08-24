@@ -391,6 +391,28 @@ export default function WheelApp() {
   });
   const firstRun = seeded && !wheelsLoading && isFirstRun(wheels?.length ?? 0);
 
+  /**
+   * True while the app still does not know WHICH wheel to open.
+   *
+   * `wheelsLoading` is not that question. `wheels.list` shares its key with the
+   * bootstrap payload and is seeded from cache, so it reports "loaded" almost
+   * immediately — while `wheels.bootstrap`, which is what actually names the
+   * wheel to open, is still in flight. In that gap the app had a selection of
+   * null, no loading flag, and wheels in the list, so it rendered "No wheel
+   * selected" — an empty state, shown to someone whose wheel was seconds from
+   * arriving, for as long as the round trip took.
+   *
+   * The third clause covers the frame AFTER bootstrap resolves and BEFORE the
+   * auto-open effect runs: bootstrap has named a wheel, so we are about to open
+   * one, and flashing the empty state in between is the same lie one tick later.
+   */
+  const decidingWheel =
+    !selectedWheelId &&
+    !params.wheelId &&
+    (wheelsLoading ||
+      bootstrapQuery.isLoading ||
+      nextWheelToOpen(bootstrapQuery.data?.wheelId, unavailableWheelIds.current) != null);
+
   // On arriving without a wheel in the URL, open the wheel bootstrap already
   // resolved for us (the user's starred default, else their first). The server
   // decided this in the same response that carried the wheel's data, so there's
@@ -966,11 +988,13 @@ export default function WheelApp() {
                 safe area included — see --dock-height in index.css) */}
           <div className="flex-1 overflow-y-auto overflow-x-clip pb-dock">
             {!selectedWheelId ? (
-              wheelsLoading ? (
-                /* Hold a neutral state until we know if this is a first run —
-                   avoids flashing "no wheel selected" at a brand-new user. */
+              decidingWheel ? (
+                /* Held until the app knows which wheel to open — see
+                   `decidingWheel`. Labelled, like the wheel-switch loader: an
+                   unlabelled orb on an otherwise empty screen reads as a page
+                   that failed rather than one that is working. */
                 <div className="flex items-center justify-center h-full p-8">
-                  <BrandLoader label="" size={64} />
+                  <BrandLoader label="Finding your wheel" size={64} />
                 </div>
               ) : firstRun ? (
                 /* First-run — no wheels yet. Nearby search IS the onboarding:
