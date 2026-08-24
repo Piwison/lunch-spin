@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  DECAY_PEAK,
+  decayDurationMs,
   EASE_DECAY,
   EASE_EXIT,
   EASE_SETTLE,
@@ -32,19 +34,90 @@ const POINTER = 270;
 const POINTER_ANGLES = [270, 180, 0, 90, 37.5];
 
 describe("timeline", () => {
-  it("sums to the 3.62s the spec quotes, which only works if recede and unroll overlap", () => {
+  it("sums to the 2.92s total, which only works if recede and unroll overlap", () => {
     const { windupMs, travelMs, settleMs, recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
-    // Phases listed end to end come to 3780ms, not 3620ms. They reconcile when
+    // Phases listed end to end come to 3080ms, not 2920ms. They reconcile when
     // the unroll starts 160ms into the 320ms recede.
-    expect(windupMs + travelMs + settleMs + recedeMs + unrollMs).toBe(3780);
+    expect(windupMs + travelMs + settleMs + recedeMs + unrollMs).toBe(3080);
     expect(windupMs + travelMs + settleMs + unrollDelayMs + unrollMs).toBe(SPIN_TOTAL_MS);
-    expect(SPIN_TOTAL_MS).toBe(3620);
+    expect(SPIN_TOTAL_MS).toBe(2920);
   });
 
   it("finishes the recede before the unroll finishes, so the disc is behind the type", () => {
     const { windupMs, travelMs, settleMs, recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
     const landed = windupMs + travelMs + settleMs;
     expect(landed + recedeMs).toBeLessThanOrEqual(landed + unrollDelayMs + unrollMs);
+  });
+
+  it("decelerates rather than bursting: the decay opens near the free-spin speed", () => {
+    // Speed at the start of the decay, as a multiple of the decay's average.
+    // The old curve opened at 10.25x — the wheel visibly ACCELERATED the moment
+    // the server answered, then crawled for the rest of the phase. Anything
+    // near 1 hands the free spin over without a step.
+    const opening = (EASE_DECAY(0.005) - EASE_DECAY(0)) / 0.005;
+    expect(opening).toBeGreaterThan(0.8);
+    expect(opening).toBeLessThan(2.2);
+  });
+
+  it("is still visibly turning late in the decay", () => {
+    // The old curve had 95.8% of the rotation done by halfway and 99.9% by 90%,
+    // so the whole back half read as a stopped wheel. The tail is the part that
+    // is supposed to look like slowing down.
+    expect(EASE_DECAY(0.5)).toBeLessThan(0.85);
+    const lateSpeed = (EASE_DECAY(0.805) - EASE_DECAY(0.795)) / 0.01;
+    expect(lateSpeed).toBeGreaterThan(0.2);
+  });
+
+  it("never runs backwards or overshoots on the way down", () => {
+    let prev = 0;
+    for (let p = 0; p <= 1.0001; p += 0.01) {
+      const v = EASE_DECAY(Math.min(p, 1));
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(v).toBeLessThanOrEqual(1 + 1e-9);
+      prev = v;
+    }
+  });
+
+  it("DECAY_PEAK is the curve's real maximum, not its opening", () => {
+    // decayDurationMs is only correct while this constant tracks EASE_DECAY.
+    // Bounding the OPENING (1.50) is not enough: the curve is still gaining
+    // speed after it starts, and the leftover step was visible on the disc.
+    let peak = 0;
+    for (let p = 0; p <= 1; p += 0.001) {
+      const v = (EASE_DECAY(Math.min(p + 0.0005, 1)) - EASE_DECAY(Math.max(p - 0.0005, 0))) / 0.001;
+      if (v > peak) peak = v;
+    }
+    expect(peak).toBeGreaterThan((EASE_DECAY(0.005) - EASE_DECAY(0)) / 0.005);
+    expect(DECAY_PEAK).toBeGreaterThanOrEqual(peak - 0.005);
+    expect(DECAY_PEAK).toBeCloseTo(peak, 2);
+  });
+
+  it("gives the decay enough time that it never turns faster than the free spin", () => {
+    const freeSpin = 1.49; // deg/ms, SpinWheel's FREE_SPIN_SPEED
+    // Four turns plus anything up to a full turn of residual arc: the range the
+    // landing actually produces.
+    for (const arc of [1440, 1600, 1800, 2160, 2520]) {
+      const ms = decayDurationMs(arc, freeSpin);
+      // Sample the real curve rather than trusting the constant.
+      let fastest = 0;
+      for (let p = 0; p <= 1; p += 0.005) {
+        const v = ((EASE_DECAY(Math.min(p + 0.0025, 1)) - EASE_DECAY(Math.max(p - 0.0025, 0))) / 0.005) * (arc / ms);
+        if (v > fastest) fastest = v;
+      }
+      expect(fastest).toBeLessThanOrEqual(freeSpin + 1e-6);
+    }
+  });
+
+  it("scales the decay with the distance, not the other way round", () => {
+    const a = decayDurationMs(1440, 1.49);
+    const b = decayDurationMs(2880, 1.49);
+    expect(b).toBeCloseTo(a * 2, 5);
+  });
+
+  it("is safe on the degenerate inputs", () => {
+    expect(decayDurationMs(0, 1.49)).toBe(0);
+    expect(decayDurationMs(1440, 0)).toBe(0);
+    expect(decayDurationMs(-1440, 1.49)).toBe(decayDurationMs(1440, 1.49));
   });
 
   it("resolves in 400ms under reduced motion", () => {
@@ -475,9 +548,16 @@ describe("cubicBezier", () => {
     }
   });
 
-  it("decays: most of the distance is covered early, then a long tail", () => {
-    expect(EASE_DECAY(0.5)).toBeGreaterThan(0.85);
-    expect(EASE_DECAY(0.25)).toBeGreaterThan(0.55);
+  it("decays: front-loaded, but still moving at the end", () => {
+    // This used to assert the opposite bound — >0.85 at halfway and >0.55 at a
+    // quarter — which pinned a curve that had 96% of the rotation done by the
+    // midpoint and left the whole back half looking stopped. Front-loaded is
+    // right for a deceleration; THAT front-loaded was a burst followed by a
+    // crawl. The bounds now say "past halfway by the midpoint, and not yet
+    // finished at three quarters".
+    expect(EASE_DECAY(0.5)).toBeGreaterThan(0.6);
+    expect(EASE_DECAY(0.5)).toBeLessThan(0.85);
+    expect(EASE_DECAY(0.75)).toBeLessThan(0.98);
   });
 
   it("exits: slow to start, so the wind-up reads as loading up", () => {

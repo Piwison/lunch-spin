@@ -497,7 +497,7 @@
      sequence and the rAF-driven half read the same numbers — SPIN_TIMELINE in
      shared/wheelGeometry.ts mirrors these and its test asserts the total. */
   --dur-windup: 180ms;
-  --dur-travel: 2600ms;
+  --dur-travel: 1900ms;   /* mirrors SPIN_TIMELINE.travelMs — keep in step */
   --dur-settle: 220ms;
   --dur-recede: 320ms;
   --dur-unroll: 460ms;
