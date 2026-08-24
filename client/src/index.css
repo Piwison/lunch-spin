@@ -183,7 +183,7 @@
      actually blurred. Radius and saturation are separate tokens now and the
      classes compose them, so the minifier only ever sees a valid declaration.
      See AGENTS.md failure mode 21. */
-  --glass-bar-bg: rgb(255 255 255 / 0.36);
+  --glass-bar-bg: rgb(255 255 255 / 0.5);
   --glass-bar-blur: 16px;
   --glass-bar-border: rgb(255 255 255 / 0.9);
 
@@ -203,6 +203,33 @@
   /* Saturation is one value for the whole material. Light glass over warm paper
      can push hard; charcoal has less colour behind it to pull through. */
   --glass-sat: 1.9;
+  /* Bars run calmer than sheets. A sheet sits over a wheel and a list, which
+     are low-chroma; the DOCK floats over whatever the page puts behind it, and
+     on the wheel tab that is a full-width persimmon gradient. At the sheet's
+     0.36 fill and 1.9 saturation the button's colour was blurred and boosted
+     into a wash across the whole bar, which swallowed the active pill — the
+     material was faithfully reporting a backdrop nobody wanted reported. */
+  --glass-bar-sat: 1.2;
+
+  /* ─── The dock's geometry, in one place ───────────────────────────────────
+     The bottom nav's height is not a number anyone can hardcode: it ends in
+     `env(safe-area-inset-bottom)`, which is 0 on a phone with a bezel and ~34px
+     on one with a home indicator. The tab content used to reserve a flat
+     `pb-28` (112px) for it, which is exactly right at 104px and 18px SHORT at
+     130px — so on every home-indicator phone the last 18px of the page, which
+     on the wheel tab is the bottom of the Spin button, sat underneath the dock.
+
+     So the parts are tokens and everything derives from them: TabRail sizes its
+     pills and gutter from these, the nav pads itself with these, the scroller
+     reserves `--dock-height`, and the bar's refracting band is the same gutter
+     it has to fit inside (see the lens ring — a band wider than the padding
+     paints over the pills). Change a number here and all four follow. */
+  --dock-pill-height: 56px;
+  --dock-gutter: 8px;
+  --dock-bar-height: calc(var(--dock-pill-height) + var(--dock-gutter) * 2);
+  --dock-lift: 0.75rem;
+  --dock-floor: max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+  --dock-height: calc(var(--dock-lift) + var(--dock-bar-height) + var(--dock-floor));
 
   /* The scrim behind every modal surface — dialogs, alert dialogs, drawers and
      sheets. It was `bg-black/50` hardcoded in four separate primitives, which is
@@ -320,7 +347,7 @@
   --ok: #6fbf95;
   --info: #c9a97a;
 
-  --glass-bar-bg: rgb(255 255 255 / 0.08);
+  --glass-bar-bg: rgb(255 255 255 / 0.13);
   --glass-bar-blur: 16px;
   --glass-bar-border: rgb(255 255 255 / 0.12);
 
@@ -342,6 +369,7 @@
   --glass-chip-border: rgb(255 255 255 / 0.12);
 
   --glass-sat: 1.5;
+  --glass-bar-sat: 1.15;
 
   --scrim: rgb(0 0 0 / 0.58);
   --glass-highlight: rgb(255 255 255 / 0.08);
@@ -608,7 +636,7 @@
      touched. New work should use the components in components/ui/glass.tsx. */
   .glass-bar {
     background: var(--glass-bar-bg);
-    backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-bar-sat));
     box-shadow:
       inset 0 1px 0 var(--glass-inner-top),
       inset 0 -1px 0 var(--glass-inner-bottom),
@@ -657,7 +685,7 @@
 
   .glass-nav {
     background: var(--glass-bar-bg);
-    backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-bar-sat));
     box-shadow:
       inset 0 1px 0 var(--glass-inner-top),
       inset 0 -1px 0 var(--glass-inner-bottom),
@@ -738,7 +766,22 @@
      them. Thinner glass than a sheet, so a shorter pull; the module reads this
      token and matches the two. */
   :is(.glass-bar, .glass-nav) {
-    --glass-lens-band: 8px;
+    --glass-lens-band: var(--dock-gutter);
+  }
+
+  /* The tab content's clearance for the fixed dock. A class rather than a
+     `pb-*` utility because the number is `--dock-height`, which ends in
+     `env(safe-area-inset-bottom)` and is therefore different on every phone —
+     the flat 112px this replaces was 18px short on anything with a home
+     indicator, which is what put the bottom of the Spin button underneath the
+     dock. The extra gutter is breathing room, not clearance. */
+  .pb-dock {
+    padding-bottom: calc(var(--dock-height) + 0.5rem);
+  }
+  @media (min-width: 768px) {
+    .pb-dock {
+      padding-bottom: 0;
+    }
   }
 
   /* A bar that meets content on one edge only — the sticky app header. It has no

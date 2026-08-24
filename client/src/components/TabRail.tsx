@@ -71,7 +71,7 @@ export function TabRail<Id extends string>({
      padding paints over the pills. At the old 6px the bend was there and
      measurable and you could not see it; 8px is the point where the dock's rim
      reads as glass rather than as a hairline. */
-  const PAD = 8;
+  const PAD = "var(--dock-gutter)";
   const radius = dock ? "calc(var(--radius-sheet) - 8px)" : "calc(var(--radius-control) - 6px)";
 
   return (
@@ -111,7 +111,7 @@ export function TabRail<Id extends string>({
               dock ? "flex-1 flex-col gap-1" : "gap-2 px-5"
             }`}
             style={{
-              minHeight: 56,
+              minHeight: "var(--dock-pill-height)",
               borderRadius: radius,
               fontSize: dock ? 11 : 15,
               fontWeight: 500,

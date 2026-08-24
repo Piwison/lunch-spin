@@ -962,8 +962,9 @@ export default function WheelApp() {
             </div>
           )}
 
-          {/* ── TAB CONTENT ── (pb clears the fixed mobile nav) */}
-          <div className="flex-1 overflow-y-auto overflow-x-clip pb-28 md:pb-0">
+          {/* ── TAB CONTENT ── (`pb-dock` reserves the fixed nav's REAL height,
+                safe area included — see --dock-height in index.css) */}
+          <div className="flex-1 overflow-y-auto overflow-x-clip pb-dock">
             {!selectedWheelId ? (
               wheelsLoading ? (
                 /* Hold a neutral state until we know if this is a first run —
@@ -1317,9 +1318,12 @@ export default function WheelApp() {
           {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule, fixed to the
                 viewport so it's reachable at any scroll position ── */}
           <nav
-            className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pt-3"
+            className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3"
             style={{
-              paddingBottom: "max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem))",
+              // Both gutters come from the same tokens the content reserves, so
+              // the dock's height and the space kept clear for it are one fact.
+              paddingTop: "var(--dock-lift)",
+              paddingBottom: "var(--dock-floor)",
             }}
             aria-label="Views"
           >
