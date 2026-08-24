@@ -5,6 +5,7 @@ import {
   EASE_SETTLE,
   EASE_STANDARD,
   SPIN_TIMELINE,
+  decayDurationMs,
   landingRotationDeg,
   normalizeDeg,
   paneCenterDeg,
@@ -93,8 +94,15 @@ const WINDUP_DEG = 14;
 /** Constant free-spin speed, deg/ms (~4 turns/s). */
 const FREE_SPIN_SPEED = 1.49;
 
-/** Whole turns the landing must cover, so the stop reads as a decision. */
-const MIN_LAND_TURNS = 5;
+/**
+ * Whole turns the landing must cover, so the stop reads as a decision.
+ *
+ * Four rather than five over the shortened travel: the spin is shorter because
+ * it turns less, not because it hurries. The handover speed is `decayMs`'s job,
+ * not this constant's — see `decayDurationMs`, which sizes the deceleration to
+ * whatever arc the landing picks.
+ */
+const MIN_LAND_TURNS = 4;
 
 /**
  * The final arc handed to the settle, where the overshoot lives.
@@ -105,10 +113,6 @@ const MIN_LAND_TURNS = 5;
  * landed.
  */
 const SETTLE_DEG = 12;
-
-/** Floor on the deceleration when the server answers late. Without it a slow
- *  spins.create would leave no room to slow down and the wheel would stop dead. */
-const MIN_DECAY_MS = 1200;
 
 /** Zoomed disc diameter, as a multiple of the frame width (spec §4). */
 const ZOOM_DISC_TO_FRAME = 1.9;
@@ -380,12 +384,21 @@ export default function SpinWheel({
       });
       settleFromAngle = targetAngle - SETTLE_DEG;
 
-      // Travel is 2600ms of wall clock, not 2600ms of animation queued behind a
-      // network call: whatever the server has already spent free-spinning counts
-      // against it. A fast reply gets the spec timeline exactly; a cold start
-      // keeps turning and still gets a real deceleration.
+      // Travel is wall clock, not animation queued behind a network call:
+      // whatever the server has already spent free-spinning counts against it.
+      // A fast reply gets the spec timeline exactly; a cold start keeps turning
+      // and still gets a real deceleration.
       const travelEndsAt = startedAt + SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs;
-      decayMs = Math.max(MIN_DECAY_MS, travelEndsAt - now);
+      // ...and never less than the arc needs. A decay squeezed into the time a
+      // late reply left over opens FASTER than the free spin it takes over from,
+      // so the wheel speeds up at the one moment nothing is pushing it —
+      // measured at 1.46 -> 1.79 deg/ms before this floor existed.
+      // This is also the floor when the server answers late: the shortest arc the
+      // landing can produce (4 turns less the settle) needs 1614ms, so there is
+      // no separate MIN_DECAY_MS — a constant that can never win an argument is
+      // not a guard.
+      const continuousMs = decayDurationMs(settleFromAngle - decayFromAngle, FREE_SPIN_SPEED);
+      decayMs = Math.max(travelEndsAt - now, continuousMs);
       decayFrom = now;
       phase = "decay";
     };
@@ -397,7 +410,14 @@ export default function SpinWheel({
         // The disc loads up backwards before it releases.
         const p = Math.min(elapsed / SPIN_TIMELINE.windupMs, 1);
         applyRotation(startAngle - WINDUP_DEG * EASE_EXIT(p));
-        if (p >= 1) phase = "free";
+        if (p >= 1) {
+          phase = "free";
+          // The free phase integrates FREE_SPIN_SPEED over `now - lastRef`, so
+          // it has to start its clock HERE. Left at `startedAt` it charged the
+          // whole wind-up to the first free frame and the disc jumped ~285
+          // degrees in one frame, at the exact moment of the release.
+          lastRef.current = now;
+        }
         rafRef.current = requestAnimationFrame(frame);
         return;
       }

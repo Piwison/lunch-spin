@@ -21,8 +21,14 @@ export const SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
   windupMs: 180,
   /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
-   *  server is still choosing — this is the floor, not the ceiling. */
-  travelMs: 2600,
+   *  server is still choosing — this is the floor, not the ceiling.
+   *
+   *  2600 -> 1900. The old spin read as long, and the reason was not only its
+   *  length: with the old decay curve the wheel finished 96% of its rotation in
+   *  the first half of the decay, so most of what you sat through was a disc
+   *  that had already stopped moving. Shortening the phase and spreading the
+   *  deceleration across it are the same fix. */
+  travelMs: 1900,
   /** Lands the winning pane on the pointer. `--ease-settle`. */
   settleMs: 220,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
@@ -40,7 +46,7 @@ export const SPIN_TIMELINE = {
 /**
  * 3.62s, as the spec quotes.
  *
- * Laid end to end the five phases come to 3780ms, so they only reconcile with
+ * Laid end to end the five phases come to 3080ms, so they only reconcile with
  * the stated total if the unroll begins 160ms into the 320ms recede — which is
  * also what it should look like, the type resolving while the disc is still on
  * its way back. The overlap is the reason this constant is not a sum.
@@ -434,4 +440,51 @@ export const EASE_STANDARD = cubicBezier(0.2, 0.9, 0.1, 1);
 export const EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
 /** Overshoots past 1 before settling — the only curve allowed to bounce. */
 export const EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
-export const EASE_DECAY = cubicBezier(0.08, 0.82, 0.17, 1);
+/**
+ * The deceleration, and the one curve here that was doing the opposite of its
+ * name.
+ *
+ * (0.08, 0.82, 0.17, 1) opens at y1/x1 = 10.25x its own average speed, so the
+ * moment the server answered, the wheel ACCELERATED to roughly five times the
+ * free-spin rate — then spent the rest of the phase crawling: 59% of the
+ * rotation gone in the first tenth of the decay, 96% by halfway, 99.9% by 90%.
+ * The back half of every spin was a disc that had visibly stopped, which is
+ * both why the spin felt long and why the slowdown had no motion in it.
+ *
+ * (0.3, 0.45, 0.5, 1) opens at 1.5x average, which against the shortened travel
+ * hands over from the free spin at very nearly the same speed — no step — and
+ * still carries 1.09x at the halfway mark and 0.35x at 80%, so the tail is a
+ * wheel slowing down rather than a wheel already stopped.
+ */
+export const EASE_DECAY = cubicBezier(0.3, 0.45, 0.5, 1);
+
+/**
+ * EASE_DECAY's FASTEST moment, as a multiple of its own average speed.
+ *
+ * This is the number that decides whether the deceleration is continuous with
+ * the free spin before it. The decay covers `arc` degrees in `decayMs`, so its
+ * peak rate is `DECAY_PEAK * arc / decayMs` — give it too little time for the
+ * distance and the wheel speeds up at the one moment nothing is pushing it.
+ *
+ * The peak, not the opening (y1/x1 = 1.50). Bounding the opening alone left a
+ * measurable step, because this curve is still gaining speed after it starts:
+ * it peaks at 1.68x average at p = 0.174, and a browser reading the disc's own
+ * rotation saw exactly that — 1.49 deg/ms of free spin handing over to 1.66.
+ * Sampled numerically off the curve, and pinned by a test, because retuning
+ * EASE_DECAY moves it.
+ */
+export const DECAY_PEAK = 1.684;
+
+/**
+ * How long the deceleration must run to cover `arcDeg` without ever turning
+ * faster than the free spin it takes over from.
+ *
+ * A floor, not a schedule. A fast reply leaves plenty of travel budget and the
+ * decay simply runs longer than this, peaking BELOW the free spin, which is
+ * what a wheel slowing down looks like. A cold start leaves none, and this is
+ * what stops the deceleration being compressed into a kick.
+ */
+export function decayDurationMs(arcDeg: number, freeSpinSpeed: number): number {
+  if (freeSpinSpeed <= 0) return 0;
+  return (Math.abs(arcDeg) * DECAY_PEAK) / freeSpinSpeed;
+}
