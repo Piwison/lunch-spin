@@ -633,7 +633,8 @@
      `.glass` and `.glass-nav` are the names the app already uses across the
      header, dropdowns, tab bar and picker pills; they stay as thin aliases of the
      card and bar recipes so every existing call site re-skins without being
-     touched. New work should use the components in components/ui/glass.tsx. */
+     touched. These classes ARE the API — the typed wrappers that used to sit in
+     components/ui/glass.tsx were never imported by anything and are gone. */
   .glass-bar {
     background: var(--glass-bar-bg);
     backdrop-filter: blur(var(--glass-bar-blur)) saturate(var(--glass-bar-sat));
