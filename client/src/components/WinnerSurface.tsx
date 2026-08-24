@@ -1,5 +1,6 @@
 import { Check, Clock3, MapPin, RotateCw } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { DISPLAY_MAX_LINES, fitDisplayName } from "@shared/displayFit";
 
 interface WinnerSurfaceProps {
   /** The winning restaurant's name. Set full bleed, with no card around it. */
@@ -96,6 +97,23 @@ export default function WinnerSurface({
   const [dragY, setDragY] = useState(0);
   const dragFrom = useRef<number | null>(null);
 
+  /* The name's own box decides how much room it has — not the viewport, because
+     the sheet is `max-w-lg` and centred, so on a tablet the container stops
+     growing long before the screen does. Measured, so a rotation or a split
+     view re-fits rather than keeping a size chosen for the old width. */
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  const [nameWidth, setNameWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = nameRef.current;
+    if (!el) return;
+    const measure = () => setNameWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fit = fitDisplayName(name, nameWidth);
+
   const onPointerDown = (e: ReactPointerEvent) => {
     // Let the actions handle their own taps; a drag starts on the panel itself.
     if ((e.target as HTMLElement).closest("button, a")) return;
@@ -186,8 +204,38 @@ export default function WinnerSurface({
             Today&apos;s lunch
           </p>
           {/* Full bleed, no frame. --accent-ink is the accent tuned for text on
-              light glass; in dark it resolves to the accent itself. */}
-          <h2 className="type-display" style={{ color: "var(--accent-ink)" }}>
+              light glass; in dark it resolves to the accent itself.
+
+              The size is FITTED rather than fixed. `.type-display` is a flat
+              68px with `word-break: keep-all`, which is right for "Sushi Spot"
+              and wrong for "千壽司旗艦店": six full-width characters is 408px
+              against a 342px phone, and keep-all leaves nowhere to break, so
+              the name ran off the side of the screen. `fitDisplayName` wraps to
+              a second line first and only shrinks when two lines at full size
+              still will not fit — shrinking first would make short names small
+              for no reason, and the display size is most of what makes the
+              result read as an announcement. */}
+          <h2
+            ref={nameRef}
+            className="type-display"
+            style={{
+              color: "var(--accent-ink)",
+              fontSize: fit.fontPx,
+              // keep-all is what stopped a CJK name wrapping at all; `strict`
+              // keeps the break off closing punctuation, which is the reason
+              // keep-all was there.
+              wordBreak: "normal",
+              lineBreak: "strict",
+              // Balanced, so a six-character name breaks 3+3 rather than 5+1.
+              // The honest wrap leaves a one-glyph widow on the second line,
+              // which at 68px is the most conspicuous thing on the sheet.
+              textWrap: "balance",
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: DISPLAY_MAX_LINES,
+              overflow: "hidden",
+            }}
+          >
             {name}
           </h2>
           {meta && (
