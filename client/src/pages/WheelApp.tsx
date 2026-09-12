@@ -196,6 +196,24 @@ export default function WheelApp() {
     const payload = fresh?.user ? fresh : readBootCache<BootstrapPayload>();
     if (!payload?.user) return false;
     seedFromBootstrap(utils, payload);
+    // Seed the bootstrap query ITSELF, not just the queries it fans out into.
+    // `decidingWheel` gates the "Finding your wheel" screen on
+    // bootstrapQuery.isLoading, so warming auth.me and every data query while
+    // leaving this one pending meant a returning user still watched the spinner
+    // for the whole cold round trip — the cache bought the header and nothing
+    // else. Same shape as the auth.me miss recorded in seedFromBootstrap, one
+    // level up.
+    //
+    // Only on the persisted path: on the fresh path this query IS the data, and
+    // seedFromBootstrap also runs from an effect keyed on bootstrapQuery.data,
+    // where writing to it would be a loop waiting to happen.
+    //
+    // updatedAt: 0 marks it stale on arrival. Without it setData stamps the
+    // payload as fetched NOW, the 30s staleTime suppresses the refetch, and the
+    // entry goes from too slow to silently showing last session's wheel.
+    if (!fresh?.user) {
+      utils.wheels.bootstrap.setData({ wheelId: initialWheelId }, payload, { updatedAt: 0 });
+    }
     return true;
   });
 
