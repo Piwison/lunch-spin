@@ -986,14 +986,28 @@ export default function WheelApp() {
 
           {/* ── TAB CONTENT ── (`pb-dock` reserves the fixed nav's REAL height,
                 safe area included — see --dock-height in index.css) */}
-          <div className="flex-1 overflow-y-auto overflow-x-clip pb-dock">
+          {/* `flex flex-col` only while no wheel is open, where this scroller has
+              exactly one child that is supposed to fill it. Those children used
+              `h-full`, i.e. a PERCENTAGE height, which needs a containing block
+              with a definite height — and this scroller has none: its 580px is a
+              used value produced by `flex-1`, not a specified one. So `h-full`
+              silently resolved to auto and the loader sat under the wheel picker
+              instead of centring. It only ever worked at xl, where the parent
+              switches to `flex-row` and stretch gives the scroller a real
+              height. Growing the child instead of measuring the parent works in
+              both directions. */}
+          <div
+            className={`flex-1 overflow-y-auto overflow-x-clip pb-dock${
+              !selectedWheelId ? " flex flex-col" : ""
+            }`}
+          >
             {!selectedWheelId ? (
               decidingWheel ? (
                 /* Held until the app knows which wheel to open — see
                    `decidingWheel`. Labelled, like the wheel-switch loader: an
                    unlabelled orb on an otherwise empty screen reads as a page
                    that failed rather than one that is working. */
-                <div className="flex items-center justify-center h-full p-8">
+                <div className="flex grow items-center justify-center p-8">
                   <BrandLoader label="Finding your wheel" size={64} />
                 </div>
               ) : firstRun ? (
@@ -1014,7 +1028,7 @@ export default function WheelApp() {
                 />
               ) : (
                 /* Empty state — has wheels, none selected */
-                <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
+                <div className="flex grow flex-col items-center justify-center gap-6 p-8 text-center">
                   <div className="w-20 h-20 orb-wheel opacity-20" />
                   <div>
                     <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
