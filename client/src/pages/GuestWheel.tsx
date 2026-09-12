@@ -1,3 +1,4 @@
+import BrandLoader from "@/components/BrandLoader";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
 import { getLoginUrl } from "@/const";
@@ -25,13 +26,13 @@ export default function GuestWheel() {
   const wheelId = params.wheelId ? parseInt(params.wheelId) : NaN;
   const validId = Number.isFinite(wheelId);
 
-  const wheelQuery = trpc.wheels.getPublic.useQuery(
+  // One request for the whole page (server: wheels.publicBootstrap). This was
+  // getPublic followed by listPublic, the second gated on the first having
+  // succeeded — two SERIAL cold round trips on the one page whose entire job is
+  // to make a good first impression on someone who has never signed in.
+  const entryQuery = trpc.wheels.publicBootstrap.useQuery(
     { id: wheelId },
     { enabled: validId, retry: false },
-  );
-  const restaurantsQuery = trpc.restaurants.listPublic.useQuery(
-    { wheelId },
-    { enabled: validId && wheelQuery.isSuccess, retry: false },
   );
 
   const [isSpinning, setIsSpinning] = useState(false);
@@ -41,7 +42,7 @@ export default function GuestWheel() {
   // Client-only counter — gates the post-spin conversion CTA (decision 1b).
   const [spinCount, setSpinCount] = useState(0);
 
-  const restaurants = restaurantsQuery.data;
+  const restaurants = entryQuery.data?.restaurants;
 
   const segments: WheelSegment[] = useMemo(
     () =>
@@ -91,19 +92,16 @@ export default function GuestWheel() {
   };
 
   // ── Loading ────────────────────────────────────────────────────────────────
-  if (validId && (wheelQuery.isLoading || (wheelQuery.isSuccess && restaurantsQuery.isLoading))) {
-    return (
-      <Shell>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 orb-wheel animate-orb-spin" />
-          <p className="text-sm text-muted-foreground">Loading wheel…</p>
-        </div>
-      </Shell>
-    );
+  // The same loader the route chunk shows (App.tsx's RouteFallback), so the
+  // chunk phase and the data phase are one continuous spinner. They used to be
+  // two different things in two different layouts — a centred fixed overlay
+  // swapping for an in-flow block — so the orb visibly jumped at the handover.
+  if (validId && entryQuery.isLoading) {
+    return <BrandLoader fullscreen label="Loading wheel…" />;
   }
 
   // ── Not available (bad id, private, or removed) ──────────────────────────────
-  if (!validId || wheelQuery.isError) {
+  if (!validId || entryQuery.isError) {
     return (
       <Shell>
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
@@ -120,7 +118,7 @@ export default function GuestWheel() {
     );
   }
 
-  const wheel = wheelQuery.data!;
+  const wheel = entryQuery.data!.wheel;
 
   return (
     <Shell>
