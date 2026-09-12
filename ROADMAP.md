@@ -26,9 +26,14 @@ each migration to the **staging** DB first (its own cluster), then to prod.
 > DATABASE_URL='<staging>' pnpm exec drizzle-kit migrate   # verify on staging, then:
 > DATABASE_URL='<prod>'    pnpm exec drizzle-kit migrate
 > ```
-> Both are non-destructive (add indexes / new table + INSERT; never touch existing
-> columns). To see what prod has already: `SELECT tag FROM __drizzle_migrations`
-> (or just run migrate — it only applies what's missing).
+> All are non-destructive (add indexes / new table + INSERT; never touch existing
+> columns). To see what an environment has already, check for the COLUMNS, not the
+> bookkeeping table — `SHOW COLUMNS FROM wheels LIKE 'sourceWheelId'`,
+> `SHOW TABLES LIKE 'restaurant_ratings'`. The mysql migrator's
+> `__drizzle_migrations` has only `id, hash, created_at` (no `tag`, as this file
+> used to claim), and it decides what is pending by comparing the newest
+> `created_at` against `_journal.json`, so it tells you a timestamp rather than a
+> name. Or just run migrate — it only applies what's missing.
 
 Every `server/`- or `shared/`-touching commit rebuilds & commits `api/index.js` in the
 same commit. New logic lands in `shared/*.ts` with the test written first. Schema
