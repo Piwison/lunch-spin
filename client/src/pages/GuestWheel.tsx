@@ -7,7 +7,8 @@ import { primaryTag } from "@shared/primaryTag";
 import { trpc } from "@/lib/trpc";
 import { pickWinner } from "@shared/pick";
 import { shouldPromptSignup } from "@shared/onboarding";
-import { ArrowRight, Sparkles, Utensils } from "lucide-react";
+import { copyIntentUrl } from "@shared/copyIntent";
+import { ArrowRight, CopyPlus, Sparkles, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
 
@@ -187,9 +188,19 @@ export default function GuestWheel() {
           </>
         )}
 
-        {/* Persistent conversion CTA */}
-        <div className="mt-4 w-full">
-          <SignInCta subtle />
+        {/* Persistent conversion CTA. "Copy this wheel" leads, because for the
+            person reading a shared link it is strictly the better version of
+            "make your own": same destination, already filled in with places a
+            real team eats at. Starting from an empty wheel stays available
+            underneath for anyone who wants it. */}
+        <div className="mt-4 w-full flex flex-col items-center gap-3">
+          <CopyWheelCta wheelId={wheelId} />
+          <a
+            href={getLoginUrl()}
+            className="type-meta text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+          >
+            or start an empty wheel
+          </a>
         </div>
       </div>
 
@@ -227,6 +238,39 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh flex items-center justify-center overflow-x-clip text-foreground" style={{ background: "var(--ground)" }}>
       {children}
     </div>
+  );
+}
+
+/**
+ * Take this wheel as the starting point for your own.
+ *
+ * A plain link, not a mutation: a guest has no session to copy WITH, so the
+ * intent travels in the URL and WheelApp performs the copy once the person is
+ * signed in — including sending them through sign-in first and back here after
+ * (see the copyFrom handling there). That keeps this page at the one request it
+ * now costs, with no auth query of its own just to decide a button's label.
+ *
+ * Paper, not persimmon: Spin is why anyone opened the link, and two gradient
+ * buttons on one short page argue with each other. This takes the weight the
+ * old "Make your own wheel" button had, which is the thing it replaces.
+ */
+function CopyWheelCta({ wheelId }: { wheelId: number }) {
+  return (
+    <a
+      href={copyIntentUrl(wheelId)}
+      className="flex items-center justify-center gap-2 w-full px-5 transition-colors active:scale-[var(--press-scale)]"
+      style={{
+        minHeight: 56,
+        borderRadius: "var(--radius-control)",
+        background: "var(--paper)",
+        border: "1px solid var(--border)",
+        color: "var(--ink-warm)",
+        fontSize: 15,
+        fontWeight: 500,
+      }}
+    >
+      <CopyPlus size={15} style={{ color: "var(--brand-text)" }} /> Copy this wheel
+    </a>
   );
 }
 

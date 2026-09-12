@@ -55,6 +55,7 @@ import {
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
+  getWheelCopyCount,
   getRestaurantStats,
   getSpinHistory,
   markNotificationsRead,
@@ -497,8 +498,28 @@ export const appRouter = router({
             originLabel: source.originLabel ?? "Office",
           });
         }
+        // Provenance, written after the insert rather than as a ninth positional
+        // argument to createWheel. It is what lets the source's owner see that
+        // their wheel was worth copying, and it is deliberately NOT a foreign
+        // key — nothing in this schema is — so deleting either wheel leaves the
+        // other intact and the count simply stops finding it.
+        await updateWheel(newId, { sourceWheelId: input.id });
         const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
         return { id: newId, name, restaurants: copied };
+      }),
+
+    // "12 teams started from this wheel" — social proof for the owner, and the
+    // cheapest possible answer to it: one indexed COUNT, on its own query so the
+    // wheel's hot reads never pay for it. Same visibility rule as wheels.get, so
+    // the share panel can show it without a surprise FORBIDDEN.
+    copyCount: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.id, ctx.user.id);
+        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
+        return { count: await getWheelCopyCount(input.id) };
       }),
 
     update: protectedProcedure
