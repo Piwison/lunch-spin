@@ -55,6 +55,7 @@ import {
   getPopularPublicWheels,
   getRestaurantById,
   getRestaurantsByWheel,
+  getWheelCopyCount,
   getRestaurantStats,
   getSpinHistory,
   markNotificationsRead,
@@ -308,12 +309,39 @@ export const appRouter = router({
     // anything else is NOT_FOUND (a once-public wheel that went private reads the
     // same — the client shows a graceful "not available" state). Output is shaped
     // through `toPublicWheel` so no owner/member PII can leak.
+    // Superseded by publicBootstrap below for the /w/:id page itself; kept as the
+    // single-wheel read for callers that already have the restaurants.
     getPublic: publicProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         const wheel = await getWheelById(input.id);
         if (!wheel || !wheel.isPublic) throw new TRPCError({ code: "NOT_FOUND" });
         return toPublicWheel(wheel);
+      }),
+
+    // One-hop guest entry for /w/:id, and what that page now uses. It used to
+    // issue getPublic and then, only once that resolved, restaurants.listPublic
+    // — two SERIAL round trips across a cold serverless function, for a visitor
+    // with no cookie, no warm lambda and nothing cached. A shared link is the
+    // front door for everyone who has not signed up yet, so it gets the same
+    // treatment the signed-in entry gets from `bootstrap`: one request, both
+    // reads issued together.
+    //
+    // The restaurant read is speculative — it runs before we know the wheel is
+    // public, and is thrown away if it isn't. Same trade as `speculativeWheelId`
+    // above: a cheap read we may discard, to avoid a serial hop. Authorization
+    // is unchanged, because nothing is returned unless `isPublic` holds, and
+    // both payloads still go through the toPublic* shapers that keep owner and
+    // member PII out of a guest response.
+    publicBootstrap: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const [wheel, rests] = await Promise.all([
+          getWheelById(input.id),
+          getRestaurantsByWheel(input.id),
+        ]);
+        if (!wheel || !wheel.isPublic) throw new TRPCError({ code: "NOT_FOUND" });
+        return { wheel: toPublicWheel(wheel), restaurants: rests.map(toPublicRestaurant) };
       }),
 
     // Popular public wheels for the landing "try without signing in" section,
@@ -470,8 +498,28 @@ export const appRouter = router({
             originLabel: source.originLabel ?? "Office",
           });
         }
+        // Provenance, written after the insert rather than as a ninth positional
+        // argument to createWheel. It is what lets the source's owner see that
+        // their wheel was worth copying, and it is deliberately NOT a foreign
+        // key — nothing in this schema is — so deleting either wheel leaves the
+        // other intact and the count simply stops finding it.
+        await updateWheel(newId, { sourceWheelId: input.id });
         const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
         return { id: newId, name, restaurants: copied };
+      }),
+
+    // "12 teams started from this wheel" — social proof for the owner, and the
+    // cheapest possible answer to it: one indexed COUNT, on its own query so the
+    // wheel's hot reads never pay for it. Same visibility rule as wheels.get, so
+    // the share panel can show it without a surprise FORBIDDEN.
+    copyCount: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.id);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        const isMember = await isWheelMember(input.id, ctx.user.id);
+        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
+        return { count: await getWheelCopyCount(input.id) };
       }),
 
     update: protectedProcedure
@@ -712,8 +760,10 @@ export const appRouter = router({
         });
       }),
 
-    // Guest read for the /w/:id view: the full restaurant list of a public wheel
-    // (guests spin everything — no exclusion state). Public-safe fields only.
+    // The restaurant half of a public wheel (guests spin everything — no exclusion
+    // state), public-safe fields only. The /w/:id page reads both halves through
+    // wheels.publicBootstrap in one hop; this stays for callers that want just
+    // the list.
     listPublic: publicProcedure
       .input(z.object({ wheelId: z.number() }))
       .query(async ({ input }) => {
