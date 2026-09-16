@@ -170,7 +170,7 @@ const HUB_ZOOM_SCALE = 0.26;
  * Labels stay horizontal here. Rotation is scoped to the zoomed state only.
  */
 export default function SpinWheel({
-  segments,
+  segments: liveSegments,
   onSpinEnd,
   isSpinning,
   emptyHint,
@@ -197,6 +197,33 @@ export default function SpinWheel({
   const onPointerIndexChangeRef = useRef(onPointerIndexChange);
   onPointerIndexChangeRef.current = onPointerIndexChange;
   const reducedMotion = useReducedMotion();
+
+  /**
+   * The list this wheel is spinning, held still for the length of the spin.
+   *
+   * A spin is an animation OVER a list, so the list cannot change underneath it
+   * — and on this app it always did. Spinning excludes the winner, so the list
+   * arrives one shorter within a round trip of the landing, every single time,
+   * with the result still on screen. Three separate faults came out of that one
+   * fact, and each was fixed as its own thing before the shape was obvious:
+   *
+   *   · the disc re-seated to the new pane 0 — a measured 1713° snap backwards,
+   *     behind the winner banner;
+   *   · the winner's persimmon wash disappeared off the disc, because the pane
+   *     it washes is found by looking the winner up in `segments` and the winner
+   *     had just been taken out of them;
+   *   · the pane count, the labels and the hairlines all re-drew mid-result.
+   *
+   * `zoomed` is the parent's single fact for "a spin is running or its result is
+   * up" (see the prop's own note), which is exactly the window the list has to
+   * hold for. It also covers the frame between Respin clearing the result and
+   * the next spin starting, where the camera never actually leaves.
+   */
+  const frozenRef = useRef<WheelSegment[] | null>(null);
+  const holding = isSpinning || zoomed;
+  if (holding && !frozenRef.current) frozenRef.current = liveSegments;
+  if (!holding && frozenRef.current) frozenRef.current = null;
+  const segments = frozenRef.current ?? liveSegments;
 
   // Latest props mirrored into refs so the spin loop can read them without
   // listing them as effect dependencies — otherwise every unrelated re-render
@@ -226,14 +253,21 @@ export default function SpinWheel({
     const n = segments.length;
     // frameW is in the deps because the disc does not exist until the frame has
     // been measured — writing --rot before then lands on nothing.
-    if (isSpinning || n === 0 || frameW === 0) return;
+    // `zoomed`, not just `isSpinning`: the rAF loop owns the disc from the first
+    // frame of a spin until the camera pulls back out, and the result is on
+    // screen for the whole second half of that (see the prop's own note). The
+    // pane layout changes inside that window as a matter of course — the winner
+    // is excluded the instant it is spun, and on a shared wheel a teammate can
+    // add a place — so an effect keyed on the count fires exactly there, and
+    // re-lays the wheel out under a banner still naming a pane it just moved.
+    if (isSpinning || zoomed || n === 0 || frameW === 0) return;
     if (seatedForRef.current === n) return;
     seatedForRef.current = n;
     const seat = normalizeDeg(POINTER_DEG - paneCenterDeg(0, n));
     applyRotation(seat);
     setRestRotation(seat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segments.length, isSpinning, frameW]);
+  }, [segments.length, isSpinning, zoomed, frameW]);
 
   /**
    * How much vertical room the zoom has: from the pointer's reading line down to
@@ -292,6 +326,39 @@ export default function SpinWheel({
     rotRef.current?.style.setProperty("--rot", `${deg}deg`);
     if (zoomedRef.current) paintLabelBlur(deg);
     reportPointerIndex(deg);
+  };
+
+  /**
+   * Hand the disc back to rest, on the angle the spin actually landed on.
+   *
+   * The landing has to publish three things together or the two owners of the
+   * disc's rotation — this rAF loop and the seat effect below — end up holding
+   * different opinions about one fact (AGENTS.md failure mode 14), and BOTH ways
+   * of disagreeing shipped:
+   *
+   *   · `restRotation` is what `labelRay` flips each label against, so leaving it
+   *     on the pre-spin seat laid every label out for an orientation the disc is
+   *     no longer in. Measured at 8 panes: 3 of 8 labels upside down after a
+   *     landing, every one of them 270° out. Only the reduced-motion path used to
+   *     set it, so the full-motion path — i.e. everyone — got the stale one.
+   *   · `seatedForRef` is how the seat effect knows the disc is already placed.
+   *     Not marking it left the effect free to re-seat, which it then did on the
+   *     very next render, because excluding the winner is what a spin DOES and
+   *     the effect keyed on the segment count.
+   *   · the angle is normalised. `targetAngle` carries the spin's whole travel
+   *     (four turns plus the landing arc — 1957° for a 390px phone at 8 panes),
+   *     and any later re-seat to an absolute seat angle then reads as the disc
+   *     unwinding every one of those turns. Measured: a 1713° snap backwards, on
+   *     a disc sitting at 0.72 opacity behind the winner. Rotation is periodic
+   *     and `--rot` is an unregistered custom property, so it cannot transition —
+   *     normalising is invisible in the frame it happens and costs the re-seat
+   *     4.75 turns.
+   */
+  const settleAt = (deg: number) => {
+    const landed = normalizeDeg(deg);
+    applyRotation(landed);
+    setRestRotation(landed);
+    seatedForRef.current = segmentsRef.current.length;
   };
 
   /** Which pane is at the pointer now — reported only when it changes. */
@@ -455,7 +522,7 @@ export default function SpinWheel({
       if (p < 1) {
         rafRef.current = requestAnimationFrame(frame);
       } else {
-        applyRotation(targetAngle);
+        settleAt(targetAngle);
         if (landSegment) onSpinEndRef.current(landSegment);
       }
     };
@@ -476,8 +543,7 @@ export default function SpinWheel({
       if (p < 1) {
         rafRef.current = requestAnimationFrame(reducedFrame);
       } else {
-        applyRotation(targetAngle);
-        setRestRotation(normalizeDeg(targetAngle));
+        settleAt(targetAngle);
         if (landSegment) onSpinEndRef.current(landSegment);
       }
     };

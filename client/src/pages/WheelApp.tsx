@@ -587,6 +587,19 @@ export default function WheelApp() {
     [filteredRestaurants]
   );
 
+  /** A restaurant refresh that is owed but must wait for the camera to pull out
+   *  — see handleSpinEnd. Every exit from the result (Lock it in, Respin, [x],
+   *  Esc, backdrop) lands in the effect below, so none of them needs to
+   *  remember to do this for itself. */
+  const pendingRestaurantRefresh = useRef(false);
+  const resultOnScreen = isSpinning || showResult;
+  useEffect(() => {
+    if (resultOnScreen || !pendingRestaurantRefresh.current) return;
+    pendingRestaurantRefresh.current = false;
+    refetchRestaurants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultOnScreen]);
+
   const handleSpinEnd = (segment: WheelSegment) => {
     setIsSpinning(false);
     setSpinResult(segment);
@@ -602,7 +615,17 @@ export default function WheelApp() {
       return next;
     });
     setTargetId(null);
-    refetchRestaurants();
+    // NOT refetched here. The spin has just excluded the winner, so the response
+    // to this refetch drops it from the list — which re-lays the disc out from N
+    // panes to N-1 while the result surface is still naming it, and takes the
+    // winner's persimmon wash off the disc with it (`winnerIndex` can no longer
+    // find a segment that is gone). Measured: the wash vanished outright, and
+    // the disc — which sits at 0.72 opacity behind the sheet, not hidden — was
+    // re-drawing underneath. This is the same rule the realtime poll above
+    // already follows for the same reason; the wheel's own list was the one
+    // thing still changing inside the frame budget. Deferred to the camera
+    // pulling out.
+    pendingRestaurantRefresh.current = true;
   };
 
   const handleSpin = async () => {
