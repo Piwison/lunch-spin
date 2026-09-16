@@ -3505,14 +3505,22 @@ var appRouter = router({
     // caller's wheel (after their tag filter); the server re-validates them
     // against the wheel and the live exclusion window before choosing.
     create: protectedProcedure.input(z3.object({ wheelId: z3.number(), candidateIds: z3.array(z3.number()).min(1) })).mutation(async ({ ctx, input }) => {
-      const wheel = await getWheelById(input.wheelId);
+      const [wheel, isMember] = await Promise.all([
+        getWheelById(input.wheelId),
+        isWheelMember(input.wheelId, ctx.user.id)
+      ]);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const rests = await getRestaurantsByWheel(input.wheelId);
+      const [rests, exclusions, roundMarks2, ratingRows, spinStats, history] = await Promise.all([
+        getRestaurantsByWheel(input.wheelId),
+        getExclusions(input.wheelId, wheel.exclusionDays),
+        getRoundMarks(input.wheelId),
+        getWheelRatingRows(input.wheelId),
+        wheel.fairnessMode ? getRestaurantStats(input.wheelId) : void 0,
+        wheel.rotateCuisines ? getSpinHistory(input.wheelId) : void 0
+      ]);
       const valid = new Set(rests.map((r) => r.id));
-      const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-      const session = buildSessionState(await getRoundMarks(input.wheelId));
+      const session = buildSessionState(roundMarks2);
       const vetoed = new Set(vetoedIds(session));
       const avoidedTags = new Set(excludedDietaryTagIds(session));
       const dietaryBlocked = new Set(
@@ -3535,23 +3543,21 @@ var appRouter = router({
       }
       const votes = voteCounts(session);
       const hasVotes = votes.size > 0;
-      const ratings = averageMapFromRows(await getWheelRatingRows(input.wheelId));
+      const ratings = averageMapFromRows(ratingRows);
       const hasRatings = ratings.size > 0;
       let restaurantId;
       if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
         let base;
         if (wheel.fairnessMode) {
-          const stats = await getRestaurantStats(input.wheelId);
-          const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
+          const lastPicked = new Map((spinStats ?? []).map((s) => [s.id, s.lastPickedAt]));
           base = computeWeights(eligible.map((id2) => ({ restaurantId: id2, lastPickedAt: lastPicked.get(id2) ?? null })));
         } else {
           base = eligible.map((id2) => ({ restaurantId: id2, weight: 1 }));
         }
         if (wheel.rotateCuisines) {
           const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t2) => t2.category === "cuisine")?.id ?? null]));
-          const history = await getSpinHistory(input.wheelId);
           const cuisineLastPicked = /* @__PURE__ */ new Map();
-          for (const h of history) {
+          for (const h of history ?? []) {
             const c = cuisineOf.get(h.restaurantId);
             if (c == null) continue;
             const at = new Date(h.spunAt);
@@ -3569,8 +3575,10 @@ var appRouter = router({
       } else {
         restaurantId = pickWinner(eligible);
       }
-      const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
-      await clearRoundVotes(input.wheelId);
+      const [id] = await Promise.all([
+        recordSpin(input.wheelId, restaurantId, ctx.user.id),
+        clearRoundVotes(input.wheelId)
+      ]);
       return { id, restaurantId };
     }),
     // Most recent spin on a wheel — clients poll this to surface "someone spun"
@@ -3579,12 +3587,6 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getLatestSpin(input.wheelId);
-    }),
-    record: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number() })).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const id = await recordSpin(input.wheelId, input.restaurantId, ctx.user.id);
-      return { id };
     }),
     history: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);

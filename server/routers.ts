@@ -1134,17 +1134,41 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({ wheelId: z.number(), candidateIds: z.array(z.number()).min(1) }))
       .mutation(async ({ ctx, input }) => {
-        const wheel = await getWheelById(input.wheelId);
+        // Three waves, not ten serial hops. Every `await` here is a round trip to
+        // a TiDB Serverless cluster from a Vercel function, and this is the one
+        // call a user physically waits on: the disc free-spins until the winner
+        // comes back, and `decayDurationMs` sizes the deceleration to whatever is
+        // left of the timeline (SpinWheel, AGENTS.md failure mode 45) — so server
+        // latency here is not hidden by the animation, it IS the length of the
+        // spin. The reads were fully serial and all but two of them only ever
+        // needed `wheelId`.
+        //
+        // Wave A authorizes. It stays a wave of its OWN, ahead of every data
+        // read, so a non-member's request still touches nothing but the two rows
+        // that prove they are a non-member.
+        const [wheel, isMember] = await Promise.all([
+          getWheelById(input.wheelId),
+          isWheelMember(input.wheelId, ctx.user.id),
+        ]);
         if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
 
-        const rests = await getRestaurantsByWheel(input.wheelId);
+        // Wave B: everything the pick needs. The two weighting reads are fetched
+        // here rather than inside the branch below because the settings that
+        // decide whether they are used are already known — waiting to ask until
+        // the branch is reached is what made them a ninth and tenth hop.
+        const [rests, exclusions, roundMarks, ratingRows, spinStats, history] = await Promise.all([
+          getRestaurantsByWheel(input.wheelId),
+          getExclusions(input.wheelId, wheel.exclusionDays),
+          getRoundMarks(input.wheelId),
+          getWheelRatingRows(input.wheelId),
+          wheel.fairnessMode ? getRestaurantStats(input.wheelId) : undefined,
+          wheel.rotateCuisines ? getSpinHistory(input.wheelId) : undefined,
+        ]);
         const valid = new Set(rests.map((r) => r.id));
-        const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
         // Server reads the live session itself (anti-tamper): vetoed restaurants
         // are out, votes bias the weighting.
-        const session = buildSessionState(await getRoundMarks(input.wheelId));
+        const session = buildSessionState(roundMarks);
         const vetoed = new Set(vetoedIds(session));
         // Dietary constraints: any restaurant carrying an avoided tag is out.
         const avoidedTags = new Set(excludedDietaryTagIds(session));
@@ -1185,14 +1209,13 @@ export const appRouter = router({
         const votes = voteCounts(session);
         const hasVotes = votes.size > 0;
         // Persistent preference: each restaurant's team average star rating.
-        const ratings = averageMapFromRows(await getWheelRatingRows(input.wheelId));
+        const ratings = averageMapFromRows(ratingRows);
         const hasRatings = ratings.size > 0;
         let restaurantId: number;
         if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
           let base: Weighted[];
           if (wheel.fairnessMode) {
-            const stats = await getRestaurantStats(input.wheelId);
-            const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
+            const lastPicked = new Map((spinStats ?? []).map((s) => [s.id, s.lastPickedAt]));
             base = computeWeights(eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })));
           } else {
             base = eligible.map((id) => ({ restaurantId: id, weight: 1 }));
@@ -1200,9 +1223,8 @@ export const appRouter = router({
           if (wheel.rotateCuisines) {
             // Each restaurant's cuisine, and when that cuisine was last picked.
             const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t) => t.category === "cuisine")?.id ?? null]));
-            const history = await getSpinHistory(input.wheelId);
             const cuisineLastPicked = new Map<number, Date>();
-            for (const h of history) {
+            for (const h of history ?? []) {
               const c = cuisineOf.get(h.restaurantId);
               if (c == null) continue;
               const at = new Date(h.spunAt);
@@ -1222,10 +1244,14 @@ export const appRouter = router({
         } else {
           restaurantId = pickWinner(eligible);
         }
-        const id = await recordSpin(input.wheelId, restaurantId, ctx.user.id);
-        // The spin is persisted; other members pick it up via spins.latest.
-        // Votes belong to the round that just resolved — clear for the next one.
-        await clearRoundVotes(input.wheelId);
+        // Wave C. The spin is persisted; other members pick it up via
+        // wheels.realtime. Votes belong to the round that just resolved — clear
+        // for the next one. Neither write reads the other, and the caller is
+        // still blocked on both, so they go together rather than end to end.
+        const [id] = await Promise.all([
+          recordSpin(input.wheelId, restaurantId, ctx.user.id),
+          clearRoundVotes(input.wheelId),
+        ]);
         return { id, restaurantId };
       }),
 
@@ -1237,15 +1263,6 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         return getLatestSpin(input.wheelId);
-      }),
-
-    record: protectedProcedure
-      .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const id = await recordSpin(input.wheelId, input.restaurantId, ctx.user.id);
-        return { id };
       }),
 
     history: protectedProcedure
