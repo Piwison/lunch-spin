@@ -26,6 +26,7 @@ import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
 import { nextWheelToOpen } from "@shared/bootstrap";
+import { diagnoseSpinBlock } from "@shared/spinBlock";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { formatWalk } from "@shared/nearby";
@@ -578,6 +579,28 @@ export default function WheelApp() {
     return applyDietary(notVetoed, excludedDietaryTagIds(session));
   }, [roundCandidates, session]);
 
+  /**
+   * When the wheel comes up empty, WHY — and what one thing to undo.
+   *
+   * Six constraints can empty it and the user can see none of them from the
+   * wheel. This tab used to print one fixed sentence naming three of them
+   * ("excluded or vetoed", plus "filtered out or" when a tag was set), so a
+   * walk-limit or a closed-for-the-night wheel was reported as excluded and
+   * vetoed — both false — with nothing to act on. The server has always told
+   * the truth about the closed case; this is the client catching up.
+   */
+  const spinBlock = useMemo(
+    () =>
+      diagnoseSpinBlock({
+        restaurants: restaurants ?? [],
+        selectedTagIds,
+        maxWalkMinutes,
+        vetoedIds: vetoedIds(session),
+        dietaryTagIds: excludedDietaryTagIds(session),
+      }),
+    [restaurants, selectedTagIds, maxWalkMinutes, session],
+  );
+
   const wheelSegments: WheelSegment[] = useMemo(() =>
     filteredRestaurants.map((r, i) => ({
       id: r.id,
@@ -719,6 +742,56 @@ export default function WheelApp() {
       "transform var(--dur-windup) var(--ease-standard), filter var(--dur-windup) var(--ease-standard), opacity var(--dur-windup) var(--ease-standard)",
     pointerEvents: cameraIn ? "none" : undefined,
   };
+
+  /* One sentence per cause, and the single tap that lifts it. "Closed" has no
+     undo — the honest answer is when they open again, not a button that would
+     do nothing. */
+  const spinBlockMessage = (() => {
+    const { reason, counts } = spinBlock;
+    switch (reason) {
+      case "round":
+        return `Nothing to spin — this round's vetoes and avoids rule out every place${
+          counts.round > 0 ? ` (${counts.round})` : ""
+        }.`;
+      case "filters":
+        return maxWalkMinutes != null && selectedTagIds.length === 0
+          ? `Nothing to spin — no place is within a ${maxWalkMinutes}-minute walk.`
+          : "Nothing to spin — your filters rule out every place on this wheel.";
+      case "closed":
+        return `Nothing to spin — every place on this wheel is closed right now${
+          counts.closed > 0 ? ` (${counts.closed})` : ""
+        }.`;
+      case "excluded":
+        return `Nothing to spin — every place was picked recently${
+          counts.excluded > 0 ? ` (${counts.excluded})` : ""
+        } and is still resting.`;
+      default:
+        return "Nothing to spin right now.";
+    }
+  })();
+
+  const spinBlockAction: { label: string; run: () => void } | null = (() => {
+    switch (spinBlock.reason) {
+      case "round":
+        return {
+          label: "Clear this round",
+          run: () => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId }),
+        };
+      case "filters":
+        return {
+          label: "Clear filters",
+          run: () => {
+            setSelectedTagIds([]);
+            setMaxWalkMinutes(null);
+          },
+        };
+      case "excluded":
+        // Re-enabling lives in History, next to the spin that caused it.
+        return { label: "Bring one back", run: () => setActiveTab("history") };
+      default:
+        return null;
+    }
+  })();
 
   const pointerTier = labelTier(Math.max(wheelSegments.length, 1));
   const spinDisabled = isSpinning || createSpin.isPending || wheelSegments.length === 0;
@@ -1251,16 +1324,41 @@ export default function WheelApp() {
                                 the closed count answers that, so it belongs here
                                 rather than floating somewhere else on the tab. */}
                             {wheelSegments.length === 0 ? (
+                              /* Name the constraint that is actually holding the
+                                 wheel, and put the undo for it right here — a
+                                 dead end with a disabled button is the one place
+                                 in this app a user cannot reason their way out
+                                 of, because none of the six causes is visible
+                                 from the wheel. `spinBlock` picks the cheapest
+                                 one to lift; the button below undoes exactly it. */
                               <div
-                                className="glass-chip flex items-center gap-2 px-4 py-3 w-full"
-                                style={{ color: "var(--destructive)" }}
+                                className="glass-chip flex flex-col gap-2.5 px-4 py-3 w-full"
+                                style={{ color: "var(--ink-warm)" }}
                               >
-                                <AlertTriangle size={14} className="flex-shrink-0" />
-                                <span className="type-meta">
-                                  Nothing to spin — every restaurant is
-                                  {selectedTagIds.length > 0 ? " filtered out or " : " "}
-                                  excluded or vetoed.
+                                <span className="type-meta flex items-start gap-2">
+                                  <AlertTriangle
+                                    size={14}
+                                    className="flex-shrink-0 mt-0.5"
+                                    style={{ color: "var(--destructive)" }}
+                                  />
+                                  <span>{spinBlockMessage}</span>
                                 </span>
+                                {spinBlockAction && (
+                                  <button
+                                    onClick={spinBlockAction.run}
+                                    className="self-start px-4 transition-colors active:scale-[var(--press-scale)]"
+                                    style={{
+                                      minHeight: 44,
+                                      borderRadius: "var(--radius-control)",
+                                      background: "var(--brand-grad)",
+                                      color: "var(--on-accent)",
+                                      fontSize: 14,
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    {spinBlockAction.label}
+                                  </button>
+                                )}
                               </div>
                             ) : (
                               <p className="type-meta text-center" style={{ color: "var(--muted-foreground)" }}>
