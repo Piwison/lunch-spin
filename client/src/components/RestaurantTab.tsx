@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Check, Tag, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3, Search, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -118,6 +119,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   );
   // The restaurant whose detail sheet is open (null = closed).
   const [detailId, setDetailId] = useState<number | null>(null);
+  /** The place the owner is being asked to confirm removing, held by id+name so
+   *  the dialog still has something to name after the detail sheet closes. */
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
 
   const invalidate = () => {
     utils.restaurants.list.invalidate({ wheelId });
@@ -851,7 +855,16 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   </button>
                   {isOwner && (
                     <button
-                      onClick={() => { if (confirm(`Remove "${r.name}"?`)) { deleteRestaurant.mutate({ id: r.id }); setDetailId(null); } }}
+                      /* The app's own dialog, not window.confirm. This was the
+                         last native confirm left, and it sat in the worst place
+                         for one: it blocks the main thread from inside the click
+                         handler of a button in a sheet that the same handler then
+                         unmounts — exactly the tear-down-under-your-own-click
+                         hazard ConfirmDangerDialog was written for. A native
+                         confirm is also suppressible (iOS standalone, some
+                         in-app browsers), and a suppressed one returns false, so
+                         Delete would silently do nothing. */
+                      onClick={() => { setPendingDelete({ id: r.id, name: r.name }); setDetailId(null); }}
                       className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
                       style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)", fontSize: 15, fontWeight: 500 }}
                     >
@@ -1070,6 +1083,29 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Removing a place is permanent — there is no trash and no undo — and it
+          takes its ratings and its spin history off the team's wheel with it. */}
+      <ConfirmDangerDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => { if (!open && !deleteRestaurant.isPending) setPendingDelete(null); }}
+        title="Remove this place?"
+        confirmLabel="Remove it"
+        pending={deleteRestaurant.isPending}
+        onConfirm={() => {
+          if (pendingDelete) deleteRestaurant.mutate({ id: pendingDelete.id });
+          setPendingDelete(null);
+        }}
+        body={
+          <>
+            <p>
+              <strong className="text-foreground">{pendingDelete?.name}</strong> comes off this wheel for
+              everyone, along with its ratings.
+            </p>
+            <p>This can&apos;t be undone.</p>
+          </>
+        }
+      />
     </div>
   );
 }

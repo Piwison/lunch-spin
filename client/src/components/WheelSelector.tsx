@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { copyText } from "@/lib/clipboard";
 import { useEffect, useState } from "react";
 import { Plus, Globe, Lock, LogOut, Trash2, Share2, Copy, CopyPlus, Settings, MoreVertical, Check, ChevronDown, Star, MapPin, Users, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -428,19 +429,26 @@ export default function WheelSelector({
 
   const inviteUrl = showInvite ? `${window.location.origin}/join/${showInvite.token}` : "";
 
-  const copyInvite = () => {
-    navigator.clipboard.writeText(inviteUrl);
-    toast.success("Invite link copied!");
-  };
-
   const publicLinkFor = (wheelId: number) => `${window.location.origin}/w/${wheelId}`;
   const inviteLinkFor = (token: string) => `${window.location.origin}/join/${token}`;
 
-  const copyLink = (url: string, copiedMsg: string) => {
-    navigator.clipboard.writeText(url);
-    toast.success(copiedMsg);
+  /* Only claim success when the copy actually succeeded. When it cannot (a
+     non-secure origin has no clipboard API at all, and a denied permission or
+     an unfocused document rejects), show the link itself so the invite is still
+     reachable by hand — a dead end on the one action that grows a team is worse
+     than an ugly toast. */
+  const copyLink = async (url: string, copiedMsg: string) => {
+    if (await copyText(url)) {
+      toast.success(copiedMsg);
+    } else {
+      toast.error("Couldn't copy automatically — copy this link", {
+        description: url,
+        duration: 15000,
+      });
+    }
   };
   const copyPublicLink = (wheelId: number) => copyLink(publicLinkFor(wheelId), "Public link copied!");
+  const copyInvite = () => copyLink(inviteUrl, "Invite link copied!");
 
   // Native share sheet on devices that support it (a phone's real "Share to…"),
   // falling back to a plain copy on desktop. A cancelled share throws, so we
