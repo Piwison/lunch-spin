@@ -327,6 +327,23 @@ export default function WheelApp() {
   });
 
   const createSpin = trpc.spins.create.useMutation();
+  /**
+   * Bring a resting place back onto the wheel, from the Wheel tab.
+   *
+   * The control existed only in History, so the one screen that TELLS you a
+   * place is being skipped — the "Skipping (picked recently)" list right under
+   * the wheel — was the one screen that could not act on it. Same mutation and
+   * the same refetches as HistoryTab's button; a second opinion about what
+   * re-enabling means is how the two drift.
+   */
+  const reenableRestaurant = trpc.spins.reenable.useMutation({
+    onSuccess: () => {
+      refetchRestaurants();
+      utils.spins.history.invalidate();
+      toast.success("Back on the wheel");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const acceptSpin = trpc.spins.accept.useMutation({
     onSuccess: () => {
       // Accepting flips this spin to the full-window exclusion tier, so the wheel
@@ -1412,17 +1429,41 @@ export default function WheelApp() {
                                 {restaurants.filter((r) => r.isExcluded).map((r) => (
                                   <li key={r.id} className="flex items-center justify-between gap-2 type-meta">
                                     <span className="truncate text-muted-foreground">{r.name}</span>
-                                    {r.excludedUntil && (
-                                      <span
-                                        className="flex-shrink-0 px-2 py-0.5 rounded-full type-meta"
+                                    <span className="flex items-center gap-1.5 flex-shrink-0">
+                                      {r.excludedUntil && (
+                                        <span
+                                          className="px-2 py-0.5 rounded-full type-meta"
+                                          style={{
+                                            background: "oklch(from var(--destructive) l c h / 0.12)",
+                                            color: "var(--brand-text)",
+                                          }}
+                                        >
+                                          back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
+                                        </span>
+                                      )}
+                                      {/* 44px, not the row's own height: this is a
+                                          real tap target on a phone, and the app's
+                                          floor for one is 44 (failure mode 35). */}
+                                      <button
+                                        onClick={() =>
+                                          selectedWheelId &&
+                                          reenableRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: r.id })
+                                        }
+                                        disabled={reenableRestaurant.isPending}
+                                        aria-label={`Put ${r.name} back on the wheel now`}
+                                        className="flex items-center justify-center gap-1.5 px-3 transition-colors active:scale-[var(--press-scale)] disabled:opacity-50"
                                         style={{
-                                          background: "oklch(from var(--destructive) l c h / 0.12)",
-                                          color: "var(--brand-text)",
+                                          minHeight: 44,
+                                          borderRadius: "var(--radius-chip)",
+                                          background: "oklch(from var(--ok) l c h / 0.15)",
+                                          border: "1px solid oklch(from var(--ok) l c h / 0.4)",
+                                          color: "var(--ok)",
+                                          fontWeight: 500,
                                         }}
                                       >
-                                        back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
-                                      </span>
-                                    )}
+                                        <RefreshCw size={11} /> Now
+                                      </button>
+                                    </span>
                                   </li>
                                 ))}
                               </ul>
