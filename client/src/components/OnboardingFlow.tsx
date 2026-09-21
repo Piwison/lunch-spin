@@ -397,7 +397,7 @@ function Shell({ children, scroll = false }: { children: React.ReactNode; scroll
     return <div className="w-full max-w-lg mx-auto px-5 py-6 flex flex-col">{children}</div>;
   }
   return (
-    <div className="min-h-full flex flex-col items-center justify-center px-5 py-8 w-full">
+    <div className="grow min-h-full flex flex-col items-center justify-center px-5 py-8 w-full">
       <div className="w-full max-w-md flex flex-col items-center">{children}</div>
     </div>
   );

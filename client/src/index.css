@@ -608,7 +608,13 @@
 }
 
 /* ─── Flex defaults ─────────────────────────────────────────────────────────── */
-.flex { min-width: 0; min-height: 0; }
+/* Must stay INSIDE a layer: un-layered CSS beats every @layer, so out here this
+   rule silently overrode `min-h-dvh` / `min-h-screen` on any element that was
+   also `flex` — the guest wheel's shell and the error screen both collapsed to
+   content height and hugged the top of the page (known failure mode 22). */
+@layer components {
+  .flex { min-width: 0; min-height: 0; }
+}
 
 /* ─── Container ─────────────────────────────────────────────────────────────── */
 .container {

@@ -26,6 +26,7 @@ import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
 import { nextWheelToOpen } from "@shared/bootstrap";
+import { copyIntentUrl, readCopyIntent } from "@shared/copyIntent";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { formatWalk } from "@shared/nearby";
@@ -138,9 +139,33 @@ export default function WheelApp() {
     }
   }, []);
 
+  /**
+   * "Copy this wheel" arriving from a shared link (/w/:id -> /app?copyFrom=N).
+   *
+   * Read ONCE, like initialWheelId: the intent belongs to this arrival, and the
+   * URL is rewritten as soon as the copy lands so a reload cannot copy twice.
+   * `copyPending` starts true whenever an intent is present, because everything
+   * that decides which wheel to open has to agree to wait for it — see the
+   * auto-open effect and `decidingWheel` below. Two effects writing
+   * selectedWheelId from different sources is how the delete loop happened; this
+   * one is a single fact both of them read.
+   */
+  const [copyFromId] = useState(() => readCopyIntent(window.location.search));
+  const [copyPending, setCopyPending] = useState(copyFromId != null);
+  const copyStarted = useRef(false);
+
   useEffect(() => {
-    if (!loading && !user) navigate("/");
-  }, [user, loading, navigate]);
+    if (loading || user) return;
+    // An anonymous visitor normally belongs on the landing page. But one who
+    // arrived holding a copy intent came from someone's shared wheel and asked
+    // for a specific thing, so send them through sign-in and back to it — the
+    // landing page would silently drop what they clicked.
+    if (copyFromId != null) {
+      window.location.href = getLoginUrl(copyIntentUrl(copyFromId));
+      return;
+    }
+    navigate("/");
+  }, [user, loading, navigate, copyFromId]);
 
   // Keep the selected wheel in sync with the URL so browser back/forward (and
   // direct links) actually switch wheels — state alone only captures the first
@@ -196,6 +221,24 @@ export default function WheelApp() {
     const payload = fresh?.user ? fresh : readBootCache<BootstrapPayload>();
     if (!payload?.user) return false;
     seedFromBootstrap(utils, payload);
+    // Seed the bootstrap query ITSELF, not just the queries it fans out into.
+    // `decidingWheel` gates the "Finding your wheel" screen on
+    // bootstrapQuery.isLoading, so warming auth.me and every data query while
+    // leaving this one pending meant a returning user still watched the spinner
+    // for the whole cold round trip — the cache bought the header and nothing
+    // else. Same shape as the auth.me miss recorded in seedFromBootstrap, one
+    // level up.
+    //
+    // Only on the persisted path: on the fresh path this query IS the data, and
+    // seedFromBootstrap also runs from an effect keyed on bootstrapQuery.data,
+    // where writing to it would be a loop waiting to happen.
+    //
+    // updatedAt: 0 marks it stale on arrival. Without it setData stamps the
+    // payload as fetched NOW, the 30s staleTime suppresses the refetch, and the
+    // entry goes from too slow to silently showing last session's wheel.
+    if (!fresh?.user) {
+      utils.wheels.bootstrap.setData({ wheelId: initialWheelId }, payload, { updatedAt: 0 });
+    }
     return true;
   });
 
@@ -409,9 +452,45 @@ export default function WheelApp() {
   const decidingWheel =
     !selectedWheelId &&
     !params.wheelId &&
-    (wheelsLoading ||
+    (copyPending ||
+      wheelsLoading ||
       bootstrapQuery.isLoading ||
       nextWheelToOpen(bootstrapQuery.data?.wheelId, unavailableWheelIds.current) != null);
+
+  const copyWheel = trpc.wheels.copy.useMutation({
+    onSuccess: ({ id, name }) => {
+      utils.wheels.list.invalidate();
+      utils.wheels.bootstrap.invalidate();
+      setSelectedWheelId(id);
+      // `replace`, and without the query string: the intent is spent, so a
+      // reload or a back-button must not copy the same wheel a second time.
+      navigate(`/app/${id}`, { replace: true });
+      setCopyPending(false);
+      toast.success(`Copied “${name}” — it's yours to edit now`);
+    },
+    onError: () => {
+      // Release the gate before anything else: leaving copyPending true would
+      // hold the "Finding your wheel" loader forever on a wheel that has since
+      // gone private or been deleted.
+      setCopyPending(false);
+      toast.error("Couldn't copy that wheel — it may be private now.");
+    },
+  });
+
+  /**
+   * Fire the copy exactly once per arrival.
+   *
+   * Guarded by a ref, not by the mutation's own pending state: effects run twice
+   * under StrictMode in development, and the second run would hand the user two
+   * copies of someone else's wheel.
+   */
+  useEffect(() => {
+    if (copyFromId == null || !user || copyStarted.current) return;
+    copyStarted.current = true;
+    copyWheel.mutate({ id: copyFromId });
+    // copyWheel is recreated every render; the ref above is the real guard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyFromId, user]);
 
   // On arriving without a wheel in the URL, open the wheel bootstrap already
   // resolved for us (the user's starred default, else their first). The server
@@ -422,12 +501,15 @@ export default function WheelApp() {
   // deleted — nextWheelToOpen drops those instead of re-opening a dead wheel the
   // eject effect above would immediately close again (React #185).
   useEffect(() => {
-    if (params.wheelId || selectedWheelId) return;
+    // A pending copy owns the choice of wheel. Without this the default wheel
+    // opens first and is replaced a moment later by the copy — the user watches
+    // someone else's lunch list flash past on the way to their own.
+    if (params.wheelId || selectedWheelId || copyPending) return;
     const resolved = nextWheelToOpen(bootstrapQuery.data?.wheelId, unavailableWheelIds.current);
     if (resolved == null) return;
     setSelectedWheelId(resolved);
     navigate(`/app/${resolved}`, { replace: true });
-  }, [params.wheelId, selectedWheelId, bootstrapQuery.data?.wheelId, navigate]);
+  }, [params.wheelId, selectedWheelId, copyPending, bootstrapQuery.data?.wheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
   // can launch it (sample vs blank). Ref keeps the callback identity stable.
@@ -986,15 +1068,29 @@ export default function WheelApp() {
 
           {/* ── TAB CONTENT ── (`pb-dock` reserves the fixed nav's REAL height,
                 safe area included — see --dock-height in index.css) */}
-          <div className="flex-1 overflow-y-auto overflow-x-clip pb-dock">
+          {/* `flex flex-col` only while no wheel is open, where this scroller has
+              exactly one child that is supposed to fill it. Those children used
+              `h-full`, i.e. a PERCENTAGE height, which needs a containing block
+              with a definite height — and this scroller has none: its 580px is a
+              used value produced by `flex-1`, not a specified one. So `h-full`
+              silently resolved to auto and the loader sat under the wheel picker
+              instead of centring. It only ever worked at xl, where the parent
+              switches to `flex-row` and stretch gives the scroller a real
+              height. Growing the child instead of measuring the parent works in
+              both directions. */}
+          <div
+            className={`flex-1 overflow-y-auto overflow-x-clip pb-dock${
+              !selectedWheelId ? " flex flex-col" : ""
+            }`}
+          >
             {!selectedWheelId ? (
               decidingWheel ? (
                 /* Held until the app knows which wheel to open — see
                    `decidingWheel`. Labelled, like the wheel-switch loader: an
                    unlabelled orb on an otherwise empty screen reads as a page
                    that failed rather than one that is working. */
-                <div className="flex items-center justify-center h-full p-8">
-                  <BrandLoader label="Finding your wheel" size={64} />
+                <div className="flex grow items-center justify-center p-8">
+                  <BrandLoader label={copyPending ? "Copying this wheel" : "Finding your wheel"} size={64} />
                 </div>
               ) : firstRun ? (
                 /* First-run — no wheels yet. Nearby search IS the onboarding:
@@ -1014,7 +1110,7 @@ export default function WheelApp() {
                 />
               ) : (
                 /* Empty state — has wheels, none selected */
-                <div className="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
+                <div className="flex grow flex-col items-center justify-center gap-6 p-8 text-center">
                   <div className="w-20 h-20 orb-wheel opacity-20" />
                   <div>
                     <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
