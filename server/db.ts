@@ -21,7 +21,6 @@ import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
 import { normalizeStatRow } from "@shared/stats";
 import { rankPopularWheels } from "@shared/publicWheel";
-import type { WheelExport } from "@shared/transfer";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -671,38 +670,6 @@ export async function setRestaurantWalkSeconds(id: number, walkSeconds: number |
   await db.update(restaurants).set({ walkSeconds }).where(eq(restaurants.id, id));
 }
 
-const TAG_PALETTE = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
-
-// Create a fresh wheel from a portable export bundle: the wheel, its tags (reuse
-// matching global/system tags by name+category, else create wheel-scoped ones),
-// and its restaurants. Returns the new wheel id.
-export async function importWheelData(ownerId: number, data: WheelExport): Promise<number> {
-  const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
-  const wheelId = await createWheel(ownerId, data.name, false, false, undefined, data.exclusionDays, data.fairnessMode, data.rotateCuisines);
-
-  const key = (name: string, category: string) => `${category}:${name.toLowerCase()}`;
-  const tagMap = new Map<string, number>();
-  for (const t of await getTagsForWheel(wheelId)) tagMap.set(key(t.name, t.category), t.id);
-
-  for (const r of data.restaurants) {
-    const tagIds: number[] = [];
-    for (const tg of r.tags) {
-      const k = key(tg.name, tg.category);
-      let id = tagMap.get(k);
-      if (id == null) {
-        const color = TAG_PALETTE[tg.name.charCodeAt(0) % TAG_PALETTE.length]!;
-        const res = await db.insert(tags).values({ name: tg.name, category: tg.category, color, createdBy: ownerId, wheelId });
-        id = (res as any)[0].insertId as number;
-        tagMap.set(k, id);
-      }
-      tagIds.push(id);
-    }
-    await addRestaurant(wheelId, ownerId, r.name, r.notes, tagIds);
-  }
-  return wheelId;
-}
-
 export async function getRestaurantById(id: number): Promise<Restaurant | undefined> {
   const db = await getDb();
   if (!db) return undefined;
@@ -817,49 +784,6 @@ export async function getSpinHistory(wheelId: number) {
     .innerJoin(users, eq(spinHistory.spunBy, users.id))
     .where(eq(spinHistory.wheelId, wheelId))
     .orderBy(sql`${spinHistory.spunAt} DESC`);
-}
-
-// Set (or change) the "how was it?" verdict on one spin. Scoped to the wheel
-// and to the spin's own author (spunBy) so a member can only rate a spin they
-// made. Returns the affected restaurantId, or null if nothing matched.
-export async function rateSpin(
-  spinId: number,
-  wheelId: number,
-  spunBy: number,
-  rating: "loved" | "ok" | "never",
-): Promise<number | null> {
-  const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
-  const rows = await db
-    .select({ restaurantId: spinHistory.restaurantId })
-    .from(spinHistory)
-    .where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, spunBy)))
-    .limit(1);
-  if (rows.length === 0) return null;
-  await db.update(spinHistory).set({ rating }).where(eq(spinHistory.id, spinId));
-  return rows[0]!.restaurantId;
-}
-
-// The latest rating per restaurant on a wheel (most-recent rated spin wins) —
-// the persistent preference signal that biases future spins. Restaurants with
-// no rated spin are simply absent.
-export async function getLatestRatings(wheelId: number): Promise<Map<number, "loved" | "ok" | "never">> {
-  const db = await getDb();
-  if (!db) return new Map();
-  const rows = await db
-    .select({
-      restaurantId: spinHistory.restaurantId,
-      rating: spinHistory.rating,
-      spunAt: spinHistory.spunAt,
-    })
-    .from(spinHistory)
-    .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.rating} IS NOT NULL`))
-    .orderBy(sql`${spinHistory.spunAt} DESC`);
-  const latest = new Map<number, "loved" | "ok" | "never">();
-  for (const r of rows) {
-    if (r.rating && !latest.has(r.restaurantId)) latest.set(r.restaurantId, r.rating);
-  }
-  return latest;
 }
 
 // Returns a map of restaurantId → the timestamp it becomes available again.

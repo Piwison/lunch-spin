@@ -5,15 +5,11 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { applyMoodBoost, explainPick, moodBoost, moodKeywords, type SmartCandidate } from "@shared/smartPick";
-import { resolveAddList } from "@shared/parseAddList";
 import { parseRestaurantList } from "@shared/import";
-import { serializeWheel, wheelExportSchema } from "@shared/transfer";
 import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
-import { RATINGS } from "@shared/rating";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
 import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
@@ -58,11 +54,9 @@ import {
   getRestaurantStats,
   getSpinHistory,
   markNotificationsRead,
-  rateSpin,
   getTagsForWheel,
   getUserById,
   getWheelPlaceIds,
-  importWheelData,
   getUserWheels,
   getWheelById,
   getWheelByInviteToken,
@@ -336,8 +330,9 @@ export const appRouter = router({
 
     // One consolidated poll for a shared wheel's fast-changing state: the live
     // member roster, the current round (veto/vote/dietary), and the latest spin.
-    // Replaces three separate 3s polls (wheels.get-for-members, session.state,
-    // spins.latest) with a single membership check + one round-trip — the main
+    // Replaced three separate 3s polls (wheels.get-for-members, session.state,
+    // spins.latest — all three since deleted, no client had kept using them)
+    // with a single membership check + one round-trip — the main
     // serverless-cost lever on an active shared wheel. The three reads run
     // concurrently. Presence stays its own (slower, write-bearing) heartbeat.
     realtime: protectedProcedure
@@ -635,26 +630,6 @@ export const appRouter = router({
         }
         const result = await recomputeWheelDistances(input.id);
         return { success: true, ...result };
-      }),
-
-    // Portable JSON bundle of a wheel + its restaurants (no ids).
-    export: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const wheel = await getWheelById(input.id);
-        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
-        const isMember = await isWheelMember(input.id, ctx.user.id);
-        if (!isMember && !wheel.isPublic) throw new TRPCError({ code: "FORBIDDEN" });
-        const rests = await getRestaurantsByWheel(input.id);
-        return serializeWheel(wheel, rests);
-      }),
-
-    // Create a fresh wheel for the caller from an export bundle.
-    import: protectedProcedure
-      .input(wheelExportSchema)
-      .mutation(async ({ ctx, input }) => {
-        const id = await importWheelData(ctx.user.id, input);
-        return { id };
       }),
   }),
 
@@ -1255,16 +1230,6 @@ export const appRouter = router({
         return { id, restaurantId };
       }),
 
-    // Most recent spin on a wheel — clients poll this to surface "someone spun"
-    // on shared wheels (replaces the old SSE broadcast).
-    latest: protectedProcedure
-      .input(z.object({ wheelId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        return getLatestSpin(input.wheelId);
-      }),
-
     history: protectedProcedure
       .input(z.object({ wheelId: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -1295,22 +1260,6 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         await reenableRestaurant(input.wheelId, input.restaurantId, wheel.exclusionDays);
         return { success: true };
-      }),
-
-    // "How was it?" — set/change the verdict on a spin the caller made. Scoped
-    // to the caller's own spins (rateSpin checks spunBy), so on a shared wheel
-    // you rate your own picks. The latest rating per restaurant then biases
-    // future spins via applyRatingWeights.
-    rate: protectedProcedure
-      .input(z.object({ wheelId: z.number(), spinId: z.number(), rating: z.enum(RATINGS) }))
-      .mutation(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const restaurantId = await rateSpin(input.spinId, input.wheelId, ctx.user.id, input.rating);
-        if (restaurantId == null) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Spin not found or not yours to rate" });
-        }
-        return { success: true, restaurantId };
       }),
   }),
 
@@ -1354,15 +1303,6 @@ export const appRouter = router({
   // ─── Session (vetoes & votes) ─────────────────────────────────────────────────
 
   session: router({
-    // Current round's veto/vote/dietary state — clients poll this (~3s).
-    state: protectedProcedure
-      .input(z.object({ wheelId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        return buildSessionState(await getRoundMarks(input.wheelId));
-      }),
-
     veto: protectedProcedure
       .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
       .mutation(async ({ ctx, input }) => {
@@ -1427,128 +1367,6 @@ export const appRouter = router({
           return { restaurantId: s.restaurantId, name: r?.name ?? "Unknown", cuisine, average: s.average, count: s.count };
         });
         return buildTasteProfile(items);
-      }),
-  }),
-
-  // ─── Smart Pick (free, no LLM) ──────────────────────────────────────────────
-
-  smart: router({
-    // "Decide for me" — a free heuristic. Same eligibility + weighting as a real
-    // spin (fairness/rotation/votes), plus an optional mood boost, then a short
-    // truthful reason. Server-authoritative: it picks, records, and broadcasts
-    // exactly like spins.create — the client never gets to choose the winner.
-    pick: protectedProcedure
-      .input(
-        z.object({
-          wheelId: z.number(),
-          candidateIds: z.array(z.number()).min(1),
-          moodChips: z.array(z.string().max(40)).max(8).optional(),
-          moodText: z.string().max(200).optional(),
-        }),
-      )
-      .mutation(async ({ ctx, input }) => {
-        const wheel = await getWheelById(input.wheelId);
-        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-
-        const rests = await getRestaurantsByWheel(input.wheelId);
-        const byId = new Map(rests.map((r) => [r.id, r]));
-        const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-        const session = buildSessionState(await getRoundMarks(input.wheelId));
-        const vetoed = new Set(vetoedIds(session));
-        const avoidedTags = new Set(excludedDietaryTagIds(session));
-        const dietaryBlocked = new Set(
-          avoidedTags.size === 0
-            ? []
-            : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
-        );
-        const eligibleIds = input.candidateIds.filter(
-          (id) => byId.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id),
-        );
-        if (eligibleIds.length === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "No eligible restaurants to pick from" });
-        }
-
-        // Days since each spot was last picked (for weighting + the reason).
-        const stats = await getRestaurantStats(input.wheelId);
-        const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
-        const now = Date.now();
-        const daysSince = (id: number): number | null => {
-          const raw = lastPicked.get(id);
-          const t = raw ? new Date(raw as unknown as string).getTime() : NaN;
-          return Number.isNaN(t) ? null : Math.floor((now - t) / 86_400_000);
-        };
-
-        const candidates: SmartCandidate[] = eligibleIds.map((id) => {
-          const r = byId.get(id)!;
-          return {
-            id,
-            name: r.name,
-            tags: r.tags.map((t) => t.name),
-            cuisine: r.tags.find((t) => t.category === "cuisine")?.name ?? null,
-            daysSinceLastPick: daysSince(id),
-          };
-        });
-
-        // Base weights mirror spins.create: fairness (or uniform) → cuisine
-        // rotation → ratings → votes → mood boost. Equal weights collapse to a
-        // uniform pick.
-        let base: Weighted[];
-        if (wheel.fairnessMode) {
-          base = computeWeights(
-            eligibleIds.map((id) => ({ restaurantId: id, lastPickedAt: (lastPicked.get(id) as Date | null) ?? null })),
-          );
-        } else {
-          base = eligibleIds.map((id) => ({ restaurantId: id, weight: 1 }));
-        }
-        if (wheel.rotateCuisines) {
-          const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t) => t.category === "cuisine")?.id ?? null]));
-          const history = await getSpinHistory(input.wheelId);
-          const cuisineLastPicked = new Map<number, Date>();
-          for (const h of history) {
-            const cId = cuisineOf.get(h.restaurantId);
-            if (cId == null) continue;
-            const at = new Date(h.spunAt);
-            const cur = cuisineLastPicked.get(cId);
-            if (!cur || at > cur) cuisineLastPicked.set(cId, at);
-          }
-          base = applyCuisineRotation(
-            base,
-            eligibleIds.map((id) => ({ restaurantId: id, cuisineId: cuisineOf.get(id) ?? null })),
-            cuisineLastPicked,
-          );
-        }
-        base = applyStarWeights(base, averageMapFromRows(await getWheelRatingRows(input.wheelId)));
-        base = applyVoteWeights(base, voteCounts(session));
-
-        const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });
-        base = applyMoodBoost(base, moodBoost(candidates, keywords));
-
-        const restaurantId = pickWeighted(base);
-        const chosen = candidates.find((c) => c.id === restaurantId)!;
-        const reason = explainPick({ chosen, moodKeywords: keywords, totalCandidates: eligibleIds.length });
-
-        // Record like a normal spin; members pick it up via spins.latest.
-        await recordSpin(input.wheelId, restaurantId, ctx.user.id);
-        await clearRoundVotes(input.wheelId);
-        return { restaurantId, name: chosen.name, reason };
-      }),
-
-    // "Smart add" — parse a loose blob into clean names + a best-effort cuisine
-    // mapped ONLY to existing wheel tags. Read-only: returns a proposal the
-    // client confirms; the actual writes go through restaurants.add/addBulk.
-    parseAdd: protectedProcedure
-      .input(z.object({ wheelId: z.number(), text: z.string().min(1).max(4000) }))
-      .mutation(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const tags = await getTagsForWheel(input.wheelId);
-        const proposals = resolveAddList(
-          input.text,
-          tags.map((t) => ({ id: t.id, name: t.name, category: t.category })),
-        );
-        return { proposals };
       }),
   }),
 });

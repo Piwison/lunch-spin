@@ -166,12 +166,17 @@ var spinHistory = mysqlTable("spin_history", {
   // exclude for the full window + notify the team; a rejected spin (re-spin / [x])
   // excludes only for the rest of the Taipei day (shared/exclusion.ts).
   accepted: boolean("accepted").default(false).notNull(),
-  // Post-spin "how was it?" verdict; null = unrated. The latest rating per
-  // restaurant biases future spins (shared/rating.ts).
+  // RETIRED — kept only so existing rows are not destroyed. This was the
+  // post-spin "how was it?" verdict, superseded by the per-member star ratings
+  // in `restaurant_ratings` (see that table's note). Nothing reads or writes it
+  // any more: `spins.rate`, `rateSpin` and `getLatestRatings` are gone, and the
+  // weighting that this comment used to claim ("biases future spins") had
+  // already moved to `applyStarWeights` long before. Do not build on it.
   rating: mysqlEnum("rating", ["loved", "ok", "never"])
 }, (t2) => ({
-  // The hottest table: spins.latest (WHERE wheelId ORDER BY spunAt DESC), history,
-  // and exclusion all scope by wheelId + recency; ratings look up by restaurantId.
+  // The hottest table: the latest spin (WHERE wheelId ORDER BY spunAt DESC, now
+  // served by wheels.realtime), history, and exclusion all scope by wheelId +
+  // recency; per-restaurant lookups go through restaurantIdx.
   wheelSpunAtIdx: index("spin_history_wheel_spun_at_idx").on(t2.wheelId, t2.spunAt),
   restaurantIdx: index("spin_history_restaurant_idx").on(t2.restaurantId)
 }));
@@ -664,31 +669,6 @@ async function setRestaurantWalkSeconds(id, walkSeconds) {
   if (!db) throw new Error("DB unavailable");
   await db.update(restaurants).set({ walkSeconds }).where(eq(restaurants.id, id));
 }
-var TAG_PALETTE = ["#f43f5e", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#818cf8", "#e879f9", "#94a3b8"];
-async function importWheelData(ownerId, data) {
-  const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
-  const wheelId = await createWheel(ownerId, data.name, false, false, void 0, data.exclusionDays, data.fairnessMode, data.rotateCuisines);
-  const key = (name, category) => `${category}:${name.toLowerCase()}`;
-  const tagMap = /* @__PURE__ */ new Map();
-  for (const t2 of await getTagsForWheel(wheelId)) tagMap.set(key(t2.name, t2.category), t2.id);
-  for (const r of data.restaurants) {
-    const tagIds = [];
-    for (const tg of r.tags) {
-      const k = key(tg.name, tg.category);
-      let id = tagMap.get(k);
-      if (id == null) {
-        const color = TAG_PALETTE[tg.name.charCodeAt(0) % TAG_PALETTE.length];
-        const res = await db.insert(tags).values({ name: tg.name, category: tg.category, color, createdBy: ownerId, wheelId });
-        id = res[0].insertId;
-        tagMap.set(k, id);
-      }
-      tagIds.push(id);
-    }
-    await addRestaurant(wheelId, ownerId, r.name, r.notes, tagIds);
-  }
-  return wheelId;
-}
 async function getRestaurantById(id) {
   const db = await getDb();
   if (!db) return void 0;
@@ -752,14 +732,6 @@ async function getSpinHistory(wheelId) {
     manuallyReenabled: spinHistory.manuallyReenabled,
     rating: spinHistory.rating
   }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(eq(spinHistory.wheelId, wheelId)).orderBy(sql`${spinHistory.spunAt} DESC`);
-}
-async function rateSpin(spinId, wheelId, spunBy, rating) {
-  const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
-  const rows = await db.select({ restaurantId: spinHistory.restaurantId }).from(spinHistory).where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, spunBy))).limit(1);
-  if (rows.length === 0) return null;
-  await db.update(spinHistory).set({ rating }).where(eq(spinHistory.id, spinId));
-  return rows[0].restaurantId;
 }
 async function getExclusions(wheelId, windowDays) {
   const db = await getDb();
@@ -1389,7 +1361,7 @@ function registerStorageProxy(app2) {
 // server/routers.ts
 import { TRPCError as TRPCError3 } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { z as z3 } from "zod";
+import { z as z2 } from "zod";
 
 // server/_core/systemRouter.ts
 import { z } from "zod";
@@ -1538,153 +1510,8 @@ var systemRouter = router({
   })
 });
 
-// shared/smartPick.ts
-var MOOD_STOPWORDS = /* @__PURE__ */ new Set([
-  "the",
-  "a",
-  "an",
-  "some",
-  "something",
-  "anything",
-  "want",
-  "wanna",
-  "with",
-  "for",
-  "and",
-  "or",
-  "im",
-  "feeling",
-  "feel",
-  "like",
-  "food",
-  "lunch",
-  "eat",
-  "please",
-  "really",
-  "very",
-  "kinda",
-  "bit",
-  "today",
-  "now",
-  "to",
-  "of",
-  "in"
-]);
-var MOOD_BOOST_FACTOR = 3;
-var RECENCY_REASON_DAYS = 5;
-function moodKeywords(input) {
-  const out = [];
-  const push2 = (raw) => {
-    const k = raw.trim().toLowerCase();
-    if (k && !out.includes(k)) out.push(k);
-  };
-  for (const c of input.chips ?? []) push2(c);
-  for (const tok of (input.text ?? "").toLowerCase().split(/[^a-z]+/)) {
-    if (tok.length >= 3 && !MOOD_STOPWORDS.has(tok)) push2(tok);
-  }
-  return out;
-}
-function matchedMoodKeyword(c, keywords) {
-  const haystay = [c.name, c.cuisine ?? "", ...c.tags].join(" ").toLowerCase();
-  for (const k of keywords) {
-    if (haystay.includes(k)) return k;
-  }
-  return null;
-}
-function moodBoost(candidates, keywords, factor = MOOD_BOOST_FACTOR) {
-  const m = /* @__PURE__ */ new Map();
-  for (const c of candidates) {
-    m.set(c.id, keywords.length > 0 && matchedMoodKeyword(c, keywords) ? factor : 1);
-  }
-  return m;
-}
-function applyMoodBoost(base, boost) {
-  return base.map((w) => ({
-    restaurantId: w.restaurantId,
-    weight: w.weight * (boost.get(w.restaurantId) ?? 1)
-  }));
-}
-var cap = (s) => s ? s[0].toUpperCase() + s.slice(1) : s;
-function explainPick(ctx) {
-  const { chosen } = ctx;
-  const threshold = ctx.recencyDays ?? RECENCY_REASON_DAYS;
-  const kw = matchedMoodKeyword(chosen, ctx.moodKeywords);
-  if (kw) return `${cap(kw)} \u2014 just like you asked.`;
-  if (chosen.daysSinceLastPick == null) {
-    return "A fresh face \u2014 you've never spun this one.";
-  }
-  if (chosen.daysSinceLastPick >= threshold) {
-    const unit = chosen.daysSinceLastPick === 1 ? "day" : "days";
-    return `You haven't had ${chosen.name} in ${chosen.daysSinceLastPick} ${unit}.`;
-  }
-  if (chosen.cuisine) {
-    return `Feeling ${chosen.cuisine}? The wheel says yes.`;
-  }
-  if (ctx.totalCandidates > 1) {
-    return `Narrowed ${ctx.totalCandidates} options down to this one.`;
-  }
-  return "The wheel landed on a good one.";
-}
-
-// shared/parseAddList.ts
-var MAX_NAME_LENGTH = 128;
-var MAX_ITEMS = 50;
-var LEADING_VERB = /^(?:add|include|put|also|maybe)\s+/i;
-var LEADING_ARTICLE = /^(?:the|a|an|some)\s+/i;
-function parseAddList(text2) {
-  const rawTokens = text2.split(/[\n,;]|\s+\band\b\s+/i);
-  const seen = /* @__PURE__ */ new Set();
-  const names = [];
-  for (let token of rawTokens) {
-    token = token.trim().replace(/^[•*\-]\s+/, "");
-    token = token.replace(/^["'`]+|["'`.!]+$/g, "").trim();
-    const verb = token.match(LEADING_VERB);
-    if (verb) token = token.slice(verb[0].length).replace(LEADING_ARTICLE, "").trim();
-    if (!token) continue;
-    if (token.length > MAX_NAME_LENGTH) token = token.slice(0, MAX_NAME_LENGTH).trim();
-    const key = token.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    names.push(token);
-    if (names.length >= MAX_ITEMS) break;
-  }
-  return names;
-}
-var CUISINE_KEYWORDS = [
-  ["Japanese", ["ramen", "sushi", "izakaya", "udon", "tempura", "japanese", "sashimi", "donburi", "teriyaki"]],
-  ["Mexican", ["taco", "burrito", "taqueria", "mexican", "quesadilla", "nachos", "cantina"]],
-  ["Italian", ["pizza", "pizzeria", "pasta", "italian", "trattoria", "risotto", "osteria"]],
-  ["Chinese", ["dim sum", "dumpling", "chinese", "szechuan", "sichuan", "wok", "noodle house"]],
-  ["Thai", ["thai", "pad thai", "tom yum"]],
-  ["Indian", ["curry", "indian", "tandoor", "masala", "biryani", "naan"]],
-  ["Vietnamese", ["pho", "banh mi", "vietnamese"]],
-  ["Korean", ["korean", "bibimbap", "kimchi", "gochujang", "bulgogi"]],
-  ["American", ["burger", "diner", "grill", "american", "bbq", "steakhouse", "deli", "wings"]],
-  ["Mediterranean", ["kebab", "shawarma", "falafel", "gyro", "mediterranean", "greek", "hummus"]]
-];
-function guessCuisine(name) {
-  const n = name.toLowerCase();
-  for (const [label, keywords] of CUISINE_KEYWORDS) {
-    if (keywords.some((k) => n.includes(k))) return label;
-  }
-  return null;
-}
-function resolveAddList(text2, existingTags) {
-  const cuisineTags = existingTags.filter((t2) => t2.category == null || t2.category === "cuisine");
-  const byName = new Map(cuisineTags.map((t2) => [t2.name.toLowerCase(), t2]));
-  return parseAddList(text2).map((name) => {
-    const guess = guessCuisine(name);
-    const tag = guess ? byName.get(guess.toLowerCase()) ?? null : null;
-    return {
-      name,
-      cuisineTagId: tag?.id ?? null,
-      cuisineTagName: tag?.name ?? null
-    };
-  });
-}
-
 // shared/import.ts
-var MAX_NAME_LENGTH2 = 128;
+var MAX_NAME_LENGTH = 128;
 function parseRestaurantList(raw, existing = []) {
   const seen = new Set(existing.map((n) => n.trim().toLowerCase()));
   const names = [];
@@ -1693,7 +1520,7 @@ function parseRestaurantList(raw, existing = []) {
   for (const token of raw.split(/[\n,]/)) {
     const name = token.trim();
     if (!name) continue;
-    if (name.length > MAX_NAME_LENGTH2) {
+    if (name.length > MAX_NAME_LENGTH) {
       tooLong++;
       continue;
     }
@@ -1706,43 +1533,6 @@ function parseRestaurantList(raw, existing = []) {
     names.push(name);
   }
   return { names, skipped: { tooLong, duplicates } };
-}
-
-// shared/transfer.ts
-import { z as z2 } from "zod";
-var WHEEL_EXPORT_VERSION = 1;
-var wheelExportSchema = z2.object({
-  version: z2.literal(WHEEL_EXPORT_VERSION).default(WHEEL_EXPORT_VERSION),
-  name: z2.string().min(1).max(128),
-  exclusionDays: z2.number().int().min(0).max(30).default(3),
-  fairnessMode: z2.boolean().default(false),
-  rotateCuisines: z2.boolean().default(false),
-  restaurants: z2.array(
-    z2.object({
-      name: z2.string().min(1).max(128),
-      notes: z2.string().max(500).nullable().default(null),
-      tags: z2.array(
-        z2.object({
-          name: z2.string().min(1).max(64),
-          category: z2.enum(["cuisine", "food_type", "custom"])
-        })
-      ).default([])
-    })
-  ).default([])
-});
-function serializeWheel(wheel, restaurants2) {
-  return {
-    version: WHEEL_EXPORT_VERSION,
-    name: wheel.name,
-    exclusionDays: wheel.exclusionDays,
-    fairnessMode: wheel.fairnessMode,
-    rotateCuisines: wheel.rotateCuisines,
-    restaurants: restaurants2.map((r) => ({
-      name: r.name,
-      notes: r.notes,
-      tags: r.tags.map((t2) => ({ name: t2.name, category: t2.category }))
-    }))
-  };
 }
 
 // shared/pick.ts
@@ -1816,9 +1606,6 @@ function applyVoteWeights(base, votes, voteWeight = VOTE_WEIGHT) {
     weight: w.weight + (votes.get(w.restaurantId) ?? 0) * voteWeight
   }));
 }
-
-// shared/rating.ts
-var RATINGS = ["loved", "ok", "never"];
 
 // shared/restaurantRating.ts
 var MIN_STARS = 1;
@@ -2691,15 +2478,15 @@ async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
 
 // server/routers.ts
 var PRESENCE_TTL_MS = 25e3;
-var nearbyPlaceSchema = z3.object({
-  placeId: z3.string().min(1).max(256),
-  name: z3.string().min(1).max(128),
-  lat: z3.number().min(-90).max(90).nullable(),
-  lng: z3.number().min(-180).max(180).nullable(),
-  address: z3.string().max(512).nullable(),
-  priceLevel: z3.number().int().min(1).max(4).nullable(),
-  cuisine: z3.string().max(64).nullable(),
-  mapUrl: z3.string().max(512).nullable().optional()
+var nearbyPlaceSchema = z2.object({
+  placeId: z2.string().min(1).max(256),
+  name: z2.string().min(1).max(128),
+  lat: z2.number().min(-90).max(90).nullable(),
+  lng: z2.number().min(-180).max(180).nullable(),
+  address: z2.string().max(512).nullable(),
+  priceLevel: z2.number().int().min(1).max(4).nullable(),
+  cuisine: z2.string().max(64).nullable(),
+  mapUrl: z2.string().max(512).nullable().optional()
 });
 async function addNearbyPlaces(wheelId, userId, places) {
   const [existing, wheelTags] = await Promise.all([
@@ -2789,7 +2576,7 @@ var appRouter = router({
      * the existing "that wheel isn't available anymore" eject. Realtime state
      * (session/presence/latest spin) is NOT here — it's polled separately.
      */
-    bootstrap: publicProcedure.input(z3.object({ wheelId: z3.number().nullable().optional() })).query(async ({ ctx, input }) => {
+    bootstrap: publicProcedure.input(z2.object({ wheelId: z2.number().nullable().optional() })).query(async ({ ctx, input }) => {
       const user = ctx.user;
       if (!user) {
         return { user: null, wheels: [], wheelId: null, wheel: null, restaurants: [], tags: [], ratings: [] };
@@ -2845,15 +2632,15 @@ var appRouter = router({
     // anything else is NOT_FOUND (a once-public wheel that went private reads the
     // same — the client shows a graceful "not available" state). Output is shaped
     // through `toPublicWheel` so no owner/member PII can leak.
-    getPublic: publicProcedure.input(z3.object({ id: z3.number() })).query(async ({ input }) => {
+    getPublic: publicProcedure.input(z2.object({ id: z2.number() })).query(async ({ input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });
       return toPublicWheel(wheel);
     }),
     // Popular public wheels for the landing "try without signing in" section,
     // ranked by spin count. No PII; just id/name/counts.
-    listPublic: publicProcedure.input(z3.object({ limit: z3.number().int().min(1).max(24).default(8) })).query(async ({ input }) => getPopularPublicWheels(input.limit)),
-    get: protectedProcedure.input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => {
+    listPublic: publicProcedure.input(z2.object({ limit: z2.number().int().min(1).max(24).default(8) })).query(async ({ input }) => getPopularPublicWheels(input.limit)),
+    get: protectedProcedure.input(z2.object({ id: z2.number() })).query(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.id, ctx.user.id);
@@ -2864,11 +2651,12 @@ var appRouter = router({
     }),
     // One consolidated poll for a shared wheel's fast-changing state: the live
     // member roster, the current round (veto/vote/dietary), and the latest spin.
-    // Replaces three separate 3s polls (wheels.get-for-members, session.state,
-    // spins.latest) with a single membership check + one round-trip — the main
+    // Replaced three separate 3s polls (wheels.get-for-members, session.state,
+    // spins.latest — all three since deleted, no client had kept using them)
+    // with a single membership check + one round-trip — the main
     // serverless-cost lever on an active shared wheel. The three reads run
     // concurrently. Presence stays its own (slower, write-bearing) heartbeat.
-    realtime: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    realtime: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const [members, session, latestSpin] = await Promise.all([
@@ -2878,13 +2666,13 @@ var appRouter = router({
       ]);
       return { members, session, latestSpin };
     }),
-    create: protectedProcedure.input(z3.object({
-      name: z3.string().min(1).max(128),
-      isShared: z3.boolean(),
-      isPublic: z3.boolean(),
-      exclusionDays: z3.number().int().min(0).max(30).default(3),
-      fairnessMode: z3.boolean().default(false),
-      rotateCuisines: z3.boolean().default(false)
+    create: protectedProcedure.input(z2.object({
+      name: z2.string().min(1).max(128),
+      isShared: z2.boolean(),
+      isPublic: z2.boolean(),
+      exclusionDays: z2.number().int().min(0).max(30).default(3),
+      fairnessMode: z2.boolean().default(false),
+      rotateCuisines: z2.boolean().default(false)
     })).mutation(async ({ ctx, input }) => {
       const inviteToken = input.isShared ? nanoid(16) : void 0;
       const id = await createWheel(ctx.user.id, input.name, input.isShared, input.isPublic, inviteToken, input.exclusionDays, input.fairnessMode, input.rotateCuisines);
@@ -2906,20 +2694,20 @@ var appRouter = router({
      * override the inferred one, but onboarding itself never sends it.
      */
     createFromNearby: protectedProcedure.input(
-      z3.object({
+      z2.object({
         // Capped at the wheel's own segment ceiling — more than this can't be
         // rendered as a spinnable wheel anyway (shared/nearby).
-        places: z3.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
-        name: z3.string().min(1).max(128).optional(),
+        places: z2.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
+        name: z2.string().min(1).max(128).optional(),
         // The point the user searched from, when they picked a place (their
         // office) rather than using raw geolocation. Persisted as the wheel's
         // distance origin so walking times work immediately and the office is
         // already filled in under wheel settings — the same thing they just
         // told us, not a second setup step.
-        origin: z3.object({
-          lat: z3.number().min(-90).max(90),
-          lng: z3.number().min(-180).max(180),
-          label: z3.string().min(1).max(64)
+        origin: z2.object({
+          lat: z2.number().min(-90).max(90),
+          lng: z2.number().min(-180).max(180),
+          label: z2.string().min(1).max(64)
         }).nullable().optional()
       })
     ).mutation(async ({ ctx, input }) => {
@@ -2954,7 +2742,7 @@ var appRouter = router({
      * Any member can copy a wheel they can see; the copy is owned by whoever
      * made it, and is private and unshared regardless of the source's settings.
      */
-    copy: protectedProcedure.input(z3.object({ id: z3.number(), name: z3.string().min(1).max(128).optional() })).mutation(async ({ ctx, input }) => {
+    copy: protectedProcedure.input(z2.object({ id: z2.number(), name: z2.string().min(1).max(128).optional() })).mutation(async ({ ctx, input }) => {
       const source = await getWheelById(input.id);
       if (!source) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.id, ctx.user.id);
@@ -2981,14 +2769,14 @@ var appRouter = router({
       const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
       return { id: newId, name, restaurants: copied };
     }),
-    update: protectedProcedure.input(z3.object({
-      id: z3.number(),
-      name: z3.string().min(1).max(128).optional(),
-      isPublic: z3.boolean().optional(),
-      isShared: z3.boolean().optional(),
-      exclusionDays: z3.number().int().min(0).max(30).optional(),
-      fairnessMode: z3.boolean().optional(),
-      rotateCuisines: z3.boolean().optional()
+    update: protectedProcedure.input(z2.object({
+      id: z2.number(),
+      name: z2.string().min(1).max(128).optional(),
+      isPublic: z2.boolean().optional(),
+      isShared: z2.boolean().optional(),
+      exclusionDays: z2.number().int().min(0).max(30).optional(),
+      fairnessMode: z2.boolean().optional(),
+      rotateCuisines: z2.boolean().optional()
     })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
@@ -3005,7 +2793,7 @@ var appRouter = router({
       });
       return { success: true, inviteToken: newInviteToken ?? wheel.inviteToken ?? null };
     }),
-    delete: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+    delete: protectedProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
@@ -3020,7 +2808,7 @@ var appRouter = router({
      * administer. They delete it instead, which is the adjacent item in the same
      * menu.
      */
-    leave: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+    leave: protectedProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId === ctx.user.id) {
@@ -3033,7 +2821,7 @@ var appRouter = router({
       if (!left) throw new TRPCError3({ code: "FORBIDDEN" });
       return { success: true };
     }),
-    regenerateInvite: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+    regenerateInvite: protectedProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
@@ -3041,7 +2829,7 @@ var appRouter = router({
       await updateWheel(input.id, { inviteToken });
       return { inviteToken };
     }),
-    join: protectedProcedure.input(z3.object({ token: z3.string() })).mutation(async ({ ctx, input }) => {
+    join: protectedProcedure.input(z2.object({ token: z2.string() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelByInviteToken(input.token);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND", message: "Invalid invite link" });
       if (!wheel.isShared) throw new TRPCError3({ code: "FORBIDDEN", message: "This wheel is not shared" });
@@ -3052,7 +2840,7 @@ var appRouter = router({
     // Wheel auto-opened on entry. Pass null to unset (falls back to the first
     // wheel again). Membership-gated so you can't default to a wheel you can't
     // actually open.
-    setDefault: protectedProcedure.input(z3.object({ wheelId: z3.number().nullable() })).mutation(async ({ ctx, input }) => {
+    setDefault: protectedProcedure.input(z2.object({ wheelId: z2.number().nullable() })).mutation(async ({ ctx, input }) => {
       if (input.wheelId !== null) {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
@@ -3066,12 +2854,12 @@ var appRouter = router({
     // Maps link or geolocation into lat/lng before calling this. Saving a new
     // origin recomputes every restaurant's walking time immediately so the
     // owner sees results without a separate step.
-    setDistanceOrigin: protectedProcedure.input(z3.object({
-      id: z3.number(),
-      enabled: z3.boolean(),
-      originLat: z3.number().min(-90).max(90).nullable().optional(),
-      originLng: z3.number().min(-180).max(180).nullable().optional(),
-      originLabel: z3.string().min(1).max(64).optional()
+    setDistanceOrigin: protectedProcedure.input(z2.object({
+      id: z2.number(),
+      enabled: z2.boolean(),
+      originLat: z2.number().min(-90).max(90).nullable().optional(),
+      originLng: z2.number().min(-180).max(180).nullable().optional(),
+      originLabel: z2.string().min(1).max(64).optional()
     })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
@@ -3093,7 +2881,7 @@ var appRouter = router({
     // Manual re-run for the "Recompute" button — same computation as saving a
     // new origin, without changing it. Any member can trigger it (read-only
     // with respect to wheel settings; it only refreshes restaurant rows).
-    recomputeDistances: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+    recomputeDistances: protectedProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.id, ctx.user.id);
@@ -3103,35 +2891,21 @@ var appRouter = router({
       }
       const result = await recomputeWheelDistances(input.id);
       return { success: true, ...result };
-    }),
-    // Portable JSON bundle of a wheel + its restaurants (no ids).
-    export: protectedProcedure.input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => {
-      const wheel = await getWheelById(input.id);
-      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
-      const isMember = await isWheelMember(input.id, ctx.user.id);
-      if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
-      const rests = await getRestaurantsByWheel(input.id);
-      return serializeWheel(wheel, rests);
-    }),
-    // Create a fresh wheel for the caller from an export bundle.
-    import: protectedProcedure.input(wheelExportSchema).mutation(async ({ ctx, input }) => {
-      const id = await importWheelData(ctx.user.id, input);
-      return { id };
     })
   }),
   // ─── Tags ────────────────────────────────────────────────────────────────────
   tags: router({
-    list: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    list: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
       return getTagsForWheel(input.wheelId);
     }),
-    createCustom: protectedProcedure.input(z3.object({
-      name: z3.string().min(1).max(64),
-      wheelId: z3.number(),
-      category: z3.enum(["cuisine", "food_type", "custom"]).default("custom")
+    createCustom: protectedProcedure.input(z2.object({
+      name: z2.string().min(1).max(64),
+      wheelId: z2.number(),
+      category: z2.enum(["cuisine", "food_type", "custom"]).default("custom")
     })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
@@ -3141,7 +2915,7 @@ var appRouter = router({
   }),
   // ─── Restaurants ─────────────────────────────────────────────────────────────
   restaurants: router({
-    list: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    list: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
@@ -3162,23 +2936,23 @@ var appRouter = router({
     }),
     // Guest read for the /w/:id view: the full restaurant list of a public wheel
     // (guests spin everything — no exclusion state). Public-safe fields only.
-    listPublic: publicProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ input }) => {
+    listPublic: publicProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });
       const rests = await getRestaurantsByWheel(input.wheelId);
       return rests.map(toPublicRestaurant);
     }),
-    add: protectedProcedure.input(z3.object({
-      wheelId: z3.number(),
-      name: z3.string().min(1).max(128),
-      notes: z3.string().max(500).nullable(),
-      tagIds: z3.array(z3.number()),
-      mapUrl: z3.string().max(512).nullable().optional(),
+    add: protectedProcedure.input(z2.object({
+      wheelId: z2.number(),
+      name: z2.string().min(1).max(128),
+      notes: z2.string().max(500).nullable(),
+      tagIds: z2.array(z2.number()),
+      mapUrl: z2.string().max(512).nullable().optional(),
       // When the name came from "Look up" on a pasted Maps link, the client
       // passes the resolved place id through. Storing it is what lets opening
       // hours (and later detail refreshes) work for hand-added restaurants —
       // without it every such row looked like a name-only entry.
-      placeId: z3.string().max(256).nullable().optional()
+      placeId: z2.string().max(256).nullable().optional()
     })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
@@ -3200,7 +2974,7 @@ var appRouter = router({
       await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
       return { id };
     }),
-    addBulk: protectedProcedure.input(z3.object({ wheelId: z3.number(), text: z3.string().max(1e4) })).mutation(async ({ ctx, input }) => {
+    addBulk: protectedProcedure.input(z2.object({ wheelId: z2.number(), text: z2.string().max(1e4) })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
@@ -3210,7 +2984,7 @@ var appRouter = router({
       const added = await addRestaurants(input.wheelId, ctx.user.id, names);
       return { added, skipped };
     }),
-    update: protectedProcedure.input(z3.object({ id: z3.number(), name: z3.string().min(1).max(128), notes: z3.string().max(500).nullable(), tagIds: z3.array(z3.number()), mapUrl: z3.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
+    update: protectedProcedure.input(z2.object({ id: z2.number(), name: z2.string().min(1).max(128), notes: z2.string().max(500).nullable(), tagIds: z2.array(z2.number()), mapUrl: z2.string().max(512).nullable().optional() })).mutation(async ({ ctx, input }) => {
       const restaurant = await getRestaurantById(input.id);
       if (!restaurant) throw new TRPCError3({ code: "NOT_FOUND" });
       const wheel = await getWheelById(restaurant.wheelId);
@@ -3220,7 +2994,7 @@ var appRouter = router({
       await updateRestaurant(input.id, input.name, input.notes, input.tagIds, input.mapUrl ?? null);
       return { success: true };
     }),
-    delete: protectedProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
+    delete: protectedProcedure.input(z2.object({ id: z2.number() })).mutation(async ({ ctx, input }) => {
       const restaurant = await getRestaurantById(input.id);
       if (!restaurant) throw new TRPCError3({ code: "NOT_FOUND" });
       const wheel = await getWheelById(restaurant.wheelId);
@@ -3232,7 +3006,7 @@ var appRouter = router({
     // Refresh cached opening hours for this wheel's provider-sourced places.
     // Member-gated. Reports providerFailed separately so a misconfigured Places
     // key surfaces as an error instead of a silent "nothing happened".
-    refreshHours: protectedProcedure.input(z3.object({ wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+    refreshHours: protectedProcedure.input(z2.object({ wheelId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       if (!isPlacesConfigured()) return { updated: 0, providerFailed: false, configured: false };
@@ -3241,7 +3015,7 @@ var appRouter = router({
     }),
     // ── Ratings (1–5 stars per member per place) ──────────────────────────────
     // Any member rates any place on the wheel; re-rating overwrites their star.
-    rate: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number(), stars: z3.number().int().min(1).max(5) })).mutation(async ({ ctx, input }) => {
+    rate: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number(), stars: z2.number().int().min(1).max(5) })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const restaurant = await getRestaurantById(input.restaurantId);
@@ -3251,7 +3025,7 @@ var appRouter = router({
     }),
     // Per-restaurant rollup for the wheel: team average + count + the caller's
     // own star. Aggregated by the pure shared/restaurantRating helper.
-    ratings: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    ratings: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
@@ -3270,16 +3044,16 @@ var appRouter = router({
     // server still owns the eventual spin. Modelled as a mutation because it is
     // an on-demand action driven by a location the client just captured.
     searchNearby: protectedProcedure.input(
-      z3.object({
+      z2.object({
         // Null/absent = searching before a wheel exists, which is how
         // first-run works: pick the places, THEN the wheel gets built out of
         // them. Without a wheel there's nothing to be a member of and nothing
         // to mark as already-added; with one, both apply exactly as before.
-        wheelId: z3.number().nullable().optional(),
-        lat: z3.number().min(-90).max(90),
-        lng: z3.number().min(-180).max(180),
-        radius: z3.number().int().min(100).max(5e3).optional(),
-        keyword: z3.string().max(120).optional()
+        wheelId: z2.number().nullable().optional(),
+        lat: z2.number().min(-90).max(90),
+        lng: z2.number().min(-180).max(180),
+        radius: z2.number().int().min(100).max(5e3).optional(),
+        keyword: z2.string().max(120).optional()
       })
     ).mutation(async ({ ctx, input }) => {
       if (input.wheelId != null) {
@@ -3344,17 +3118,17 @@ var appRouter = router({
     // restaurant. De-duplicated by placeId so the same physical spot can't be
     // added twice. Reuses `restaurants.add`'s ownership model (any member adds).
     addNearby: protectedProcedure.input(
-      z3.object({
-        wheelId: z3.number(),
-        place: z3.object({
-          placeId: z3.string().min(1).max(256),
-          name: z3.string().min(1).max(128),
-          lat: z3.number().min(-90).max(90).nullable(),
-          lng: z3.number().min(-180).max(180).nullable(),
-          address: z3.string().max(512).nullable(),
-          priceLevel: z3.number().int().min(1).max(4).nullable(),
-          cuisine: z3.string().max(64).nullable(),
-          mapUrl: z3.string().max(512).nullable().optional()
+      z2.object({
+        wheelId: z2.number(),
+        place: z2.object({
+          placeId: z2.string().min(1).max(256),
+          name: z2.string().min(1).max(128),
+          lat: z2.number().min(-90).max(90).nullable(),
+          lng: z2.number().min(-180).max(180).nullable(),
+          address: z2.string().max(512).nullable(),
+          priceLevel: z2.number().int().min(1).max(4).nullable(),
+          cuisine: z2.string().max(64).nullable(),
+          mapUrl: z2.string().max(512).nullable().optional()
         })
       })
     ).mutation(async ({ ctx, input }) => {
@@ -3396,9 +3170,9 @@ var appRouter = router({
     // row. Same de-dup, tagging and enrichment contract as addNearby; see
     // `addNearbyPlaces`.
     addNearbyBulk: protectedProcedure.input(
-      z3.object({
-        wheelId: z3.number(),
-        places: z3.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS)
+      z2.object({
+        wheelId: z2.number(),
+        places: z2.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS)
       })
     ).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
@@ -3424,11 +3198,11 @@ var appRouter = router({
      * per call and only ever runs on an explicit press.
      */
     searchPlaces: protectedProcedure.input(
-      z3.object({
-        query: z3.string().min(1).max(200),
+      z2.object({
+        query: z2.string().min(1).max(200),
         // Optional bias toward a known position, when we have one.
-        lat: z3.number().min(-90).max(90).nullable().optional(),
-        lng: z3.number().min(-180).max(180).nullable().optional()
+        lat: z2.number().min(-90).max(90).nullable().optional(),
+        lng: z2.number().min(-180).max(180).nullable().optional()
       })
     ).mutation(async ({ input }) => {
       if (!isPlacesConfigured()) {
@@ -3461,12 +3235,12 @@ var appRouter = router({
     // prefills the add form and the user confirms; the write still goes through
     // restaurants.add. Member-gated; degrades like searchNearby when unconfigured.
     resolveLink: protectedProcedure.input(
-      z3.object({
+      z2.object({
         // Nullable for the same reason as searchNearby: the location picker
         // resolves links during first run, before any wheel exists. With a
         // wheel, the membership check is unchanged.
-        wheelId: z3.number().nullable().optional(),
-        url: z3.string().min(1).max(2048)
+        wheelId: z2.number().nullable().optional(),
+        url: z2.string().min(1).max(2048)
       })
     ).mutation(async ({ ctx, input }) => {
       if (input.wheelId != null) {
@@ -3504,7 +3278,7 @@ var appRouter = router({
     // the client. The candidate ids are the restaurants currently on the
     // caller's wheel (after their tag filter); the server re-validates them
     // against the wheel and the live exclusion window before choosing.
-    create: protectedProcedure.input(z3.object({ wheelId: z3.number(), candidateIds: z3.array(z3.number()).min(1) })).mutation(async ({ ctx, input }) => {
+    create: protectedProcedure.input(z2.object({ wheelId: z2.number(), candidateIds: z2.array(z2.number()).min(1) })).mutation(async ({ ctx, input }) => {
       const [wheel, isMember] = await Promise.all([
         getWheelById(input.wheelId),
         isWheelMember(input.wheelId, ctx.user.id)
@@ -3581,14 +3355,7 @@ var appRouter = router({
       ]);
       return { id, restaurantId };
     }),
-    // Most recent spin on a wheel — clients poll this to surface "someone spun"
-    // on shared wheels (replaces the old SSE broadcast).
-    latest: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      return getLatestSpin(input.wheelId);
-    }),
-    history: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    history: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getSpinHistory(input.wheelId);
@@ -3597,32 +3364,19 @@ var appRouter = router({
     // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
     // acceptSpin no-ops (and creates no duplicate notification) if it's already
     // accepted or isn't the caller's own spin.
-    accept: protectedProcedure.input(z3.object({ wheelId: z3.number(), spinId: z3.number() })).mutation(async ({ ctx, input }) => {
+    accept: protectedProcedure.input(z2.object({ wheelId: z2.number(), spinId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
       return { success: result != null };
     }),
-    reenable: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number() })).mutation(async ({ ctx, input }) => {
+    reenable: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await reenableRestaurant(input.wheelId, input.restaurantId, wheel.exclusionDays);
       return { success: true };
-    }),
-    // "How was it?" — set/change the verdict on a spin the caller made. Scoped
-    // to the caller's own spins (rateSpin checks spunBy), so on a shared wheel
-    // you rate your own picks. The latest rating per restaurant then biases
-    // future spins via applyRatingWeights.
-    rate: protectedProcedure.input(z3.object({ wheelId: z3.number(), spinId: z3.number(), rating: z3.enum(RATINGS) })).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const restaurantId = await rateSpin(input.spinId, input.wheelId, ctx.user.id, input.rating);
-      if (restaurantId == null) {
-        throw new TRPCError3({ code: "NOT_FOUND", message: "Spin not found or not yours to rate" });
-      }
-      return { success: true, restaurantId };
     })
   }),
   // ─── Notifications ─────────────────────────────────────────────────────────────
@@ -3646,7 +3400,7 @@ var appRouter = router({
     // Heartbeat + roster in one call: the client polls this (~10s); a user is
     // "online" while their last ping is within the TTL. Multiple tabs collapse
     // to one row (keyed by user), and stale rows simply age out.
-    ping: protectedProcedure.input(z3.object({ wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+    ping: protectedProcedure.input(z2.object({ wheelId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await pingPresence(input.wheelId, ctx.user.id, ctx.user.name);
@@ -3657,31 +3411,25 @@ var appRouter = router({
   }),
   // ─── Session (vetoes & votes) ─────────────────────────────────────────────────
   session: router({
-    // Current round's veto/vote/dietary state — clients poll this (~3s).
-    state: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      return buildSessionState(await getRoundMarks(input.wheelId));
-    }),
-    veto: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number() })).mutation(async ({ ctx, input }) => {
+    veto: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await toggleRoundMark(input.wheelId, "veto", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
-    vote: protectedProcedure.input(z3.object({ wheelId: z3.number(), restaurantId: z3.number() })).mutation(async ({ ctx, input }) => {
+    vote: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
-    dietary: protectedProcedure.input(z3.object({ wheelId: z3.number(), tagId: z3.number() })).mutation(async ({ ctx, input }) => {
+    dietary: protectedProcedure.input(z2.object({ wheelId: z2.number(), tagId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await toggleRoundMark(input.wheelId, "dietary", input.tagId, ctx.user.id);
       return { success: true };
     }),
-    clear: protectedProcedure.input(z3.object({ wheelId: z3.number() })).mutation(async ({ ctx, input }) => {
+    clear: protectedProcedure.input(z2.object({ wheelId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       await clearRoundAll(input.wheelId);
@@ -3690,14 +3438,14 @@ var appRouter = router({
   }),
   // ─── Statistics ─────────────────────────────────────────────────────────────
   stats: router({
-    getRestaurantStats: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    getRestaurantStats: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getRestaurantStats(input.wheelId);
     }),
     // Team taste: aggregate the wheel's star ratings into overall mood +
     // crowd-favourite places + cuisines the team leans toward / cools on.
-    tasteProfile: protectedProcedure.input(z3.object({ wheelId: z3.number() })).query(async ({ ctx, input }) => {
+    tasteProfile: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const summaries = summarizeRatings(await getWheelRatingRows(input.wheelId), ctx.user.id);
@@ -3709,107 +3457,6 @@ var appRouter = router({
         return { restaurantId: s.restaurantId, name: r?.name ?? "Unknown", cuisine, average: s.average, count: s.count };
       });
       return buildTasteProfile(items);
-    })
-  }),
-  // ─── Smart Pick (free, no LLM) ──────────────────────────────────────────────
-  smart: router({
-    // "Decide for me" — a free heuristic. Same eligibility + weighting as a real
-    // spin (fairness/rotation/votes), plus an optional mood boost, then a short
-    // truthful reason. Server-authoritative: it picks, records, and broadcasts
-    // exactly like spins.create — the client never gets to choose the winner.
-    pick: protectedProcedure.input(
-      z3.object({
-        wheelId: z3.number(),
-        candidateIds: z3.array(z3.number()).min(1),
-        moodChips: z3.array(z3.string().max(40)).max(8).optional(),
-        moodText: z3.string().max(200).optional()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      const wheel = await getWheelById(input.wheelId);
-      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const rests = await getRestaurantsByWheel(input.wheelId);
-      const byId = new Map(rests.map((r) => [r.id, r]));
-      const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
-      const session = buildSessionState(await getRoundMarks(input.wheelId));
-      const vetoed = new Set(vetoedIds(session));
-      const avoidedTags = new Set(excludedDietaryTagIds(session));
-      const dietaryBlocked = new Set(
-        avoidedTags.size === 0 ? [] : rests.filter((r) => r.tags.some((t2) => avoidedTags.has(t2.id))).map((r) => r.id)
-      );
-      const eligibleIds = input.candidateIds.filter(
-        (id) => byId.has(id) && !exclusions.has(id) && !vetoed.has(id) && !dietaryBlocked.has(id)
-      );
-      if (eligibleIds.length === 0) {
-        throw new TRPCError3({ code: "BAD_REQUEST", message: "No eligible restaurants to pick from" });
-      }
-      const stats = await getRestaurantStats(input.wheelId);
-      const lastPicked = new Map(stats.map((s) => [s.id, s.lastPickedAt]));
-      const now = Date.now();
-      const daysSince = (id) => {
-        const raw = lastPicked.get(id);
-        const t2 = raw ? new Date(raw).getTime() : NaN;
-        return Number.isNaN(t2) ? null : Math.floor((now - t2) / 864e5);
-      };
-      const candidates = eligibleIds.map((id) => {
-        const r = byId.get(id);
-        return {
-          id,
-          name: r.name,
-          tags: r.tags.map((t2) => t2.name),
-          cuisine: r.tags.find((t2) => t2.category === "cuisine")?.name ?? null,
-          daysSinceLastPick: daysSince(id)
-        };
-      });
-      let base;
-      if (wheel.fairnessMode) {
-        base = computeWeights(
-          eligibleIds.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null }))
-        );
-      } else {
-        base = eligibleIds.map((id) => ({ restaurantId: id, weight: 1 }));
-      }
-      if (wheel.rotateCuisines) {
-        const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t2) => t2.category === "cuisine")?.id ?? null]));
-        const history = await getSpinHistory(input.wheelId);
-        const cuisineLastPicked = /* @__PURE__ */ new Map();
-        for (const h of history) {
-          const cId = cuisineOf.get(h.restaurantId);
-          if (cId == null) continue;
-          const at = new Date(h.spunAt);
-          const cur = cuisineLastPicked.get(cId);
-          if (!cur || at > cur) cuisineLastPicked.set(cId, at);
-        }
-        base = applyCuisineRotation(
-          base,
-          eligibleIds.map((id) => ({ restaurantId: id, cuisineId: cuisineOf.get(id) ?? null })),
-          cuisineLastPicked
-        );
-      }
-      base = applyStarWeights(base, averageMapFromRows(await getWheelRatingRows(input.wheelId)));
-      base = applyVoteWeights(base, voteCounts(session));
-      const keywords = moodKeywords({ chips: input.moodChips, text: input.moodText });
-      base = applyMoodBoost(base, moodBoost(candidates, keywords));
-      const restaurantId = pickWeighted(base);
-      const chosen = candidates.find((c) => c.id === restaurantId);
-      const reason = explainPick({ chosen, moodKeywords: keywords, totalCandidates: eligibleIds.length });
-      await recordSpin(input.wheelId, restaurantId, ctx.user.id);
-      await clearRoundVotes(input.wheelId);
-      return { restaurantId, name: chosen.name, reason };
-    }),
-    // "Smart add" — parse a loose blob into clean names + a best-effort cuisine
-    // mapped ONLY to existing wheel tags. Read-only: returns a proposal the
-    // client confirms; the actual writes go through restaurants.add/addBulk.
-    parseAdd: protectedProcedure.input(z3.object({ wheelId: z3.number(), text: z3.string().min(1).max(4e3) })).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const tags2 = await getTagsForWheel(input.wheelId);
-      const proposals = resolveAddList(
-        input.text,
-        tags2.map((t2) => ({ id: t2.id, name: t2.name, category: t2.category }))
-      );
-      return { proposals };
     })
   })
 });

@@ -186,12 +186,17 @@ export const spinHistory = mysqlTable("spin_history", {
   // exclude for the full window + notify the team; a rejected spin (re-spin / [x])
   // excludes only for the rest of the Taipei day (shared/exclusion.ts).
   accepted: boolean("accepted").default(false).notNull(),
-  // Post-spin "how was it?" verdict; null = unrated. The latest rating per
-  // restaurant biases future spins (shared/rating.ts).
+  // RETIRED — kept only so existing rows are not destroyed. This was the
+  // post-spin "how was it?" verdict, superseded by the per-member star ratings
+  // in `restaurant_ratings` (see that table's note). Nothing reads or writes it
+  // any more: `spins.rate`, `rateSpin` and `getLatestRatings` are gone, and the
+  // weighting that this comment used to claim ("biases future spins") had
+  // already moved to `applyStarWeights` long before. Do not build on it.
   rating: mysqlEnum("rating", ["loved", "ok", "never"]),
 }, (t) => ({
-  // The hottest table: spins.latest (WHERE wheelId ORDER BY spunAt DESC), history,
-  // and exclusion all scope by wheelId + recency; ratings look up by restaurantId.
+  // The hottest table: the latest spin (WHERE wheelId ORDER BY spunAt DESC, now
+  // served by wheels.realtime), history, and exclusion all scope by wheelId +
+  // recency; per-restaurant lookups go through restaurantIdx.
   wheelSpunAtIdx: index("spin_history_wheel_spun_at_idx").on(t.wheelId, t.spunAt),
   restaurantIdx: index("spin_history_restaurant_idx").on(t.restaurantId),
 }));

@@ -8,6 +8,20 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
+// One-time purge of a key this app no longer writes. `useAuth` used to mirror
+// the whole user object — name and email included — into localStorage on every
+// change, for a "legacy runtime reader" that does not exist anywhere in this
+// repo. The write is gone, but removing a writer does not remove what it
+// already wrote: every browser that has ever signed in still holds that copy,
+// and sign-out never cleared it (clearBootCache only knows about its own key).
+// So purge it here, where every entry to the app passes exactly once. Safe to
+// delete this block once it has been live long enough for returning users.
+try {
+  localStorage.removeItem("manus-runtime-user-info");
+} catch {
+  // private mode / storage disabled — nothing was written there either
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
