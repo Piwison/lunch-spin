@@ -853,14 +853,21 @@ export async function acceptSpin(
 export async function getNotificationsForUser(userId: number, limit = 20) {
   const db = await getDb();
   if (!db) return [];
-  const wheelIds = (await getUserWheels(userId)).map((w) => w.id);
+  // Both of these only ever needed `userId`, and they ran end to end on a query
+  // the bell polls every 15s for every signed-in user — so the wasted hop was
+  // paid four times a minute per open tab. The early-out below now costs one
+  // extra single-row PK read, but only for someone with no wheels at all (a
+  // brand-new account), which is the one case where nothing is polling yet.
+  const [wheels_, meRows] = await Promise.all([
+    getUserWheels(userId),
+    db
+      .select({ readAt: users.lastReadNotificationAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+  ]);
+  const wheelIds = wheels_.map((w) => w.id);
   if (wheelIds.length === 0) return [];
-
-  const meRows = await db
-    .select({ readAt: users.lastReadNotificationAt })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
   const readAt = meRows[0]?.readAt ?? null;
 
   const rows = await db

@@ -769,9 +769,12 @@ async function acceptSpin(spinId, wheelId, actorUserId) {
 async function getNotificationsForUser(userId, limit = 20) {
   const db = await getDb();
   if (!db) return [];
-  const wheelIds = (await getUserWheels(userId)).map((w) => w.id);
+  const [wheels_, meRows] = await Promise.all([
+    getUserWheels(userId),
+    db.select({ readAt: users.lastReadNotificationAt }).from(users).where(eq(users.id, userId)).limit(1)
+  ]);
+  const wheelIds = wheels_.map((w) => w.id);
   if (wheelIds.length === 0) return [];
-  const meRows = await db.select({ readAt: users.lastReadNotificationAt }).from(users).where(eq(users.id, userId)).limit(1);
   const readAt = meRows[0]?.readAt ?? null;
   const rows = await db.select({
     id: notifications.id,
@@ -3447,9 +3450,10 @@ function createApp() {
     "/api/trpc",
     createExpressMiddleware({ router: appRouter, createContext })
   );
-  app2.use(
-    (req, res) => res.status(404).json({ error: "Not found", path: req.url, originalUrl: req.originalUrl })
-  );
+  app2.use((req, res, next) => {
+    if (!req.path.startsWith("/api")) return next();
+    res.status(404).json({ error: "Not found", path: req.url, originalUrl: req.originalUrl });
+  });
   return app2;
 }
 
