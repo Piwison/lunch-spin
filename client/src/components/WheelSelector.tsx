@@ -55,6 +55,14 @@ interface WheelSelectorProps {
    * a filter you actually use beats a gear you rarely do.
    */
   trailing?: React.ReactNode;
+  /**
+   * Hide the switcher itself (rail and pill) while keeping the dialogs this
+   * component owns. First run sets it: with zero wheels there is nothing to
+   * switch between, and an empty "Select a wheel" pill sat above the whole
+   * onboarding — but "I'll add places myself" still opens the create dialog
+   * that lives here, so unmounting the component is not an option.
+   */
+  pickerHidden?: boolean;
 }
 
 const EXCLUSION_OPTIONS = [
@@ -189,6 +197,7 @@ export default function WheelSelector({
   registerCreateOpener,
   registerSettingsOpener,
   trailing,
+  pickerHidden = false,
 }: WheelSelectorProps) {
   const { user } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
@@ -584,7 +593,7 @@ export default function WheelSelector({
           sheet below — a 240px rail plus 380px of tab content leaves 148px for
           the wheel at 768. */}
       <aside
-        className="hidden xl:flex w-60 flex-col gap-1 m-2 p-2 glass-bar overflow-y-auto flex-shrink-0"
+        className={`${pickerHidden ? "hidden" : "hidden xl:flex"} w-60 flex-col gap-1 m-2 p-2 glass-bar overflow-y-auto flex-shrink-0`}
         style={{ borderRadius: "var(--radius-card)" }}
       >
         <div className="px-3 pt-2 pb-3">
@@ -606,7 +615,7 @@ export default function WheelSelector({
       </aside>
 
       {/* ── MOBILE — wheel-picker pill + bottom sheet ── */}
-      <div className="xl:hidden px-3 pt-3 pb-1 flex-shrink-0 flex items-center gap-2">
+      <div className={`${pickerHidden ? "hidden" : "flex xl:hidden"} px-3 pt-3 pb-1 flex-shrink-0 items-center gap-2`}>
         <Sheet open={showSwitcher} onOpenChange={setShowSwitcher}>
           <SheetTrigger asChild>
             <button

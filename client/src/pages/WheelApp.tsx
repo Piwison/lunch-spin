@@ -1120,6 +1120,7 @@ export default function WheelApp() {
           }}
           registerCreateOpener={registerCreateOpener}
           registerSettingsOpener={registerSettingsOpener}
+          pickerHidden={firstRun}
           /* The Wheel tab spends this slot on the filter instead of the gear.
              Two rows come off the top of the most important screen: the filter
              stops being a full-width bar, and the duplicate wheel-name title

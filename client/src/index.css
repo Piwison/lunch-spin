@@ -978,6 +978,145 @@
   .reveal { opacity: 1 !important; transform: none !important; }
 }
 
+/* ─── First run (OnboardingFlow) ───────────────────────────────────────────────
+   Motion that answers the person, nothing that idles: the radar pings only
+   while a search is actually in flight, the rings and the wheel arrive once,
+   the found places land on the radar at their real bearing, cards arrive
+   nearest-first, and the wheel in the commit bar turns a notch each time a
+   tick changes how many panes it has. Transform and opacity only.
+
+   Every class is in the components layer (failure modes 22/46): un-layered
+   CSS beats every utility, and several of these share properties with one.
+
+   Entrances fill BACKWARDS, never `both`: a finished animation that keeps its
+   last keyframe keeps overriding the property, and a card that has arrived
+   still has to be able to dim when the wheel is full (failure mode 24). */
+@keyframes onb-ring-in {
+  from { opacity: 0; transform: scale(0.72); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes onb-ping {
+  from { opacity: 0.55; transform: scale(0.24); }
+  to   { opacity: 0; transform: scale(1); }
+}
+@keyframes onb-pop {
+  from { opacity: 0; transform: scale(0.3); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes onb-arrive {
+  from { opacity: 0; transform: translateY(var(--move-enter)); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes onb-wind {
+  from { transform: rotate(-160deg); }
+  to   { transform: none; }
+}
+@keyframes onb-roll {
+  from { opacity: 0; transform: translateY(0.45em); }
+  to   { opacity: 1; transform: none; }
+}
+/* The commit bar's small wheel becoming the big one: a FLIP from the rect it
+   occupied when the button was pressed, which OnboardingFlow measures and
+   writes into these three properties before the first paint. */
+@keyframes onb-grow {
+  from { transform: translate(var(--grow-x, 0px), var(--grow-y, 0px)) scale(var(--grow-s, 0.3)); }
+  to   { transform: none; }
+}
+
+@layer components {
+  .onb-ring {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: onb-ring-in 560ms var(--ease-standard) backwards;
+    animation-delay: calc(var(--i, 0) * 90ms);
+  }
+  .onb-ping {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: onb-ping 1.8s var(--ease-exit) infinite;
+    animation-delay: calc(var(--i, 0) * 900ms);
+  }
+  .onb-dot {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: onb-pop 300ms var(--ease-standard) backwards;
+    animation-delay: calc(var(--i, 0) * 28ms);
+  }
+  .onb-wind { animation: onb-wind 900ms var(--ease-standard) backwards; }
+  /* Capped at ten steps so the twentieth card is not left waiting a second
+     and a half for its turn. */
+  .onb-arrive {
+    animation: onb-arrive 420ms var(--ease-standard) backwards;
+    animation-delay: calc(min(var(--i, 0), 10) * var(--stagger) * 0.6);
+  }
+  .onb-roll { display: inline-block; animation: onb-roll 240ms var(--ease-standard) backwards; }
+  .onb-grow { animation: onb-grow 560ms var(--ease-standard) backwards; }
+  .onb-flash { animation: fade-in 200ms ease-out backwards; }
+
+  /* The disc's own turn when its pane count changes. A transition, not an
+     animation, so a burst of taps keeps adding up instead of restarting. */
+  .onb-disc { transition: transform 460ms var(--ease-standard); }
+
+  /* The walk-minute tile IS the checkbox: ticking lights it persimmon. The
+     fill is its own layer because a gradient cannot transition. */
+  .onb-card {
+    transition:
+      background-color var(--dur-toggle) ease-out,
+      border-color var(--dur-toggle) ease-out,
+      opacity var(--dur-view) ease-out;
+  }
+  .onb-tile-fill {
+    opacity: 0;
+    transform: scale(0.55);
+    transition:
+      opacity 180ms ease-out,
+      transform 280ms var(--ease-standard);
+  }
+  .onb-tile-num { transition: color 180ms ease-out; }
+  .onb-check {
+    opacity: 0;
+    transform: scale(0.4) rotate(-25deg);
+    transition:
+      opacity 160ms ease-out,
+      transform 260ms var(--ease-standard);
+  }
+  [aria-pressed="true"] .onb-tile-fill,
+  [aria-pressed="true"] .onb-check {
+    opacity: 1;
+    transform: none;
+  }
+
+  .onb-chips { scrollbar-width: none; }
+  .onb-chips::-webkit-scrollbar { display: none; }
+
+  /* Above the dock, whatever height the dock is on this phone (failure mode
+     41: the flat bottom-28 this replaces was 18px short on every phone with a
+     home indicator). Above md there is no dock and --dock-height is 0. */
+  .onb-commit {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--dock-height) + 0.75rem);
+    z-index: 30;
+  }
+  /* The list's end clears the commit bar; the scroller's own pb-dock already
+     clears the dock beneath it. */
+  .onb-list-end { padding-bottom: calc(64px + 2rem); }
+  @media (min-width: 768px) {
+    .onb-commit { bottom: 1.5rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .onb-ring, .onb-dot, .onb-wind, .onb-arrive, .onb-roll, .onb-grow, .onb-flash {
+      animation: none !important;
+    }
+    .onb-ping { display: none; }
+    .onb-disc, .onb-card, .onb-tile-fill, .onb-tile-num, .onb-check {
+      transition: none !important;
+    }
+  }
+}
+
 /* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

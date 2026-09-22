@@ -20,6 +20,7 @@
 
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useLang } from "@/i18n";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { providerAlert } from "@/lib/placesError";
@@ -41,18 +42,25 @@ const looksLikeMapLink = (s: string) =>
 export default function LocationPicker({
   onPicked,
   compact = false,
-  primaryLabel = "Use my location",
+  primaryLabel,
+  onLocatingChange,
 }: {
   onPicked: (location: PickedLocation) => void;
   /** Denser styling for use inside a dialog. */
   compact?: boolean;
+  /** Overrides the translated "use my location" label. */
   primaryLabel?: string;
+  /** Told when the browser starts and stops looking for a position — the part
+   *  of "finding you" that happens before any request is made. */
+  onLocatingChange?: (locating: boolean) => void;
 }) {
+  const { t } = useLang();
   const [query, setQuery] = useState("");
   const [link, setLink] = useState("");
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  useEffect(() => onLocatingChange?.(locating), [locating, onLocatingChange]);
 
   // Ask the browser whether geolocation can work BEFORE offering it. Starts at
   // "unknown", which resolves to the normal geolocation-first layout, so a
@@ -69,7 +77,7 @@ export default function LocationPicker({
       // A link that resolves without coordinates is useless here — say so
       // rather than handing the caller a location it can't search from.
       if (place?.lat == null || place?.lng == null) {
-        setGeoError(`Found "${place?.name ?? "that place"}" but not its exact location. Try searching for it by name.`);
+        setGeoError(t("loc.err.noCoords", { name: place?.name ?? t("loc.thatPlace") }));
         return;
       }
       onPicked({ lat: place.lat, lng: place.lng, label: place.name ?? null });
@@ -86,11 +94,13 @@ export default function LocationPicker({
     } catch (err) {
       const kind = err instanceof GeoError ? err.kind : "failed";
       setGeoError(
-        kind === "unsupported"
-          ? "This device can't share its location — search for a place instead."
-          : kind === "denied"
-            ? "Location permission was denied — search for a place instead."
-            : "Couldn't get your location — search for a place instead.",
+        t(
+          kind === "unsupported"
+            ? "loc.err.unsupported"
+            : kind === "denied"
+              ? "loc.err.denied"
+              : "loc.err.failed",
+        ),
       );
       // Failure is exactly when the alternatives need to be in front of them.
       setShowManual(true);
@@ -130,12 +140,12 @@ export default function LocationPicker({
             }}
           >
             {locating ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
-            {locating ? "Finding you…" : primaryLabel}
+            {locating ? t("loc.finding") : (primaryLabel ?? t("loc.useMine"))}
           </Button>
 
           {!compact && (
             <p className="type-meta text-muted-foreground text-center px-4">
-              Only used for this search — it&apos;s never stored.
+              {t("loc.privacy")}
             </p>
           )}
         </>
@@ -144,10 +154,7 @@ export default function LocationPicker({
            cannot open the browser's or the OS's location settings, and
            pretending otherwise would be a control that does nothing. Say where
            the switch is, once, and get out of the way of the routes that work. */
-        <p className="type-meta text-muted-foreground px-1 leading-relaxed">
-          Location is switched off for this site, so search for a place instead.
-          To turn it back on, change it in your browser&apos;s site settings.
-        </p>
+        <p className="type-meta text-muted-foreground px-1 leading-relaxed">{t("loc.denied")}</p>
       )}
 
       {geoError && (
@@ -187,22 +194,20 @@ export default function LocationPicker({
           className="text-muted-foreground hover:text-foreground transition-colors"
           style={{ minHeight: 44, fontSize: 15, fontWeight: 500 }}
         >
-          Or set it another way
+          {t("loc.other")}
         </button>
       ) : (
         <div className="flex flex-col gap-2.5">
           {/* Search by name — an office, a station, a landmark. */}
           <div className="flex flex-col gap-1.5">
-            <span className="type-meta text-muted-foreground px-1">
-              Search for your office or a nearby landmark
-            </span>
+            <span className="type-meta text-muted-foreground px-1">{t("loc.search.label")}</span>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 <Input
                   id="locpick-query"
-                  aria-label="Search for your office or a nearby landmark"
-                  placeholder="e.g. 台北101"
+                  aria-label={t("loc.search.label")}
+                  placeholder={t("loc.search.placeholder")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => {
@@ -220,6 +225,7 @@ export default function LocationPicker({
               <Button
                 type="button"
                 onClick={runSearch}
+                aria-label={t("loc.search.submit")}
                 disabled={!query.trim() || busy}
                 className="flex-shrink-0"
                 style={
@@ -244,9 +250,7 @@ export default function LocationPicker({
           </div>
 
           {searchPlaces.data && results.length === 0 && (
-            <p className="type-meta text-muted-foreground px-1">
-              No places matched that. Try a fuller name, or paste a Maps link below.
-            </p>
+            <p className="type-meta text-muted-foreground px-1">{t("loc.search.none")}</p>
           )}
 
           {results.length > 0 && (
@@ -276,11 +280,11 @@ export default function LocationPicker({
 
           {/* Paste a Maps link. */}
           <div className="flex flex-col gap-1.5">
-            <span className="type-meta text-muted-foreground px-1">Or paste a Google Maps link</span>
+            <span className="type-meta text-muted-foreground px-1">{t("loc.link.label")}</span>
             <div className="flex gap-2">
               <Input
                 id="locpick-link"
-                aria-label="Google Maps link"
+                aria-label={t("loc.link.aria")}
                 type="url"
                 inputMode="url"
                 placeholder="https://maps.app.goo.gl/…"
@@ -291,6 +295,7 @@ export default function LocationPicker({
               <Button
                 type="button"
                 onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim() }); }}
+                aria-label={t("loc.link.submit")}
                 disabled={!looksLikeMapLink(link) || busy}
                 className="flex-shrink-0"
                 style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)", borderRadius: "var(--radius-chip)" }}

@@ -1,81 +1,94 @@
 /**
  * First run: Locate → Pick → Spin.
  *
- * Replaces the old first-run card, whose two buttons both opened the same
- * seven-field CREATE WHEEL dialog and whose "fast" path seeded eight fictional
- * restaurants ("Pizza Place", "Taco Truck") — so a new user's very first spin
- * landed on somewhere they can't eat, and everything it gave them had to be
- * thrown away. The product's most convincing move, nearby search, was two tabs
- * away behind a 40px ghost button.
+ * The nearby search IS the onboarding. One tap finds real restaurants near you,
+ * already ticked; the only job is adjusting the list; then the wheel is built
+ * and spun. Zero typed characters — the wheel is named after the neighbourhood
+ * (shared/areaName) — and anyone who would rather not share a location drops
+ * through to the ordinary create dialog via `onManualCreate`.
  *
- * So the nearby search IS the onboarding. One tap gets real restaurants near
- * you, already ticked; the only job is un-ticking what you don't want; then the
- * wheel is built and spun. Zero typed characters — the wheel is named after the
- * neighbourhood (shared/areaName) and every setting the old dialog asked for is
- * a tuning knob that lives in wheel settings, where a user who has actually
- * spun a few times can answer it.
+ * What the list holds and shows (BACKLOG.md 1a–1d, rules in shared/candidates):
  *
- * Anyone who'd rather not share their location drops through to the ordinary
- * create dialog via `onManualCreate` — we don't build a second creation path.
+ *   - Ranked by DISTANCE, not Google's default prominence: measured at 內湖,
+ *     the two shared 2 of 20 places and only distance found the neighbourhood
+ *     lunch spots.
+ *   - A whole page (20), not one wheel's worth (12), so the chips filter on the
+ *     client instantly. Walk time, price and open-now never make a request;
+ *     only a craving (keyword), "look farther" (the next page) or a list that
+ *     has run dry goes back to Google. Each keyword's page is kept, so clearing
+ *     it or typing it again costs nothing.
+ *   - Judged Google ratings under 3.0 are hidden, and the screen says how many
+ *     and brings them back in one tap.
+ *   - The wheel is exactly the ticked places that are VISIBLE. A tick hidden
+ *     behind a chip does not ride along, so the count on the button always
+ *     matches what is on screen (failure modes 38/54).
+ *   - Each craving is its own list with its OWN ticks. Ticks used to be one
+ *     set across every query, so searching 麵 auto-ticked three noodle shops
+ *     and "back to all" came back with 11 ticked where the person had left 8 —
+ *     ticks nobody chose, leaking out of a search they had already abandoned.
+ *
+ * The motion follows the product's one rule — it answers the person, nothing
+ * idles. See the "First run" block in index.css.
  */
 
-import { useCallback, useMemo, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { trpc, type RouterOutputs } from "@/lib/trpc";
 import { providerAlert } from "@/lib/placesError";
-import LocationPicker, { type PickedLocation } from "@/components/LocationPicker";
-import { formatWalk } from "@shared/nearby";
+import { useLang } from "@/i18n";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
+import LocationPicker, {
+  type PickedLocation,
+} from "@/components/LocationPicker";
+import LocateRadar, {
+  bearingDeg,
+  type RadarDot,
+} from "@/components/onboarding/LocateRadar";
+import PaneWheel from "@/components/onboarding/PaneWheel";
+import PlaceCard, { placeMapUrl } from "@/components/onboarding/PlaceCard";
+import { MAX_SEGMENTS, MIN_SEGMENTS } from "@shared/nearby";
+import { MIN_SPINNABLE, canStartSpinning } from "@shared/onboarding";
 import {
-  DEFAULT_PICK_COUNT,
-  MIN_SPINNABLE,
-  canStartSpinning,
-  preselectPlaceIds,
-} from "@shared/onboarding";
+  CANDIDATE_POOL,
+  arrivalTicks,
+  filterCandidates,
+  mergeCandidatePages,
+  onWheel,
+  relaxations,
+  walkBand,
+  type CandidateFilters,
+  type RelaxationKind,
+} from "@shared/candidates";
 import {
   AlertTriangle,
-  Check,
-  Footprints,
+  ArrowRight,
   Loader2,
-  Navigation,
-  RotateCw,
+  MapPin,
+  PenLine,
+  Radar,
+  Search,
+  X,
 } from "lucide-react";
 
 type Step = "locate" | "pick" | "building";
-type Filter = "all" | "walk" | "price" | "open";
+type NearbyRow = RouterOutputs["places"]["searchNearby"]["places"][number];
+type SearchResult = RouterOutputs["places"]["searchNearby"];
 
-/** A place row as returned by places.searchNearby. */
-type NearbyResult = {
-  placeId: string;
-  name: string;
-  walkMinutes: number;
-  walkSource: "route" | "estimate";
-  distanceMeters: number | null;
-  cuisine: string | null;
-  priceLevel: number | null;
-  open: boolean | null;
-  lat: number | null;
-  lng: number | null;
-  address: string | null;
-  alreadyAdded: boolean;
-};
-
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "walk", label: "< 10 min" },
-  { id: "price", label: "$$ & under" },
-  { id: "open", label: "Open now" },
-];
-
-/** Chips narrow what's *shown*; they never silently drop a place you ticked. */
-function matchesFilter(p: NearbyResult, filter: Filter): boolean {
-  if (filter === "walk") return p.walkMinutes <= 10;
-  if (filter === "price") return p.priceLevel == null || p.priceLevel <= 2;
-  if (filter === "open") return p.open !== false;
-  return true;
+/** One query's candidates. Keyed by keyword; "" is the plain nearby search. */
+interface Pool {
+  rows: NearbyRow[];
+  nextPageToken: string | null;
 }
 
-function placeMapUrl(placeId: string, name: string): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}&query_place_id=${placeId}`;
-}
+const WALK_CHIPS = [5, 10] as const;
+const PRICE_CHIPS = [1, 2] as const;
+/** How long the found places sit on the radar before the list takes over. */
+const REVEAL_MS = 1100;
+const CAP_FLASH_MS = 2600;
+
+const toPool = (data: SearchResult): Pool => ({
+  rows: data.places,
+  nextPageToken: data.nextPageToken ?? null,
+});
 
 export default function OnboardingFlow({
   onCreated,
@@ -86,328 +99,1026 @@ export default function OnboardingFlow({
   /** "I'll add places myself" — open the ordinary create dialog. */
   onManualCreate: () => void;
 }) {
+  const { t } = useLang();
+  const reducedMotion = useReducedMotion();
+
   const [step, setStep] = useState<Step>("locate");
   // Where we searched from. `label` is set when the user picked a named place
-  // (their office) rather than using raw geolocation — that name becomes the
-  // wheel's office label, so settings shows "台北101" and not a bare "Office".
+  // (their office) rather than raw geolocation — that name becomes the wheel's
+  // office label, so settings shows "台北101" and not a bare "Office".
   const [origin, setOrigin] = useState<PickedLocation | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<Filter>("all");
+  const [pools, setPools] = useState<Record<string, Pool>>({});
+  const [query, setQuery] = useState(""); // the keyword whose pool is showing
+  const [draft, setDraft] = useState(""); // what is typed in the craving box
+  const [filters, setFilters] = useState<CandidateFilters>({});
+  // Ticks per query key, like `pools`: "" is the plain nearby list.
+  const [ticks, setTicks] = useState<Record<string, Set<string>>>({});
+  const [initialTicks, setInitialTicks] = useState(0);
+  const [pending, setPending] = useState<null | "base" | "keyword" | "more">(
+    null
+  );
+  const [locating, setLocating] = useState(false);
+  const [revealDots, setRevealDots] = useState<RadarDot[] | null>(null);
+  const [capAt, setCapAt] = useState<number | null>(null);
+  const [building, setBuilding] = useState<NearbyRow[]>([]);
+  const [growFrom, setGrowFrom] = useState<DOMRect | null>(null);
 
-  const search = trpc.places.searchNearby.useMutation({
-    onSuccess: (data) => {
-      const places = (data.places ?? []) as NearbyResult[];
-      setSelected(new Set(preselectPlaceIds(places, DEFAULT_PICK_COUNT)));
-      setStep("pick");
+  const miniWheelRef = useRef<HTMLDivElement>(null);
+  const revealTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (revealTimer.current !== null)
+        window.clearTimeout(revealTimer.current);
     },
-  });
-
-  const createWheel = trpc.wheels.createFromNearby.useMutation();
-
-  const results = useMemo(() => (search.data?.places ?? []) as NearbyResult[], [search.data]);
-  const visible = useMemo(() => results.filter((p) => matchesFilter(p, filter)), [results, filter]);
-  const selectedCount = selected.size;
-
-  const runSearch = useCallback(
-    (at: PickedLocation, radius?: number) => {
-      setOrigin(at);
-      search.mutate({ wheelId: null, lat: at.lat, lng: at.lng, radius });
-    },
-    [search],
+    []
   );
 
-  const toggle = (placeId: string) =>
-    setSelected((prev) => {
+  useEffect(() => {
+    if (capAt === null) return;
+    const id = window.setTimeout(() => setCapAt(null), CAP_FLASH_MS);
+    return () => window.clearTimeout(id);
+  }, [capAt]);
+
+  const search = trpc.places.searchNearby.useMutation();
+  const createWheel = trpc.wheels.createFromNearby.useMutation();
+
+  const pool = pools[query] ?? null;
+  const selected = useMemo(
+    () => ticks[query] ?? new Set<string>(),
+    [ticks, query]
+  );
+  const updateTicks = (key: string, fn: (prev: Set<string>) => Set<string>) =>
+    setTicks(all => {
+      const prev = all[key] ?? new Set<string>();
+      const next = fn(prev);
+      return next === prev ? all : { ...all, [key]: next };
+    });
+  const rows = useMemo(() => pool?.rows ?? [], [pool]);
+  const view = useMemo(() => filterCandidates(rows, filters), [rows, filters]);
+  const wheel = useMemo(
+    () => onWheel(view.visible, selected),
+    [view.visible, selected]
+  );
+  const lifts = useMemo(() => relaxations(rows, filters), [rows, filters]);
+  const atCap = wheel.length >= MAX_SEGMENTS;
+  const thin = view.visible.length < MIN_SEGMENTS;
+
+  const baseInput = (at: PickedLocation) => ({
+    wheelId: null,
+    lat: at.lat,
+    lng: at.lng,
+    rankBy: "distance" as const,
+    limit: CANDIDATE_POOL,
+  });
+
+  // ── Requests: only these three ever reach Google ─────────────────────────
+
+  const searchFrom = (at: PickedLocation) => {
+    setOrigin(at);
+    setPending("base");
+    search.mutate(baseInput(at), {
+      onSuccess: data => {
+        const fresh = toPool(data);
+        const preset = arrivalTicks(
+          filterCandidates(fresh.rows, {}).visible,
+          0
+        );
+        setPools({ "": fresh });
+        setQuery("");
+        setDraft("");
+        setFilters({});
+        setTicks({ "": new Set(preset) });
+        setInitialTicks(preset.length);
+        const plotted = fresh.rows.filter(r => r.lat != null && r.lng != null);
+        if (reducedMotion || plotted.length === 0) {
+          setStep("pick");
+          return;
+        }
+        setRevealDots(
+          plotted.map(r => ({
+            id: r.placeId,
+            bearing: bearingDeg(at, {
+              lat: r.lat as number,
+              lng: r.lng as number,
+            }),
+            walkMinutes: r.walkMinutes,
+          }))
+        );
+        revealTimer.current = window.setTimeout(() => {
+          setRevealDots(null);
+          setStep("pick");
+        }, REVEAL_MS);
+      },
+      onSettled: () => setPending(null),
+    });
+  };
+
+  /** Tick newly arrived places in one query's list, up to the default size. */
+  const tickArrivals = (
+    key: string,
+    arrivals: NearbyRow[],
+    held: NearbyRow[]
+  ) => {
+    const visibleArrivals = filterCandidates(arrivals, filters).visible;
+    updateTicks(key, prev => {
+      const current = onWheel(
+        filterCandidates(held, filters).visible,
+        prev
+      ).length;
+      const add = arrivalTicks(visibleArrivals, current);
+      if (add.length === 0) return prev;
       const next = new Set(prev);
-      if (next.has(placeId)) next.delete(placeId);
-      else next.add(placeId);
+      for (const id of add) next.add(id);
       return next;
     });
+  };
 
-  const build = () => {
-    // Selection is keyed by placeId, so read the payload back off the full
-    // result list — not `visible`, which a filter chip may have narrowed.
-    const places = results
-      .filter((p) => selected.has(p.placeId))
-      .map((p) => ({
-        placeId: p.placeId,
-        name: p.name,
-        lat: p.lat,
-        lng: p.lng,
-        address: p.address,
-        priceLevel: p.priceLevel,
-        cuisine: p.cuisine,
-        mapUrl: placeMapUrl(p.placeId, p.name),
-      }));
-    if (!canStartSpinning(places.length)) return;
-    setStep("building");
-    createWheel.mutate(
+  const runCraving = () => {
+    const q = draft.trim();
+    if (q === query) return;
+    // Clearing, or a craving already searched this session: no request.
+    if (!q || pools[q]) {
+      setQuery(q);
+      return;
+    }
+    if (!origin) return;
+    setPending("keyword");
+    search.mutate(
+      { ...baseInput(origin), keyword: q },
       {
-        places,
-        // Only a *named* pick becomes the wheel's office. A raw geolocation fix
-        // is where the user happened to be standing, not their office, and
-        // pinning distance mode to it would be wrong tomorrow.
-        origin:
-          origin && origin.label
-            ? { lat: origin.lat, lng: origin.lng, label: origin.label }
-            : null,
-      },
-      {
-        onSuccess: (res) => {
-          onCreated(res.id);
+        onSuccess: data => {
+          const fresh = toPool(data);
+          setPools(prev => ({ ...prev, [q]: fresh }));
+          setQuery(q);
+          tickArrivals(q, fresh.rows, []);
         },
-        // Back to the picker with their choices intact rather than a dead end.
-        onError: () => setStep("pick"),
-      },
+        onSettled: () => setPending(null),
+      }
     );
   };
 
-  const alert = providerAlert(search.error);
-
-  // ── Building ──────────────────────────────────────────────────────────────
-  if (step === "building") {
-    return (
-      <Shell>
-        <div className="flex flex-col items-center gap-5 text-center">
-          <div
-            className="orb-wheel animate-orb-spin"
-            style={{ width: 84, height: 84, animationDuration: "1.4s" }}
-          />
-          <div className="flex flex-col gap-1.5">
-            <p className="type-section" style={{ color: "var(--ink-warm)" }}>
-              Building your wheel
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Adding {selectedCount} {selectedCount === 1 ? "place" : "places"} and checking their hours…
-            </p>
-          </div>
-          {createWheel.isError && (
-            <ErrorNote>{createWheel.error.message}</ErrorNote>
-          )}
-        </div>
-      </Shell>
+  const lookFarther = () => {
+    if (!origin || !pool?.nextPageToken) return;
+    const key = query;
+    const held = pool.rows;
+    setPending("more");
+    search.mutate(
+      {
+        ...baseInput(origin),
+        keyword: key || undefined,
+        pageToken: pool.nextPageToken,
+      },
+      {
+        onSuccess: data => {
+          const heldIds = new Set(held.map(r => r.placeId));
+          const arrivals = data.places.filter(r => !heldIds.has(r.placeId));
+          setPools(prev => ({
+            ...prev,
+            [key]: {
+              rows: mergeCandidatePages(prev[key]?.rows ?? held, data.places),
+              nextPageToken: data.nextPageToken ?? null,
+            },
+          }));
+          tickArrivals(key, arrivals, held);
+        },
+        onSettled: () => setPending(null),
+      }
     );
+  };
+
+  // ── Instant: never a request ─────────────────────────────────────────────
+
+  const toggle = (placeId: string) => {
+    if (selected.has(placeId)) {
+      updateTicks(query, prev => {
+        const next = new Set(prev);
+        next.delete(placeId);
+        return next;
+      });
+      return;
+    }
+    if (atCap) {
+      setCapAt(Date.now());
+      return;
+    }
+    updateTicks(query, prev => new Set(prev).add(placeId));
+  };
+
+  const lift = (kind: RelaxationKind) =>
+    setFilters(f =>
+      kind === "openOnly"
+        ? { ...f, openOnly: false }
+        : kind === "priceCap"
+          ? { ...f, priceCap: null }
+          : kind === "walkCap"
+            ? { ...f, walkCap: null }
+            : { ...f, showLowRated: true }
+    );
+
+  const build = () => {
+    if (!canStartSpinning(wheel.length) || wheel.length > MAX_SEGMENTS) return;
+    setGrowFrom(miniWheelRef.current?.getBoundingClientRect() ?? null);
+    setBuilding(wheel);
+    setStep("building");
+    createWheel.mutate(
+      {
+        places: wheel.map(p => ({
+          placeId: p.placeId,
+          name: p.name,
+          lat: p.lat,
+          lng: p.lng,
+          address: p.address,
+          priceLevel: p.priceLevel,
+          cuisine: p.cuisine,
+          mapUrl: placeMapUrl(p.placeId, p.name),
+        })),
+        // Only a *named* pick becomes the wheel's office. A raw geolocation fix
+        // is where the user happened to be standing, not their office.
+        origin: origin?.label
+          ? { lat: origin.lat, lng: origin.lng, label: origin.label }
+          : null,
+      },
+      {
+        onSuccess: res => onCreated(res.id),
+        // Back to the list with every choice intact; the error shows there.
+        onError: () => setStep("pick"),
+      }
+    );
+  };
+
+  // ── Building ─────────────────────────────────────────────────────────────
+  if (step === "building") {
+    return <BuildingStep places={building} growFrom={growFrom} />;
   }
 
-  // ── Pick your spots ───────────────────────────────────────────────────────
+  // ── Pick ─────────────────────────────────────────────────────────────────
   if (step === "pick") {
+    const alert = pending === null ? providerAlert(search.error) : null;
+    const bands = groupByBand(view.visible);
+    let cardIndex = 0;
+    const ctaState =
+      wheel.length > MAX_SEGMENTS
+        ? "tooMany"
+        : canStartSpinning(wheel.length)
+          ? "ready"
+          : "needMore";
+
     return (
-      <Shell scroll>
-        <div className="flex flex-col gap-4 w-full">
-          <div className="flex flex-col gap-1">
-            <p className="type-title" style={{ color: "var(--ink-warm)" }}>
-              Pick your spots
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {results.length} {results.length === 1 ? "place" : "places"} within walking distance.
-              We've ticked the best {Math.min(DEFAULT_PICK_COUNT, results.length)} — untick anything you don't want.
-            </p>
-          </div>
-
-          {/* Filters narrow the view only; ticks survive switching chips. */}
-          <div className="flex gap-1.5 flex-wrap">
-            {FILTERS.map((f) => {
-              const on = filter === f.id;
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => setFilter(f.id)}
-                  aria-pressed={on}
-                  className="px-3.5 py-1.5 transition-colors active:scale-[var(--press-scale)]"
-                  style={
-                    on
-                      ? { borderRadius: "var(--radius-chip)", background: "var(--brand-grad)", color: "var(--on-accent)", fontSize: 15, fontWeight: 500 }
-                      : { borderRadius: "var(--radius-chip)", background: "var(--paper)", border: "1px solid var(--border)", color: "var(--body-warm)", fontSize: 15, fontWeight: 500 }
-                  }
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {search.data?.lowDensity && origin && (
-            <div
-              className="flex items-center justify-between gap-2 px-3.5 py-2.5 type-meta"
-              style={{ borderRadius: "var(--radius-chip)", background: "oklch(from var(--info) l c h / 0.08)", border: "1px solid oklch(from var(--info) l c h / 0.20)", color: "var(--info)" }}
-            >
-              <span className="flex items-center gap-2">
-                <AlertTriangle size={13} /> Not many spots within reach.
-              </span>
-              <button
-                onClick={() => runSearch(origin, 2500)}
-                disabled={search.isPending}
-                className="font-semibold underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
+      <>
+        <div className="w-full max-w-lg mx-auto px-5 pt-6 onb-list-end flex flex-col gap-5">
+          {/* Header */}
+          <header className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <p
+                className="type-eyebrow"
+                style={{ color: "var(--brand-text)", letterSpacing: "0.14em" }}
               >
-                Search wider
+                {t("onb.pick.count", { n: rows.length })}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  search.reset();
+                  setStep("locate");
+                }}
+                className="inline-flex items-center gap-1.5 min-w-0 px-3 text-left transition-colors hover:text-foreground"
+                style={{
+                  minHeight: 36,
+                  borderRadius: "var(--radius-chip)",
+                  border: "1px solid var(--border)",
+                  color: "var(--body-warm)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}
+              >
+                <MapPin
+                  size={13}
+                  className="flex-none"
+                  style={{ color: "var(--brand-text)" }}
+                />
+                <span className="truncate max-w-[9.5rem]">
+                  {origin?.label
+                    ? t("onb.pick.fromPlace", { place: origin.label })
+                    : t("onb.pick.fromHere")}
+                </span>
+                <span aria-hidden style={{ color: "var(--border)" }}>
+                  ·
+                </span>
+                <span
+                  className="flex-none"
+                  style={{ color: "var(--ink-warm)", fontWeight: 600 }}
+                >
+                  {t("onb.pick.change")}
+                </span>
               </button>
             </div>
-          )}
+            <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
+              {t("onb.pick.title")}
+            </h1>
+            {/* Only the plain list: it describes the ticks WE made on arrival.
+                A craving's list is explained by its own "results for" line. */}
+            {!query && (
+              <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+                {initialTicks > 0
+                  ? t("onb.pick.desc", { n: initialTicks })
+                  : t("onb.pick.descNone")}
+              </p>
+            )}
+          </header>
 
-          {/* pb clears the fixed commit bar above, so the last place is always
-              reachable rather than sitting under the button. */}
-          <div className="flex flex-col gap-2 pb-28">
-            {visible.map((p) => {
-              const on = selected.has(p.placeId);
-              return (
-                <button
-                  key={p.placeId}
-                  onClick={() => toggle(p.placeId)}
-                  aria-pressed={on}
-                  className="flex items-center gap-3 px-4 text-left transition-colors active:scale-[var(--press-scale)]"
+          {/* Craving: the one control here that asks Google a new question. */}
+          <div className="flex flex-col gap-2">
+            <form
+              className="flex gap-2"
+              onSubmit={e => {
+                e.preventDefault();
+                runCraving();
+              }}
+            >
+              <label htmlFor="onb-craving" className="relative flex-1 min-w-0">
+                <span className="sr-only">{t("onb.keyword.placeholder")}</span>
+                <Search
+                  size={16}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: "var(--muted-foreground)" }}
+                />
+                <input
+                  id="onb-craving"
+                  aria-label={t("onb.keyword.placeholder")}
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  maxLength={120}
+                  enterKeyHint="search"
+                  placeholder={t("onb.keyword.placeholder")}
+                  className="w-full outline-none focus-visible:ring-2 pl-11 pr-4"
                   style={{
-                    minHeight: 56,
-                    paddingTop: 12,
-                    paddingBottom: 12,
-                    borderRadius: "var(--radius-card)",
-                    background: on ? "oklch(from var(--brand) l c h / 0.08)" : "var(--paper)",
-                    border: on ? "1px solid oklch(from var(--brand) l c h / 0.45)" : "1px solid var(--border)",
+                    minHeight: 48,
+                    borderRadius: "var(--radius-control)",
+                    background: "var(--paper)",
+                    border: "1px solid var(--border)",
+                    color: "var(--ink-warm)",
+                    fontSize: 16,
                   }}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={pending !== null || draft.trim() === query}
+                className="flex-none inline-flex items-center justify-center gap-1.5 px-4 transition-opacity disabled:opacity-40"
+                style={{
+                  minHeight: 48,
+                  borderRadius: "var(--radius-control)",
+                  border: "1px solid var(--brand-solid)",
+                  color: "var(--brand-text)",
+                  fontWeight: 600,
+                  fontSize: 15,
+                }}
+              >
+                {pending === "keyword" ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : null}
+                {t("onb.keyword.submit")}
+              </button>
+            </form>
+            {query && (
+              <p
+                className="flex items-center gap-2 type-meta onb-flash"
+                style={{ color: "var(--body-warm)" }}
+              >
+                <span className="truncate">
+                  {t("onb.keyword.active", { q: query })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft("");
+                    setQuery("");
+                  }}
+                  className="flex-none inline-flex items-center gap-1 font-semibold underline underline-offset-4"
+                  style={{ color: "var(--ink-warm)", minHeight: 32 }}
                 >
-                  <span
-                    aria-hidden
-                    className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
-                    style={
-                      on
-                        ? { background: "var(--brand-grad)", color: "var(--on-accent)" }
-                        : { border: "1.5px solid var(--border)" }
-                    }
-                  >
-                    {on && <Check size={13} strokeWidth={3} />}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block font-semibold text-sm truncate">{p.name}</span>
-                    <span className="flex items-center gap-2 flex-wrap mt-0.5 type-meta text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
-                      </span>
-                      {p.priceLevel != null && <span style={{ color: "var(--brand-text)" }}>{"$".repeat(p.priceLevel)}</span>}
-                      {p.cuisine && <span>{p.cuisine}</span>}
-                      {p.open === true && <span style={{ color: "var(--ok)" }}>Open now</span>}
-                      {p.open === false && <span className="opacity-70">Closed</span>}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-            {visible.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Nothing matches that filter.{" "}
-                <button onClick={() => setFilter("all")} className="underline underline-offset-2 font-semibold text-foreground">
-                  Show all
+                  <X size={13} /> {t("onb.keyword.clear")}
                 </button>
               </p>
             )}
           </div>
+
+          {/* Chips: instant, exclusive within a group, no apply button. */}
+          <div
+            role="group"
+            aria-label={t("onb.chips")}
+            className="onb-chips flex items-center gap-2 overflow-x-auto -mx-5 px-5 -my-1 py-1"
+          >
+            {WALK_CHIPS.map(n => (
+              <Chip
+                key={`w${n}`}
+                on={filters.walkCap === n}
+                onClick={() =>
+                  setFilters(f => ({
+                    ...f,
+                    walkCap: f.walkCap === n ? null : n,
+                  }))
+                }
+              >
+                {t("onb.chip.walk", { n })}
+              </Chip>
+            ))}
+            <ChipRule />
+            {PRICE_CHIPS.map(n => (
+              <Chip
+                key={`p${n}`}
+                on={filters.priceCap === n}
+                onClick={() =>
+                  setFilters(f => ({
+                    ...f,
+                    priceCap: f.priceCap === n ? null : n,
+                  }))
+                }
+              >
+                {t(n === 1 ? "onb.chip.price1" : "onb.chip.price2")}
+              </Chip>
+            ))}
+            <ChipRule />
+            <Chip
+              on={!!filters.openOnly}
+              onClick={() => setFilters(f => ({ ...f, openOnly: !f.openOnly }))}
+            >
+              {t("onb.chip.open")}
+            </Chip>
+          </div>
+
+          {view.lowRated.length > 0 && (
+            <p
+              className="flex items-center gap-2 flex-wrap type-meta -mt-1"
+              style={{ color: "var(--body-warm)" }}
+            >
+              <span>
+                {filters.showLowRated
+                  ? t("onb.lowRated.shown", { n: view.lowRated.length })
+                  : t("onb.lowRated.hidden", { n: view.lowRated.length })}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setFilters(f => ({ ...f, showLowRated: !f.showLowRated }))
+                }
+                className="font-semibold underline underline-offset-4"
+                style={{ color: "var(--ink-warm)", minHeight: 32 }}
+              >
+                {filters.showLowRated
+                  ? t("onb.lowRated.hide")
+                  : t("onb.lowRated.show")}
+              </button>
+            </p>
+          )}
+
+          {alert && (
+            <ErrorNote tone={alert.quota ? "warn" : "error"}>
+              {alert.message}
+            </ErrorNote>
+          )}
+          {createWheel.isError && (
+            <ErrorNote>{createWheel.error.message}</ErrorNote>
+          )}
+
+          {/* The list, sectioned by walk band. */}
+          <div
+            className="flex flex-col gap-5"
+            aria-busy={pending === "keyword"}
+          >
+            {bands.map(({ band, places }) => (
+              <section key={band ?? "far"} className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-3 px-1">
+                  <h2
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: "var(--ink-warm)",
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {band == null
+                      ? t("onb.band.far")
+                      : t("onb.band", { n: band })}
+                  </h2>
+                  <span
+                    aria-hidden
+                    className="flex-1 h-px"
+                    style={{ background: "var(--border)" }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--muted-foreground)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {t("onb.band.count", { n: places.length })}
+                  </span>
+                </div>
+                {places.map(p => {
+                  const on = selected.has(p.placeId);
+                  return (
+                    <PlaceCard
+                      key={p.placeId}
+                      place={p}
+                      on={on}
+                      dimmed={atCap && !on}
+                      index={cardIndex++}
+                      onToggle={() => toggle(p.placeId)}
+                    />
+                  );
+                })}
+              </section>
+            ))}
+
+            {thin ? (
+              <ThinCard
+                count={view.visible.length}
+                lifts={lifts}
+                canLookFarther={!!pool?.nextPageToken}
+                looking={pending === "more"}
+                onLift={lift}
+                onLookFarther={lookFarther}
+                onChangePlace={() => {
+                  search.reset();
+                  setStep("locate");
+                }}
+                onManualCreate={onManualCreate}
+              />
+            ) : (
+              pool?.nextPageToken && (
+                <button
+                  type="button"
+                  onClick={lookFarther}
+                  disabled={pending !== null}
+                  className="flex items-center justify-center gap-3 px-5 transition-colors disabled:opacity-60"
+                  style={{
+                    minHeight: 64,
+                    borderRadius: "var(--radius-card)",
+                    border: "1.5px dashed var(--border)",
+                    color: "var(--ink-warm)",
+                  }}
+                >
+                  {pending === "more" ? (
+                    <Loader2
+                      size={18}
+                      className="animate-spin"
+                      style={{ color: "var(--brand-text)" }}
+                    />
+                  ) : (
+                    <Radar size={18} style={{ color: "var(--brand-text)" }} />
+                  )}
+                  <span className="flex flex-col items-start">
+                    <span style={{ fontSize: 15, fontWeight: 600 }}>
+                      {pending === "more"
+                        ? t("onb.more.loading")
+                        : t("onb.more")}
+                    </span>
+                    <span
+                      style={{ fontSize: 12, color: "var(--muted-foreground)" }}
+                    >
+                      {t("onb.more.hint")}
+                    </span>
+                  </span>
+                </button>
+              )
+            )}
+          </div>
         </div>
 
-        {/* Commit bar. FIXED, not sticky: this app's shell grows with its
-            content and the DOCUMENT scrolls (the tab wrapper's overflow-y-auto
-            never engages), so a sticky bar just sits in flow at the end of the
-            list and covers the last row. Fixed keeps the count in view the whole
-            way down the list, and `bottom-28` clears the fixed mobile nav —
-            which isn't there from md up, hence `md:bottom-6`. The list's own
-            pb-28 (below) is what stops it hiding the final place. */}
-        <div className="fixed left-0 right-0 bottom-28 md:bottom-6 px-5 z-20 pointer-events-none">
-          <div className="max-w-lg mx-auto pointer-events-auto">
+        {/* Commit bar: the wheel being assembled, and the way to spin it. */}
+        <div className="onb-commit pointer-events-none">
+          <div className="max-w-lg mx-auto px-5 flex flex-col items-center gap-2">
+            {capAt !== null && (
+              <p
+                key={capAt}
+                role="status"
+                className="onb-flash px-3.5 py-1.5 type-meta"
+                style={{
+                  borderRadius: "var(--radius-chip)",
+                  background: "var(--ink-warm)",
+                  color: "var(--paper)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  boxShadow: "var(--glass-card-shadow)",
+                }}
+              >
+                {t("onb.cap", { n: MAX_SEGMENTS })}
+              </p>
+            )}
             <button
+              type="button"
               onClick={build}
-              disabled={!canStartSpinning(selectedCount) || createWheel.isPending}
-              className="w-full flex items-center justify-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)] disabled:opacity-45"
+              disabled={ctaState !== "ready" || createWheel.isPending}
+              className="pointer-events-auto w-full flex items-center gap-3 pl-2.5 pr-5 transition-[opacity,transform] active:scale-[var(--press-scale)] disabled:opacity-55"
               style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
+                minHeight: 64,
+                borderRadius: 999,
                 background: "var(--brand-grad)",
                 color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-                boxShadow: "var(--glass-card-shadow)",
+                boxShadow:
+                  "0 14px 32px -12px oklch(from var(--brand) l c h / 0.6), var(--glass-card-shadow)",
               }}
             >
-              <RotateCw size={16} />
-              {canStartSpinning(selectedCount)
-                ? `Spin these ${selectedCount} →`
-                : `Pick at least ${MIN_SPINNABLE}`}
+              <PaneWheel
+                ref={miniWheelRef}
+                count={Math.min(wheel.length, MAX_SEGMENTS)}
+                size={46}
+                tone="accent"
+              />
+              <span
+                className="flex-1 text-left"
+                style={{
+                  fontSize: 17,
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {ctaState === "ready" ? (
+                  <CountCopy
+                    text={t("onb.cta.spin", { n: "\u0000" })}
+                    count={wheel.length}
+                  />
+                ) : ctaState === "needMore" ? (
+                  t("onb.cta.needMore", { n: MIN_SPINNABLE })
+                ) : (
+                  t("onb.cta.tooMany", {
+                    max: MAX_SEGMENTS,
+                    n: wheel.length - MAX_SEGMENTS,
+                  })
+                )}
+              </span>
+              <ArrowRight size={20} className="flex-none" />
             </button>
           </div>
         </div>
-      </Shell>
+      </>
     );
   }
 
-  // ── Locate ────────────────────────────────────────────────────────────────
+  // ── Locate ───────────────────────────────────────────────────────────────
+  const alert = providerAlert(search.error);
+  const busy = locating || pending === "base";
+
   return (
-    <Shell>
-      <div className="flex flex-col items-center gap-6 text-center w-full">
-        <div
-          className="w-20 h-20 orb-wheel" />
-        <div className="flex flex-col gap-2">
-          <p className="type-title" style={{ color: "var(--ink-warm)" }}>
-            Let&apos;s find lunch near you
-          </p>
-          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-            We'll pull up real places within walking distance and put them straight on your wheel.
+    <div className="grow flex flex-col items-center justify-center px-5 py-6 w-full">
+      <div className="w-full max-w-sm flex flex-col items-center gap-4 text-center">
+        <LocateRadar busy={busy} dots={revealDots} />
+
+        <div className="flex flex-col gap-2" aria-live="polite">
+          {revealDots ? (
+            <h1
+              className="type-title onb-flash"
+              style={{ color: "var(--ink-warm)" }}
+            >
+              {t("onb.locate.found", { n: revealDots.length })}
+            </h1>
+          ) : (
+            <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
+              {t("onb.locate.titlePre")}
+              <span style={{ color: "var(--brand-text)" }}>
+                {t("onb.locate.titleAccent")}
+              </span>
+              {t("onb.locate.titlePost")}
+            </h1>
+          )}
+          <p
+            className="type-meta mx-auto max-w-[19rem] [@media(max-height:700px)]:hidden"
+            style={{ color: "var(--body-warm)" }}
+          >
+            {busy && !revealDots
+              ? t("onb.locate.searching")
+              : t("onb.locate.desc")}
           </p>
         </div>
 
         {alert && (
-          // A spent map quota is a limit, not a crash: calmer styling, no retry
-          // affordance, and a nudge to the path that still works.
+          // A spent map quota is a limit, not a crash: calmer styling and a
+          // nudge to the path that still works.
           <ErrorNote tone={alert.quota ? "warn" : "error"}>
             {alert.message}
-            {/* The quota copy already names the fallback; only the config case
-                needs pointing at it. */}
-            {alert.config && <> Pick “I'll add places myself” below.</>}
           </ErrorNote>
         )}
 
-        <div className="flex flex-col gap-2.5 w-full max-w-xs">
-          {/* Three ways in — current location, search a place, paste a link.
-              A user whose browser won't share a position is not stuck. */}
-          <LocationPicker onPicked={(at) => runSearch(at)} />
-          {search.isPending && (
-            <p className="type-meta text-muted-foreground flex items-center justify-center gap-1.5">
-              <Loader2 size={12} className="animate-spin" /> Looking around…
-            </p>
-          )}
+        {/* Disabled natively while the search runs or the result is being
+            shown: a second tap on "use my location" would fire a second
+            search on top of the first. */}
+        <fieldset
+          disabled={pending === "base" || revealDots !== null}
+          className={`flex flex-col gap-2 w-full min-w-0 border-0 p-0 m-0 transition-opacity${revealDots ? " opacity-0" : ""}`}
+        >
+          <LocationPicker
+            onPicked={searchFrom}
+            onLocatingChange={setLocating}
+          />
           <button
+            type="button"
             onClick={onManualCreate}
-            className="flex items-center justify-center gap-2 px-6 text-muted-foreground transition-colors active:scale-[var(--press-scale)] hover:text-foreground"
-            style={{ minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 15, fontWeight: 500 }}
+            className="inline-flex items-center justify-center gap-2 px-6 transition-colors hover:text-foreground"
+            style={{
+              minHeight: 48,
+              color: "var(--body-warm)",
+              fontSize: 15,
+              fontWeight: 500,
+            }}
           >
-            <Navigation size={15} /> I&apos;ll add places myself
+            <PenLine size={15} /> {t("onb.locate.manual")}
           </button>
-        </div>
+        </fieldset>
       </div>
-    </Shell>
-  );
-}
-
-/**
- * Container for the three steps.
- *
- * `scroll` matters: the picker is a list that routinely outgrows the viewport,
- * and vertically centring something taller than its scrollport puts the top of
- * it out of reach and stops `position: sticky` engaging on the commit bar. So
- * the list flows normally and only the short steps get centred.
- */
-function Shell({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
-  if (scroll) {
-    return <div className="w-full max-w-lg mx-auto px-5 py-6 flex flex-col">{children}</div>;
-  }
-  return (
-    <div className="grow min-h-full flex flex-col items-center justify-center px-5 py-8 w-full">
-      <div className="w-full max-w-md flex flex-col items-center">{children}</div>
     </div>
   );
 }
 
-function ErrorNote({ children, tone = "error" }: { children: React.ReactNode; tone?: "error" | "warn" }) {
+// ── Pieces ─────────────────────────────────────────────────────────────────
+
+function groupByBand<P extends { walkMinutes: number }>(places: P[]) {
+  const out: { band: number | null; places: P[] }[] = [];
+  for (const p of places) {
+    const band = walkBand(p.walkMinutes);
+    const last = out[out.length - 1];
+    if (last && last.band === band) last.places.push(p);
+    else out.push({ band, places: [p] });
+  }
+  return out;
+}
+
+/** The CTA copy with its number rolled in on every change, so the count reads
+ *  as moving without the sentence around it jumping. `\u0000` marks where the
+ *  number goes in the translated string. */
+function CountCopy({ text, count }: { text: string; count: number }) {
+  const [before, after = ""] = text.split("\u0000");
+  return (
+    <>
+      {before}
+      <span
+        key={count}
+        className="onb-roll"
+        style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}
+      >
+        {count}
+      </span>
+      {after}
+    </>
+  );
+}
+
+function Chip({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className="flex-none px-4 whitespace-nowrap transition-colors active:scale-[var(--press-scale)]"
+      style={{
+        minHeight: 44,
+        borderRadius: "var(--radius-chip)",
+        fontSize: 15,
+        fontWeight: 500,
+        ...(on
+          ? {
+              background: "var(--brand-grad)",
+              color: "var(--on-accent)",
+              border: "1px solid transparent",
+            }
+          : {
+              background: "transparent",
+              color: "var(--body-warm)",
+              border: "1px solid var(--border)",
+            }),
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ChipRule() {
+  return (
+    <span
+      aria-hidden
+      className="flex-none w-px h-6"
+      style={{ background: "var(--border)" }}
+    />
+  );
+}
+
+/**
+ * The list has run dry (fewer than a wheel's minimum). Offer the single lifts
+ * that put places back, biggest first and all instant, then the one that goes
+ * back to Google — labelled as a new search so nobody mistakes it for a filter.
+ */
+function ThinCard({
+  count,
+  lifts,
+  canLookFarther,
+  looking,
+  onLift,
+  onLookFarther,
+  onChangePlace,
+  onManualCreate,
+}: {
+  count: number;
+  lifts: { kind: RelaxationKind; gain: number }[];
+  canLookFarther: boolean;
+  looking: boolean;
+  onLift: (kind: RelaxationKind) => void;
+  onLookFarther: () => void;
+  onChangePlace: () => void;
+  onManualCreate: () => void;
+}) {
+  const { t } = useLang();
+  const labels: Record<RelaxationKind, Parameters<typeof t>[0]> = {
+    openOnly: "onb.relax.openOnly",
+    priceCap: "onb.relax.priceCap",
+    walkCap: "onb.relax.walkCap",
+    lowRated: "onb.relax.lowRated",
+  };
+  const exhausted = lifts.length === 0 && !canLookFarther;
+
+  return (
+    <div
+      className="onb-arrive flex flex-col gap-3 p-5"
+      style={{
+        borderRadius: "var(--radius-card)",
+        border: "1.5px dashed var(--border)",
+        background: "var(--paper)",
+      }}
+    >
+      <p style={{ fontSize: 17, fontWeight: 650, color: "var(--ink-warm)" }}>
+        {count === 0
+          ? t("onb.thin.titleNone")
+          : t("onb.thin.title", { n: count })}
+      </p>
+      {exhausted ? (
+        <>
+          <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+            {t("onb.thin.exhausted")}
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <OutlineButton onClick={onChangePlace}>
+              <MapPin size={15} /> {t("onb.pick.change")}
+            </OutlineButton>
+            <OutlineButton onClick={onManualCreate}>
+              <PenLine size={15} /> {t("onb.locate.manual")}
+            </OutlineButton>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+            {t("onb.thin.desc")}
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            {lifts.map(l => (
+              <OutlineButton key={l.kind} onClick={() => onLift(l.kind)}>
+                {t(labels[l.kind])}
+                <span style={{ color: "var(--brand-text)", fontWeight: 700 }}>
+                  {t("onb.relax.gain", { n: l.gain })}
+                </span>
+              </OutlineButton>
+            ))}
+            {canLookFarther && (
+              <OutlineButton onClick={onLookFarther} disabled={looking} accent>
+                {looking ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <Radar size={15} />
+                )}
+                {t("onb.more")}
+                <span style={{ fontSize: 12, opacity: 0.8 }}>
+                  · {t("onb.relax.research")}
+                </span>
+              </OutlineButton>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function OutlineButton({
+  onClick,
+  disabled,
+  accent,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 px-4 transition-opacity active:scale-[var(--press-scale)] disabled:opacity-50"
+      style={{
+        minHeight: 44,
+        borderRadius: "var(--radius-chip)",
+        border: `1px solid ${accent ? "var(--brand-solid)" : "var(--border)"}`,
+        color: accent ? "var(--brand-text)" : "var(--ink-warm)",
+        fontSize: 14,
+        fontWeight: 600,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The commit bar's wheel, grown to the middle of the screen and turning while
+ * the wheel is written. It starts exactly where the small one was: the rect was
+ * measured when the button was pressed, and the offset is written into the
+ * animation's custom properties before the first paint.
+ */
+function BuildingStep({
+  places,
+  growFrom,
+}: {
+  places: NearbyRow[];
+  growFrom: DOMRect | null;
+}) {
+  const { t } = useLang();
+  const growRef = useRef<HTMLDivElement>(null);
+  const SIZE = 184;
+
+  useLayoutEffect(() => {
+    const el = growRef.current;
+    if (!el || !growFrom) return;
+    const to = el.getBoundingClientRect();
+    el.style.setProperty(
+      "--grow-x",
+      `${growFrom.left + growFrom.width / 2 - (to.left + to.width / 2)}px`
+    );
+    el.style.setProperty(
+      "--grow-y",
+      `${growFrom.top + growFrom.height / 2 - (to.top + to.height / 2)}px`
+    );
+    el.style.setProperty("--grow-s", `${growFrom.width / to.width}`);
+    el.classList.add("onb-grow");
+  }, [growFrom]);
+
+  return (
+    <div className="grow flex flex-col items-center justify-center gap-7 px-5 py-8 w-full text-center">
+      <div ref={growRef} style={{ width: SIZE, height: SIZE }}>
+        <div className="animate-orb-spin w-full h-full">
+          <PaneWheel count={places.length} size={SIZE} />
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <h1 className="type-section" style={{ color: "var(--ink-warm)" }}>
+          {t("onb.building.title")}
+        </h1>
+        <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+          {t("onb.building.desc", { n: places.length })}
+        </p>
+      </div>
+      <ul className="flex flex-wrap justify-center gap-2 max-w-md">
+        {places.map((p, i) => (
+          <li
+            key={p.placeId}
+            className="onb-arrive px-3 py-1.5"
+            style={{
+              ["--i" as string]: i,
+              borderRadius: "var(--radius-chip)",
+              border: "1px solid var(--border)",
+              background: "var(--paper)",
+              color: "var(--ink-warm)",
+              fontSize: 14,
+            }}
+          >
+            {p.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ErrorNote({
+  children,
+  tone = "error",
+}: {
+  children: React.ReactNode;
+  tone?: "error" | "warn";
+}) {
   const token = tone === "warn" ? "--brand" : "--destructive";
   return (
     <div
-      className="flex items-start gap-2.5 px-3.5 py-2.5 type-meta w-full max-w-xs"
+      className="flex items-start gap-2.5 px-3.5 py-2.5 type-meta w-full text-left"
       style={{
         borderRadius: "var(--radius-chip)",
         background: `oklch(from var(${token}) l c h / 0.10)`,
@@ -416,7 +1127,7 @@ function ErrorNote({ children, tone = "error" }: { children: React.ReactNode; to
       }}
     >
       <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-      <span className="text-left leading-relaxed">{children}</span>
+      <span className="leading-relaxed">{children}</span>
     </div>
   );
 }

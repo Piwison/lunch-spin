@@ -100,7 +100,10 @@ Gigi / GROUN:D / Woopen（看不出是什麼，且 `price_level` 缺失）。
    「progress is the default and de-selecting is the user's only job」）。
    取消一家茶館是一次點擊；`prominence` 藏住的 18 家在地店是完全看不到
 
-**順帶要接的欄位**：`business_status`。永久歇業的店不該進輪盤，Google 有回，我們沒接。
+**順帶要接的欄位**：`business_status`。~~Google 有回，我們沒接。~~ **訂正（2026-09-22）**：
+其實早就接了 — `toNearbyPlace` 把非 `OPERATIONAL` 一律當成 `open: false`（軟性下沉）。
+缺的是區分：暫停營業是「現在沒開」，永久歇業是「永遠不會是午餐」。1b/1c/1d 那輪補上了
+`permanentlyClosed`，server 在排序前就丟掉，對三個呼叫端都生效。
 
 現在送給 Google 的是 `radius=900 & type=restaurant`，**沒有設 `rankby`**，
 legacy Places API 的預設是 `prominence`（知名度）。在密集區域，900 公尺內有幾百家餐廳，
@@ -112,7 +115,17 @@ Google 只回最「有名」的 20 家 — 偏向連鎖與大店。然後 `share
 
 這是整條管線的**原料**，排最前面 — 原料錯了，後面的排序和篩選都是白工。
 
-### 1b. 別再把備料丟掉：回一頁能拿的全部，不是 12 家
+### 1b. 別再把備料丟掉：回一頁能拿的全部，不是 12 家 — ✅ 已完成 2026-09-22
+
+**做了什麼**：`shared/candidates.ts` 的 `CANDIDATE_POOL = 20` 與 `shared/nearby.ts` 的
+`MAX_SEGMENTS = 12` 拆成兩個常數（測試釘住 20 > 12、20 ≤ 25）。`searchNearby` 新增
+`limit`（上限 20）與 `rankBy`，兩個都是 opt-in：**ADD NEARBY 和名稱搜尋送的東西完全沒變**，
+只有 first-run 送 `rankBy: "distance", limit: 20`。
+
+**代價要講清楚**：Google API「呼叫次數」沒變（還是 Nearby 1 次 + Distance Matrix 1 次），
+但 Distance Matrix 是**按 element 計費**，first-run 一次從 12 個 element 變 20 個。
+新版計價下 Distance Matrix 每月有免費額度（以 Google console 為準），小流量應該碰不到，
+但它是真實的邊際成本，不是零。
 
 **證據等級：已確認**
 
@@ -134,7 +147,16 @@ Google 只回最「有名」的 20 家 — 偏向連鎖與大店。然後 `share
 輪盤照樣最多轉 `MAX_SEGMENTS = 12` 家 — 多出來的是給 client 篩選用的備料，不是拿去轉的。
 **這兩個上限要拆成兩個常數**，不要共用。
 
-### 1c. client 瞬間篩選，只有三種情況才連網
+### 1c. client 瞬間篩選，只有三種情況才連網 — ✅ 已完成 2026-09-22
+
+**已驗證**（真實瀏覽器 + mock API，每個請求記 log）：三個 chip 連點 = **0 個請求**；
+想吃什麼（關鍵字）= 1 個請求，清除再打同一個 = 0 個（每個關鍵字的結果都留著）；
+找遠一點 = 1 個請求（`next_page_token`，見 1e）。見底卡片依 `relaxations()` 列出
+「放寬哪一個能多幾家」，最多的先講，唯一會連網的「找遠一點」標明「重新搜尋」。
+
+**實作中發現並修掉的一個錯**：勾選原本是跨查詢共用一個集合，搜「麵」自動勾了 3 家，
+按「回到全部」回來變成 11 家勾選 — 使用者留下的是 8 家。現在每個查詢有自己的勾選，
+輪盤 = 目前畫面上可見且勾選的店（`onWheel`）。見 AGENTS.md 失敗模式 65。
 
 **證據等級：已確認（哪些欄位在回傳裡）**
 
@@ -158,7 +180,13 @@ Google 只回最「有名」的 20 家 — 偏向連鎖與大店。然後 `share
 見底時的處理照 `shared/spinBlock.ts` 已有的形狀：列出能把店放回來的解法，
 **最便宜的先講**，唯一會連網的那顆標明「重新搜尋」。
 
-### 1d. 自動排除 Google 評分過低的店
+### 1d. 自動排除 Google 評分過低的店 — ✅ 已完成 2026-09-22
+
+`rating` / `user_ratings_total` 接進 `placeMapping`（缺值是 null 不是 0；超出 1–5 視為未知）。
+規則照下面寫的做：3.0 門檻、≥ 5 則才判、評論太少標註、隱藏時顯示「已隱藏 N 家…」
+並一鍵顯示。N 只算「其他條件都過、只因評分被藏」的店，所以按顯示回來的數量就是 N。
+**範圍**：只有 first-run 套用。ADD NEARBY 沒有 — 它還是 12 家、沒有評分過濾。
+（真實內湖資料沒有任何一家 < 3.0，所以驗證用的是一家標明為合成的測試店。）
 
 **證據等級：已確認（`rating` / `user_ratings_total` 完全沒接）**
 
@@ -182,7 +210,12 @@ Google 有回，我們直接丟掉。grep 整個 `shared/` 和 `server/` 是零�
   已經在某人輪盤上的店，排除規則維持軟性 — `shared/nearby.ts` 的
   「soft filters that RE-RANK instead of excluding」不動
 
-### 1e. `next_page_token` 多抓 1–2 頁
+### 1e. `next_page_token` 多抓 1–2 頁 — 部分完成 2026-09-22
+
+**已做**：按需要才抓。「找遠一點」送 `pageToken`，server 只送 token（Google 會忽略其他參數），
+並在 token 還沒生效（`INVALID_REQUEST`）時最多重試 3 次、間隔 1.5 秒。新頁依步行時間
+插入既有清單，不打亂已經在畫面上的卡片。**第一次搜尋不預先抓**，所以 first-run 等待時間沒變。
+**未做**：要不要在第一次就多抓一頁 — 還是要先量測延遲再決定（下面原文）。
 
 **證據等級：已確認（API 行為）／假設（值不值得）**
 
@@ -203,7 +236,7 @@ Google 每頁最多 20 筆，`next_page_token` 最多到 60 筆。多抓能讓�
 按鈕自己會回來，不用重新整理。拒絕狀態下實測：「Use my location」消失、
 說明出現、手動區塊展開、燼橘主要色交給搜尋按鈕。
 
-**還沒做**：這段新文案是英文的，會跟著 3a 一起翻。
+~~**還沒做**：這段新文案是英文的，會跟著 3a 一起翻。~~ 已翻（2026-09-22，onboarding 重新設計那輪，`loc.*`）。
 
 原始問題留存如下 —
 
@@ -275,7 +308,10 @@ migration 0017 也還沒套用。`/wheels/內湖` 這類頁面是唯一能長期
 
 `client/src/i18n/` 的基礎設施已建（`dict.ts` + `LangProvider` + `t()`），
 `en` 用 `Record<MessageKey, string>` 綁死，漏翻會在 `pnpm check` 失敗。
-**但目前只有 landing page 用了它** — 登入後整個 app 還是硬編碼英文。
+**目前用了它的只有 landing page 和 first-run（`onb.*`、共用的 `LocationPicker` 的 `loc.*`）**
+— 登入後其餘的 app 還是硬編碼英文。已知的中英混排：`LocationPicker` 是共用元件，
+所以 ADD NEARBY 對話框和新增店家的名稱搜尋裡，那一塊是中文、周圍是英文，直到 3a 做完。
+`providerAlert`（Google 配額／設定錯誤訊息）也還是英文，first-run 會顯示到它。
 
 對「台灣用戶為主」的產品，這是每天每次使用都會碰到的斷裂：landing 中文、一登入變英文。
 
@@ -325,3 +361,6 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 - 2026-09-22 — 1a 定案：採用 rankby=distance。第二次量測證明 types[] 分不出
   午餐與茶館／早餐店（17/20 分類完全相同），所以「distance + types 清理」作廢；
   改為接受雜訊，理由寫在 1a。另補 business_status 待接。
+- 2026-09-22 — 1b/1c/1d 完成，1e 部分完成（按需要的下一頁）。訂正 1a：business_status
+  早就有接（軟性），缺的是永久歇業的區分，已補。Onboarding 畫面同一輪重新設計
+  （雷達 → 組裝 → 開轉），文案繁中優先、英文保留。
