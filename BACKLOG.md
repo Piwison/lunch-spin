@@ -55,9 +55,29 @@ Wireframe：https://claude.ai/artifact/UQfqaUuFrqj7BTamsohu8i （私人）
 B 的好處（第一份清單就個人化）用另一個方式拿：**記住上次的 chip**，
 下次開新輪盤時當預設值。除了人生第一次搜尋，每一次的第一份清單都是個人化的。
 
-### 1a. `rankby=distance` — 換掉搜尋的原料
+### 1a. `rankby=distance` — 換掉搜尋的原料（部分確認，未定案）
 
-**證據等級：假設 — 需要真的 API key 驗證**
+**證據等級：已量測（2026-09-22，內湖 25.0797,121.5750，真實 API key）**
+
+兩份清單**只重疊 2 家**（莫宰羊、台記家傳手勁麵），各有 18 家是對方沒有的。
+
+**假設對的部分**：`prominence` 確實讓走路就到的一大票在地店完全看不見。
+`distance` 撈到 鵝肉担、這家炒飯、宋王豬腳、定盒所餐盒、火鍋106、珍煲酸白菜鍋 —
+內湖上班族中午真的會吃的東西。`prominence` 那份比較像「帶客戶去吃」
+（CaLACaLA、Sam Won Garden、學學食驗室、王朝鐵板燒）。
+
+**假設錯的部分**：`distance` 不是單純比較好。它同時撈進不是午餐的東西 —
+Shian Ming Tea 與 Jiarunjai Tea House（茶館）、兩家早餐店（中午常關）、
+Gigi / GROUN:D / Woopen（看不出是什麼，且 `price_level` 缺失）。
+`type=restaurant` 擋不住這些，Google 的分類很鬆。
+
+**所以結論不是「換成 distance」，是「distance 的原料比較對，但需要清理」。**
+清理方式待定，卡在還沒拿到的兩個欄位（見下）。
+
+**還需要的量測**：同樣兩個查詢，加印 `user_ratings_total` 與 `types[]`。
+- `user_ratings_total` → 驗證 4.6–5.0 那批是不是評論數個位數，決定 1d 的門檻
+- `types[]` → 茶館／早餐店是否帶著可辨識的分類。**這決定「distance + 清理」走不走得通**；
+  若分不出來，備案是 distance 與 prominence 兩份都拿取聯集，代價是多一次 Nearby Search
 
 現在送給 Google 的是 `radius=900 & type=restaurant`，**沒有設 `rankby`**，
 legacy Places API 的預設是 `prominence`（知名度）。在密集區域，900 公尺內有幾百家餐廳，
@@ -121,6 +141,10 @@ Google 只回最「有名」的 20 家 — 偏向連鎖與大店。然後 `share
 
 `shared/placeMapping.ts` 沒有映射 `rating`，也沒有 `user_ratings_total` —
 Google 有回，我們直接丟掉。grep 整個 `shared/` 和 `server/` 是零次命中。
+
+**2026-09-22 量測後的優先度調整**：內湖那兩份清單共 40 家，**最低評分是 MOS Burger 的 3.0**，
+其餘最低 3.5。沒有任何一家低於 3.0 — 也就是在這種密度下，3.0 門檻篩掉的是零。
+它是安全網（擋住真的很糟的店），不是改善來源。**優先度應排在 1a/1b/1c 之後。**
 
 規則（門檻是判斷，不是量測，所以做成好改的常數）：
 
@@ -269,3 +293,6 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
   Distance Matrix 一個請求上限 25 — 兩個不同的數字被混在一起了。免費上限是 20。
 - 2026-09-22 — 1f 完成（定位權限預先偵測）。三個瀏覽器行為用 CDP 實測，含
   change 事件的恢復路徑。新文案仍是英文，併入 3a。
+- 2026-09-22 — 1a 實測（內湖）：兩份清單只重疊 2/20。prominence 確實藏住在地小店，
+  但 distance 會撈進茶館與早餐店，所以不是單純換掉就好。1d 降優先度：
+  40 家樣本裡沒有任何一家低於 3.0。
