@@ -12,6 +12,7 @@
 
 import { cuisineFromTypes, type ProviderPlace } from "@shared/placeMapping";
 import { parseMapLink } from "@shared/mapLink";
+import { nearbySearchParams, type NearbyQuery } from "@shared/nearbyQuery";
 import type { MatrixElement } from "@shared/walkTime";
 
 const TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
@@ -41,6 +42,8 @@ export interface NearbySearchResponse {
   results?: ProviderPlace[];
   status?: string;
   error_message?: string;
+  /** Present when Google has another page (up to 60 results in all). */
+  next_page_token?: string;
 }
 
 /** True once GOOGLE_MAPS_API_KEY is set (Places API enabled on that key). */
@@ -119,33 +122,50 @@ export async function searchPlacesByText(
   }
 }
 
-/** Nearby restaurants around a point, straight from Google's Places API. */
+/** How many times a not-yet-active page token is re-tried before giving up. */
+const PAGE_TOKEN_ATTEMPTS = 3;
+
+/**
+ * Nearby restaurants around a point, straight from Google's Places API. The
+ * query's shape (prominence vs distance, follow-up page) is decided in
+ * `shared/nearbyQuery.ts`.
+ *
+ * A follow-up page is re-tried on INVALID_REQUEST: Google hands out
+ * `next_page_token` about two seconds before it will accept it, so someone who
+ * taps "search farther" quickly would otherwise get an error for a request
+ * that is about to be valid. A FIRST page answering INVALID_REQUEST is a real
+ * bad query and goes straight back to the caller.
+ */
 export async function searchNearbyRestaurants(
-  lat: number,
-  lng: number,
-  radius: number,
-  keyword?: string,
+  query: NearbyQuery,
+  opts: { retryDelayMs?: number } = {},
 ): Promise<NearbySearchResponse> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
 
   const url = new URL(NEARBY_SEARCH_URL);
   url.searchParams.set("key", apiKey);
-  url.searchParams.set("location", `${lat},${lng}`);
-  url.searchParams.set("radius", String(radius));
-  url.searchParams.set("type", "restaurant");
-  if (keyword) url.searchParams.set("keyword", keyword);
+  for (const [k, v] of nearbySearchParams(query)) url.searchParams.set(k, v);
 
-  const res = await fetch(url.toString());
-  if (!res.ok) {
-    throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
+  const attempts = query.pageToken ? PAGE_TOKEN_ATTEMPTS : 1;
+  const delay = opts.retryDelayMs ?? 1500;
+  let data: NearbySearchResponse = {};
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, delay));
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
+    }
+    data = (await res.json()) as NearbySearchResponse;
+    if (data.status !== "INVALID_REQUEST") break;
   }
-  return (await res.json()) as NearbySearchResponse;
+  return data;
 }
 
 /**
  * Real walking times from one origin to the ranked destinations ("lat,lng"
- * strings, max ~12 — well under the API's 25-per-request cap), via Google's
+ * strings, at most CANDIDATE_POOL = 20 — under the API's 25-per-request cap;
+ * billed per element, so 20 destinations cost 20), via Google's
  * Distance Matrix API with mode=walking. One request per nearby search.
  * Throws on any failure — the caller treats the whole refinement as optional
  * and falls back to the haversine estimates (shared/walkTime.ts contract).

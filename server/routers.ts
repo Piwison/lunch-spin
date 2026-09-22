@@ -19,6 +19,7 @@ import { classifyPlacesStatus } from "@shared/placesError";
 import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
+import { CANDIDATE_POOL, isCandidate } from "@shared/candidates";
 import { addProviderRestaurants, copyWheelRestaurants } from "./db";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
@@ -891,6 +892,17 @@ export const appRouter = router({
           lng: z.number().min(-180).max(180),
           radius: z.number().int().min(100).max(5000).optional(),
           keyword: z.string().max(120).optional(),
+          // Absent = prominence, which is what ADD NEARBY and the name search
+          // have always sent. First-run asks for distance (BACKLOG.md 1a);
+          // distance takes no radius, so `radius` is ignored with it.
+          rankBy: z.enum(["prominence", "distance"]).optional(),
+          // How many ranked places to return. Absent = one wheel's worth
+          // (MAX_SEGMENTS). First-run asks for the whole page (CANDIDATE_POOL)
+          // so it can filter on the client without another request (1b/1c).
+          limit: z.number().int().min(1).max(CANDIDATE_POOL).optional(),
+          // `nextPageToken` from a previous response: the next 20 of the same
+          // search, i.e. the next ring out when ranked by distance.
+          pageToken: z.string().min(1).max(2048).optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -905,10 +917,18 @@ export const appRouter = router({
           });
         }
 
-        const radius = input.radius ?? DEFAULT_RADIUS_M;
+        const rankBy = input.rankBy ?? "prominence";
+        const radius = rankBy === "distance" ? null : input.radius ?? DEFAULT_RADIUS_M;
         let res: Awaited<ReturnType<typeof searchNearbyRestaurants>>;
         try {
-          res = await searchNearbyRestaurants(input.lat, input.lng, radius, input.keyword);
+          res = await searchNearbyRestaurants({
+            lat: input.lat,
+            lng: input.lng,
+            rankBy,
+            radius,
+            keyword: input.keyword,
+            pageToken: input.pageToken,
+          });
         } catch {
           throw new TRPCError({
             code: "BAD_GATEWAY",
@@ -928,10 +948,12 @@ export const appRouter = router({
         }
 
         const origin = { lat: input.lat, lng: input.lng };
-        const mapped = mapProviderResults(res.results ?? [], origin);
-        const ranked = rankNearby(mapped);
+        // A permanently closed place can never be lunch, for any caller — the
+        // one candidate rule that is not restorable, so it is applied here.
+        const mapped = mapProviderResults(res.results ?? [], origin).filter(isCandidate);
+        const ranked = rankNearby(mapped, {}, { maxSegments: input.limit });
 
-        // Refine the ranked segments (≤12 → one Distance Matrix request) with
+        // Refine the ranked segments (≤20 → one Distance Matrix request) with
         // real walking times; re-ranked nearest-first on merge. Strictly
         // optional — any failure (API disabled, quota, network) keeps the
         // haversine estimates and each place says which one it carries.
@@ -957,6 +979,8 @@ export const appRouter = router({
           lat: p.lat,
           lng: p.lng,
           address: p.address,
+          rating: p.rating,
+          ratingCount: p.ratingCount,
           alreadyAdded: existing.has(p.placeId),
         }));
         return {
@@ -964,6 +988,7 @@ export const appRouter = router({
           chainsGrouped: ranked.chainsGrouped,
           lowDensity: ranked.lowDensity,
           radius,
+          nextPageToken: res.next_page_token ?? null,
         };
       }),
 

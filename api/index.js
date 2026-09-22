@@ -1910,6 +1910,12 @@ function activePresence(rows, nowMs, ttlMs) {
   return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
 }
 
+// shared/candidates.ts
+var CANDIDATE_POOL = 20;
+function isCandidate(p) {
+  return p.permanentlyClosed !== true;
+}
+
 // shared/placeMapping.ts
 var EARTH_RADIUS_M = 6371e3;
 var toRad = (deg) => deg * Math.PI / 180;
@@ -1966,6 +1972,14 @@ function normalizePriceLevel(level) {
   if (level == null || Number.isNaN(level)) return null;
   return Math.min(4, Math.max(1, Math.round(level)));
 }
+function normalizeRating(rating) {
+  if (rating == null || !Number.isFinite(rating)) return null;
+  return rating >= 1 && rating <= 5 ? rating : null;
+}
+function normalizeRatingCount(count) {
+  if (count == null || !Number.isFinite(count) || count < 0) return null;
+  return Math.round(count);
+}
 function toNearbyPlace(raw, origin) {
   const loc = raw.geometry?.location ?? null;
   const distanceMeters = loc ? Math.round(haversineMeters(origin, loc)) : null;
@@ -1985,7 +1999,10 @@ function toNearbyPlace(raw, origin) {
     chain: null,
     lat: loc?.lat ?? null,
     lng: loc?.lng ?? null,
-    address: raw.vicinity ?? raw.formatted_address ?? null
+    address: raw.vicinity ?? raw.formatted_address ?? null,
+    rating: normalizeRating(raw.rating),
+    ratingCount: normalizeRatingCount(raw.user_ratings_total),
+    permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY"
   };
 }
 function mapProviderResults(rows, origin) {
@@ -2110,6 +2127,18 @@ function parseMapLink(input) {
   return null;
 }
 
+// shared/nearbyQuery.ts
+function nearbySearchParams(q) {
+  if (q.pageToken) return [["pagetoken", q.pageToken]];
+  const out = [["location", `${q.lat},${q.lng}`]];
+  if (q.rankBy === "distance") out.push(["rankby", "distance"]);
+  else out.push(["radius", String(q.radius ?? DEFAULT_RADIUS_M)]);
+  out.push(["type", "restaurant"]);
+  const keyword = q.keyword?.trim();
+  if (keyword) out.push(["keyword", keyword]);
+  return out;
+}
+
 // server/places.ts
 var TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
 var NEARBY_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
@@ -2152,20 +2181,26 @@ async function searchPlacesByText(query, bias) {
     clearTimeout(timer);
   }
 }
-async function searchNearbyRestaurants(lat, lng, radius, keyword) {
+var PAGE_TOKEN_ATTEMPTS = 3;
+async function searchNearbyRestaurants(query, opts = {}) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
   const url = new URL(NEARBY_SEARCH_URL);
   url.searchParams.set("key", apiKey);
-  url.searchParams.set("location", `${lat},${lng}`);
-  url.searchParams.set("radius", String(radius));
-  url.searchParams.set("type", "restaurant");
-  if (keyword) url.searchParams.set("keyword", keyword);
-  const res = await fetch(url.toString());
-  if (!res.ok) {
-    throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
+  for (const [k, v] of nearbySearchParams(query)) url.searchParams.set(k, v);
+  const attempts = query.pageToken ? PAGE_TOKEN_ATTEMPTS : 1;
+  const delay = opts.retryDelayMs ?? 1500;
+  let data = {};
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, delay));
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      throw new Error(`Google Places API request failed (${res.status} ${res.statusText})`);
+    }
+    data = await res.json();
+    if (data.status !== "INVALID_REQUEST") break;
   }
-  return await res.json();
+  return data;
 }
 async function walkingMatrix(origin, destinations) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -3079,7 +3114,18 @@ var appRouter = router({
         lat: z2.number().min(-90).max(90),
         lng: z2.number().min(-180).max(180),
         radius: z2.number().int().min(100).max(5e3).optional(),
-        keyword: z2.string().max(120).optional()
+        keyword: z2.string().max(120).optional(),
+        // Absent = prominence, which is what ADD NEARBY and the name search
+        // have always sent. First-run asks for distance (BACKLOG.md 1a);
+        // distance takes no radius, so `radius` is ignored with it.
+        rankBy: z2.enum(["prominence", "distance"]).optional(),
+        // How many ranked places to return. Absent = one wheel's worth
+        // (MAX_SEGMENTS). First-run asks for the whole page (CANDIDATE_POOL)
+        // so it can filter on the client without another request (1b/1c).
+        limit: z2.number().int().min(1).max(CANDIDATE_POOL).optional(),
+        // `nextPageToken` from a previous response: the next 20 of the same
+        // search, i.e. the next ring out when ranked by distance.
+        pageToken: z2.string().min(1).max(2048).optional()
       })
     ).mutation(async ({ ctx, input }) => {
       if (input.wheelId != null) {
@@ -3092,10 +3138,18 @@ var appRouter = router({
           message: "Nearby search isn't configured on this server."
         });
       }
-      const radius = input.radius ?? DEFAULT_RADIUS_M;
+      const rankBy = input.rankBy ?? "prominence";
+      const radius = rankBy === "distance" ? null : input.radius ?? DEFAULT_RADIUS_M;
       let res;
       try {
-        res = await searchNearbyRestaurants(input.lat, input.lng, radius, input.keyword);
+        res = await searchNearbyRestaurants({
+          lat: input.lat,
+          lng: input.lng,
+          rankBy,
+          radius,
+          keyword: input.keyword,
+          pageToken: input.pageToken
+        });
       } catch {
         throw new TRPCError3({
           code: "BAD_GATEWAY",
@@ -3110,8 +3164,8 @@ var appRouter = router({
         throw new TRPCError3({ code: failure.code, message: failure.message });
       }
       const origin = { lat: input.lat, lng: input.lng };
-      const mapped = mapProviderResults(res.results ?? [], origin);
-      const ranked = rankNearby(mapped);
+      const mapped = mapProviderResults(res.results ?? [], origin).filter(isCandidate);
+      const ranked = rankNearby(mapped, {}, { maxSegments: input.limit });
       let segments = mergeWalkTimes(ranked.segments, []);
       try {
         const elements = await walkingMatrix(origin, routableCoords(ranked.segments));
@@ -3131,13 +3185,16 @@ var appRouter = router({
         lat: p.lat,
         lng: p.lng,
         address: p.address,
+        rating: p.rating,
+        ratingCount: p.ratingCount,
         alreadyAdded: existing.has(p.placeId)
       }));
       return {
         places,
         chainsGrouped: ranked.chainsGrouped,
         lowDensity: ranked.lowDensity,
-        radius
+        radius,
+        nextPageToken: res.next_page_token ?? null
       };
     }),
     // Persist a chosen nearby place onto the wheel as a provider-sourced

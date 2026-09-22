@@ -28,6 +28,10 @@ export interface ProviderPlace {
   types?: string[];
   opening_hours?: { open_now?: boolean };
   geometry?: { location?: LatLng };
+  /** Google star average, 1.0..5.0; absent for a place nobody has rated. */
+  rating?: number;
+  /** How many reviews that average is over. */
+  user_ratings_total?: number;
 }
 
 /** A ranked/rendered place plus the fields the `restaurants` row persists. */
@@ -39,6 +43,12 @@ export interface MappedPlace extends NearbyPlace {
   address: string | null;
   cuisine: string | null;
   priceLevel: number | null;
+  /** Google star average, or null when unrated / out of range. */
+  rating: number | null;
+  /** Review count behind `rating`, or null when unreported. */
+  ratingCount: number | null;
+  /** CLOSED_PERMANENTLY — can never be lunch, unlike a temporary closure. */
+  permanentlyClosed: boolean;
 }
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -115,6 +125,22 @@ export function normalizePriceLevel(level: number | null | undefined): number | 
 }
 
 /**
+ * A Google star average, or null. Google's scale is 1..5 and an unrated place
+ * simply omits the field; anything outside that range is treated as unknown
+ * rather than clamped, because a clamped 0 would read as "terrible".
+ */
+export function normalizeRating(rating: number | null | undefined): number | null {
+  if (rating == null || !Number.isFinite(rating)) return null;
+  return rating >= 1 && rating <= 5 ? rating : null;
+}
+
+/** A review count, or null when missing or nonsensical. */
+export function normalizeRatingCount(count: number | null | undefined): number | null {
+  if (count == null || !Number.isFinite(count) || count < 0) return null;
+  return Math.round(count);
+}
+
+/**
  * Raw provider row → `MappedPlace`. Distance is haversine from the search origin
  * (the caller's location) converted to walk-minutes; a permanently/temporarily
  * closed business is treated as `open: false` (a soft signal the ranker sinks,
@@ -142,6 +168,9 @@ export function toNearbyPlace(raw: ProviderPlace, origin: LatLng): MappedPlace {
     lat: loc?.lat ?? null,
     lng: loc?.lng ?? null,
     address: raw.vicinity ?? raw.formatted_address ?? null,
+    rating: normalizeRating(raw.rating),
+    ratingCount: normalizeRatingCount(raw.user_ratings_total),
+    permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY",
   };
 }
 

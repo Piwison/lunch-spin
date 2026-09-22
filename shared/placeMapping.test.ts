@@ -99,6 +99,43 @@ describe("toNearbyPlace", () => {
     expect(closed.open).toBe(false);
   });
 
+  it("carries Google's rating and review count through untouched", () => {
+    // 1d filters on these, and the card shows them — so they must survive the
+    // mapping exactly as Google reported them, not rounded or clamped here.
+    const p = toNearbyPlace({ ...raw, rating: 4.3, user_ratings_total: 280 }, ORIGIN);
+    expect(p.rating).toBe(4.3);
+    expect(p.ratingCount).toBe(280);
+  });
+
+  it("maps a missing rating to null, not 0", () => {
+    // A place nobody has rated is UNKNOWN, not a zero-star place. Mapping it to
+    // 0 would put every brand-new shop under the low-rating cut.
+    const p = toNearbyPlace(raw, ORIGIN);
+    expect(p.rating).toBeNull();
+    expect(p.ratingCount).toBeNull();
+  });
+
+  it("rejects a rating outside Google's 1..5 scale as unknown", () => {
+    expect(toNearbyPlace({ ...raw, rating: 0 }, ORIGIN).rating).toBeNull();
+    expect(toNearbyPlace({ ...raw, rating: 7 }, ORIGIN).rating).toBeNull();
+    expect(toNearbyPlace({ ...raw, rating: NaN }, ORIGIN).rating).toBeNull();
+    expect(toNearbyPlace({ ...raw, user_ratings_total: -3 }, ORIGIN).ratingCount).toBeNull();
+  });
+
+  it("flags only CLOSED_PERMANENTLY as permanently closed", () => {
+    // The two closures mean different things. A temporarily closed place is a
+    // soft "closed now" (open=false, the ranker sinks it); a permanently closed
+    // one can never be lunch and is dropped from candidates outright.
+    expect(toNearbyPlace(raw, ORIGIN).permanentlyClosed).toBe(false);
+    expect(
+      toNearbyPlace({ ...raw, business_status: "CLOSED_TEMPORARILY" }, ORIGIN).permanentlyClosed,
+    ).toBe(false);
+    expect(
+      toNearbyPlace({ ...raw, business_status: "CLOSED_PERMANENTLY" }, ORIGIN).permanentlyClosed,
+    ).toBe(true);
+    expect(toNearbyPlace({ place_id: "x" }, ORIGIN).permanentlyClosed).toBe(false);
+  });
+
   it("falls back gracefully when optional fields are missing", () => {
     const bare: ProviderPlace = { place_id: "x", geometry: { location: ORIGIN } };
     const p = toNearbyPlace(bare, ORIGIN);
