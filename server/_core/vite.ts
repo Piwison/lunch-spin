@@ -4,7 +4,6 @@ import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import viteConfig from "../../vite.config";
 
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
@@ -13,9 +12,22 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: true as const,
   };
 
+  // Let Vite READ vite.config.ts rather than spreading its default export.
+  // That export is `defineConfig(({ mode }) => ({ ... }))` — a FUNCTION — and
+  // `{ ...aFunction }` is `{}`, because functions have no own enumerable
+  // properties. So the old `{ ...viteConfig, configFile: false }` handed Vite
+  // an empty object: no `root` (so it defaulted to the repo root instead of
+  // `client/`), no `@`/`@shared`/`@assets` aliases, and none of the three
+  // plugins — React, Tailwind, jsx-loc. `/src/main.tsx` resolved to nothing,
+  // fell through to the SPA fallback below, and came back as index.html, which
+  // the browser rejected with "Expected a JavaScript-or-Wasm module script but
+  // the server responded with a MIME type of text/html".
+  //
+  // Pointing at the file also means the dev server and `vite build` can no
+  // longer disagree: both now interpret the same config the same way, instead
+  // of dev quietly running on defaults.
   const vite = await createViteServer({
-    ...viteConfig,
-    configFile: false,
+    configFile: path.resolve(import.meta.dirname, "../..", "vite.config.ts"),
     server: serverOptions,
     appType: "custom",
   });
