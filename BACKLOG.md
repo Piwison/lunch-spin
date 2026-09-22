@@ -69,19 +69,27 @@ Google 只回最「有名」的 20 家 — 偏向連鎖與大店。然後 `share
 
 這是整條管線的**原料**，排最前面 — 原料錯了，後面的排序和篩選都是白工。
 
-### 1b. server 回 25 家候選，不是 12 家
+### 1b. 別再把備料丟掉：回一頁能拿的全部，不是 12 家
 
 **證據等級：已確認**
 
 `shared/nearby.ts:135` 是 `deduped.slice(0, MAX_SEGMENTS)`，`MAX_SEGMENTS = 12`。
 **server 在回傳前就把 12 家以外的全丟了**，所以 client 手上沒有備料，任何篩選一做就見底。
 
-`walkingMatrix` 的註解自己寫著「max ~12 — well under the API's 25-per-request cap」：
-Distance Matrix 一個請求吃得下 25 個目的地。所以回 25 家（都有真實步行時間）
-**Google API 呼叫次數完全不變**，還是兩次。
+**兩個上限不要搞混**（第一版寫錯過，訂正在此）：
 
-輪盤照樣最多轉 `MAX_SEGMENTS = 12` 家 — 多出來的 13 家是給 client 篩選用的備料，
-不是拿去轉的。這兩個上限要分開，不要共用同一個常數。
+- **Nearby Search 一頁最多 20 筆** — 這是免費備料的天花板，去重後更少
+- **Distance Matrix 一個請求吃得下 25 個目的地** — 所以 20 家全部要真實步行時間，
+  一個請求就夠
+
+所以「**不增加任何 Google API 呼叫**」的上限是 **20（去重後約 15–18）**，不是 25。
+要 25 家就得抓 `next_page_token`（見 1e）：多一次 Nearby Search，
+且 Google 規定 token 生效前約 2 秒 — 那 2 秒會直接加在 first-run 的等待上。
+
+**先用一頁出貨**，之後照 1e 量測再決定要不要加頁。
+
+輪盤照樣最多轉 `MAX_SEGMENTS = 12` 家 — 多出來的是給 client 篩選用的備料，不是拿去轉的。
+**這兩個上限要拆成兩個常數**，不要共用。
 
 ### 1c. client 瞬間篩選，只有三種情況才連網
 
@@ -244,3 +252,5 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
   第一次搜尋品質的討論。SEO 在 2a 之前暫停。
 - 2026-09-22 — Onboarding 定案走提案 A。1b/1c/1d 依 wireframe 討論改寫：
   server 回 25 家、client 瞬間篩選、評分過濾。原 1c/1d 順延為 1e/1f。
+- 2026-09-22 — 訂正 1b：「25 家不增加 API 呼叫」是錯的。Nearby Search 一頁上限 20，
+  Distance Matrix 一個請求上限 25 — 兩個不同的數字被混在一起了。免費上限是 20。
