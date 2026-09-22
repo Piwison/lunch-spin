@@ -140,9 +140,22 @@ Google 每頁最多 20 筆，`next_page_token` 最多到 60 筆。多抓能讓�
 候選可以挑，而不是 20 個。代價：每頁一個額外請求，且 Google 要求 token 生效前有短暫延遲
 （~2s）。first-run 的搜尋延遲是使用者看得到的，**先量測再決定**。
 
-### 1f. 定位權限預先偵測
+### 1f. 定位權限預先偵測 — ✅ 已完成 2026-09-22
 
-**證據等級：已驗證（grep：`navigator.permissions` 在整個 `client/src` 出現 0 次）**
+**證據等級：已驗證（CDP `Browser.setPermission` + 讀真實 DOM）**
+
+已做：`shared/locationEntry.ts`（`locationEntryMode`，5 個測試，unknown → geolocation-first
+的 fail-safe 有測試釘住）、`client/src/lib/geo.ts` 的 `watchGeoPermission`、
+`LocationPicker` 依 mode 切換入口。
+
+真實瀏覽器量測：`permissions.query` 在拒絕時回 `denied`、允許時回 `granted`；
+**頁面載入後把權限翻成允許，`change` 事件會發** — 所以使用者去設定裡重開定位，
+按鈕自己會回來，不用重新整理。拒絕狀態下實測：「Use my location」消失、
+說明出現、手動區塊展開、燼橘主要色交給搜尋按鈕。
+
+**還沒做**：這段新文案是英文的，會跟著 3a 一起翻。
+
+原始問題留存如下 —
 
 `LocationPicker` 已經有三條路（瀏覽器定位／搜尋地標／貼 Maps 連結），這部分是完整的。
 問題是：一個**永久拒絕過定位**的使用者，看到的還是一顆必定失敗的「使用我的位置」，
@@ -254,3 +267,5 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
   server 回 25 家、client 瞬間篩選、評分過濾。原 1c/1d 順延為 1e/1f。
 - 2026-09-22 — 訂正 1b：「25 家不增加 API 呼叫」是錯的。Nearby Search 一頁上限 20，
   Distance Matrix 一個請求上限 25 — 兩個不同的數字被混在一起了。免費上限是 20。
+- 2026-09-22 — 1f 完成（定位權限預先偵測）。三個瀏覽器行為用 CDP 實測，含
+  change 事件的恢復路徑。新文案仍是英文，併入 3a。

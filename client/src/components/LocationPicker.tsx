@@ -18,12 +18,13 @@
  * name the wheel's office after the place the user actually chose.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { providerAlert } from "@/lib/placesError";
-import { GeoError, requestCoords } from "@/lib/geo";
+import { GeoError, requestCoords, watchGeoPermission } from "@/lib/geo";
+import { locationEntryMode, type GeoPermission } from "@shared/locationEntry";
 import { AlertTriangle, Loader2, MapPin, Navigation, Search } from "lucide-react";
 
 export interface PickedLocation {
@@ -52,6 +53,15 @@ export default function LocationPicker({
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+
+  // Ask the browser whether geolocation can work BEFORE offering it. Starts at
+  // "unknown", which resolves to the normal geolocation-first layout, so a
+  // browser that never answers behaves exactly as it did before.
+  const [permission, setPermission] = useState<GeoPermission>("unknown");
+  useEffect(() => watchGeoPermission(setPermission), []);
+  const mode = locationEntryMode(permission);
+  // Denied: the alternatives ARE the interface, not a disclosure under it.
+  const manualOpen = showManual || mode === "manual-first";
 
   const searchPlaces = trpc.places.searchPlaces.useMutation();
   const resolveLink = trpc.places.resolveLink.useMutation({
@@ -102,28 +112,41 @@ export default function LocationPicker({
 
   return (
     <div className="flex flex-col gap-2.5 w-full">
-      <Button
-        type="button"
-        onClick={useMyLocation}
-        disabled={busy}
-        className="w-full gap-2 transition-colors active:scale-[var(--press-scale)]"
-        style={{
-          minHeight: 56,
-          borderRadius: "var(--radius-control)",
-          background: "var(--brand-grad)",
-          color: "var(--on-accent)",
-          fontSize: 16,
-          fontWeight: 500,
-          letterSpacing: "0.05em",
-        }}
-      >
-        {locating ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
-        {locating ? "Finding you…" : primaryLabel}
-      </Button>
+      {mode === "geolocation-first" ? (
+        <>
+          <Button
+            type="button"
+            onClick={useMyLocation}
+            disabled={busy}
+            className="w-full gap-2 transition-colors active:scale-[var(--press-scale)]"
+            style={{
+              minHeight: 56,
+              borderRadius: "var(--radius-control)",
+              background: "var(--brand-grad)",
+              color: "var(--on-accent)",
+              fontSize: 16,
+              fontWeight: 500,
+              letterSpacing: "0.05em",
+            }}
+          >
+            {locating ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
+            {locating ? "Finding you…" : primaryLabel}
+          </Button>
 
-      {!compact && (
-        <p className="type-meta text-muted-foreground text-center px-4">
-          Only used for this search — it's never stored.
+          {!compact && (
+            <p className="type-meta text-muted-foreground text-center px-4">
+              Only used for this search — it&apos;s never stored.
+            </p>
+          )}
+        </>
+      ) : (
+        /* Permission is denied, so there is no button to offer — a web page
+           cannot open the browser's or the OS's location settings, and
+           pretending otherwise would be a control that does nothing. Say where
+           the switch is, once, and get out of the way of the routes that work. */
+        <p className="type-meta text-muted-foreground px-1 leading-relaxed">
+          Location is switched off for this site, so search for a place instead.
+          To turn it back on, change it in your browser&apos;s site settings.
         </p>
       )}
 
@@ -157,7 +180,7 @@ export default function LocationPicker({
         </div>
       )}
 
-      {!showManual ? (
+      {!manualOpen ? (
         <button
           type="button"
           onClick={() => setShowManual(true)}
@@ -191,12 +214,29 @@ export default function LocationPicker({
                   className="bg-secondary/50 border-border/50 pl-9"
                 />
               </div>
+              {/* With geolocation unavailable this is the screen's primary
+                  action, so it carries the primary fill rather than sitting as
+                  a muted affordance next to a persimmon button that is gone. */}
               <Button
                 type="button"
                 onClick={runSearch}
                 disabled={!query.trim() || busy}
                 className="flex-shrink-0"
-                style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)", borderRadius: "var(--radius-chip)" }}
+                style={
+                  mode === "manual-first"
+                    ? {
+                        background: "var(--brand-grad)",
+                        border: 0,
+                        color: "var(--on-accent)",
+                        borderRadius: "var(--radius-chip)",
+                      }
+                    : {
+                        background: "var(--muted)",
+                        border: "1px solid var(--border)",
+                        color: "var(--foreground)",
+                        borderRadius: "var(--radius-chip)",
+                      }
+                }
               >
                 {searchPlaces.isPending ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
               </Button>
