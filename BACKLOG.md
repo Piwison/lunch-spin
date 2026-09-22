@@ -74,10 +74,33 @@ Gigi / GROUN:D / Woopen（看不出是什麼，且 `price_level` 缺失）。
 **所以結論不是「換成 distance」，是「distance 的原料比較對，但需要清理」。**
 清理方式待定，卡在還沒拿到的兩個欄位（見下）。
 
-**還需要的量測**：同樣兩個查詢，加印 `user_ratings_total` 與 `types[]`。
-- `user_ratings_total` → 驗證 4.6–5.0 那批是不是評論數個位數，決定 1d 的門檻
-- `types[]` → 茶館／早餐店是否帶著可辨識的分類。**這決定「distance + 清理」走不走得通**；
-  若分不出來，備案是 distance 與 prominence 兩份都拿取聯集，代價是多一次 Nearby Search
+**第二次量測（含 `types[]` 與 `user_ratings_total`）— 定案採用 `rankby=distance`**
+
+`types[]` **分不出午餐與非午餐**。20 家裡 17 家的 types 完全相同
+（`restaurant,food,point_of_interest,establishment`），而且：
+
+| 店 | types | 午餐？ |
+|---|---|---|
+| Shian Ming Tea（茶館） | `restaurant,food,point_of_interest,establishment` | ✗ |
+| 鵝肉担 | `restaurant,food,point_of_interest,establishment` | ✓ |
+| Ruilin Meiermei Breakfast | `restaurant,food,point_of_interest,establishment` | ✗ |
+| 火鍋106 | `restaurant,food,point_of_interest,establishment` | ✓ |
+
+唯一帶特殊分類的方向還是反的：`這家炒飯J+` 帶 `meal_takeaway`，而它正是最像午餐的店之一。
+`rating` / `user_ratings_total` 也分不出來（茶館 201 則 ★4.6，數字比鵝肉担漂亮）。
+
+**所以「distance + 用 types 清理」這條路是死的，不要再試。**
+
+**仍然採用 distance**，理由是雜訊的代價遠小於藏起來的代價：
+1. `prominence` 的雜訊一樣多 — Journey Kaffe、SECOND FLOOR CAFE、學學食驗室、包青天手工蔬菜包
+   也都不是午餐。兩邊都髒
+2. 早餐店會自己消失 — 回傳有 `opening_hours.open_now`，而「只看營業中」這個 chip 已經存在。
+   中午的早餐店是關的
+3. 取消勾選本來就是這個步驟的設計（`OnboardingFlow` 註解：
+   「progress is the default and de-selecting is the user's only job」）。
+   取消一家茶館是一次點擊；`prominence` 藏住的 18 家在地店是完全看不到
+
+**順帶要接的欄位**：`business_status`。永久歇業的店不該進輪盤，Google 有回，我們沒接。
 
 現在送給 Google 的是 `radius=900 & type=restaurant`，**沒有設 `rankby`**，
 legacy Places API 的預設是 `prominence`（知名度）。在密集區域，900 公尺內有幾百家餐廳，
@@ -150,7 +173,10 @@ Google 有回，我們直接丟掉。grep 整個 `shared/` 和 `server/` 是零�
 
 - 門檻 **3.0**。台灣營業中的餐廳絕大多數在 3.5–4.5，2.5 幾乎篩不掉東西
 - **只在 `user_ratings_total >= 5` 時套用**。沒評分 ≠ 評分低 —
-  新開的店和巷弄小店常常沒人評，而那正是這產品想找的。評論太少的保留並標註「評論太少」
+  新開的店和巷弄小店常常沒人評，而那正是這產品想找的。評論太少的保留並標註「評論太少」。
+  **2026-09-22 量測佐證**：`Gigi ★5.0 / 1 則`。單則評分兩個方向都沒意義，
+  這條規則真正防的是反過來的情況 — 一家新店被一個人打 2 星就被 3.0 門檻藏起來。
+  （修正：我原先預測「很多家都是個位數評論」，實際上 20 家裡只有這 1 家。）
 - **不能靜默隱藏**：顯示「已隱藏 N 家評分低於 3.0 的店」並可一鍵顯示（失敗模式 54）
 - 這是**候選階段**的硬篩（不該端上桌的不要端）。
   已經在某人輪盤上的店，排除規則維持軟性 — `shared/nearby.ts` 的
@@ -296,3 +322,6 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 - 2026-09-22 — 1a 實測（內湖）：兩份清單只重疊 2/20。prominence 確實藏住在地小店，
   但 distance 會撈進茶館與早餐店，所以不是單純換掉就好。1d 降優先度：
   40 家樣本裡沒有任何一家低於 3.0。
+- 2026-09-22 — 1a 定案：採用 rankby=distance。第二次量測證明 types[] 分不出
+  午餐與茶館／早餐店（17/20 分類完全相同），所以「distance + types 清理」作廢；
+  改為接受雜訊，理由寫在 1a。另補 business_status 待接。
