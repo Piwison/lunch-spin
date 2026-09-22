@@ -491,9 +491,22 @@ export default function WheelApp() {
     };
     tick();
     const iv = setInterval(tick, 10_000);
+    // Coming back to the tab pings immediately instead of waiting out the rest
+    // of the current 10s slot. The interval keeps running while hidden — its
+    // ticks are skipped, not cancelled — so on return the next one lands
+    // wherever the cycle happens to be: measured 2.2s in one run, up to 10s.
+    // That matters because this ping is what other members see: presence ages
+    // out after PRESENCE_TTL_MS (25s), so someone away for half a minute stays
+    // marked offline for up to 10s AFTER they are back and looking at the
+    // wheel, while `wheels.realtime` beside it resumes in 0.4s and the two
+    // disagree about who is here. Costs no extra polling — it only moves a
+    // tick that was already scheduled.
+    const onVisibility = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       active = false;
       clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWheelId, isShared]);
