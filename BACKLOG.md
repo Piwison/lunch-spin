@@ -55,7 +55,7 @@ Wireframe：https://claude.ai/artifact/UQfqaUuFrqj7BTamsohu8i （私人）
 B 的好處（第一份清單就個人化）用另一個方式拿：**記住上次的 chip**，
 下次開新輪盤時當預設值。除了人生第一次搜尋，每一次的第一份清單都是個人化的。
 
-### 1a. `rankby=distance` — 換掉搜尋的原料（部分確認，未定案）
+### 1a. `rankby=distance` — 換掉搜尋的原料 ✅ 已定案 2026-09-22
 
 **證據等級：已量測（2026-09-22，內湖 25.0797,121.5750，真實 API key）**
 
