@@ -48,6 +48,13 @@ DATABASE_URL='<prod>'    pnpm exec drizzle-kit migrate
 
 Wireframe：https://claude.ai/artifact/UQfqaUuFrqj7BTamsohu8i （私人）
 
+**已決定（2026-09-22）**：走**提案 A** — 先給結果，chip 調整。提案 B（先問三題）
+不採用，wireframe 的 B1/B2 保留當紀錄。理由：B 多一整個步驟，而且新使用者第一眼
+看到的是表單，那正是 `OnboardingFlow.tsx` 的註解記錄上一版被否決的原因。
+
+B 的好處（第一份清單就個人化）用另一個方式拿：**記住上次的 chip**，
+下次開新輪盤時當預設值。除了人生第一次搜尋，每一次的第一份清單都是個人化的。
+
 ### 1a. `rankby=distance` — 換掉搜尋的原料
 
 **證據等級：假設 — 需要真的 API key 驗證**
@@ -62,22 +69,62 @@ Google 只回最「有名」的 20 家 — 偏向連鎖與大店。然後 `share
 
 這是整條管線的**原料**，排最前面 — 原料錯了，後面的排序和篩選都是白工。
 
-### 1b. chip 改成重新查詢
+### 1b. server 回 25 家候選，不是 12 家
 
 **證據等級：已確認**
 
-`searchNearby` 的 input schema **已經收 `keyword` 和 `radius`**，`shared/nearby.ts`
-**已經有** `NearbyFilters { maxWalk, maxPrice, openNow }`。但 `OnboardingFlow.tsx:114`
-只送 `{ wheelId, lat, lng, radius }` — `keyword` 從來沒送過，而四個 chip
-（`matchesFilter`）是**純畫面過濾**，過濾的還是一份已經被 `MAX_SEGMENTS=12` 截斷的清單。
+`shared/nearby.ts:135` 是 `deduped.slice(0, MAX_SEGMENTS)`，`MAX_SEGMENTS = 12`。
+**server 在回傳前就把 12 家以外的全丟了**，所以 client 手上沒有備料，任何篩選一做就見底。
 
-要做的：
-- server：`searchNearbyRestaurants` 加 `minprice`/`maxprice` 透傳 + schema
-- client：chip 觸發重新查詢而非重新渲染
-- 新邏輯進 `shared/*.ts`，測試先寫（AGENTS.md done 定義）
-- 動到 `server/` → 同一個 commit 重建並提交 `api/index.js`
+`walkingMatrix` 的註解自己寫著「max ~12 — well under the API's 25-per-request cap」：
+Distance Matrix 一個請求吃得下 25 個目的地。所以回 25 家（都有真實步行時間）
+**Google API 呼叫次數完全不變**，還是兩次。
 
-### 1c. `next_page_token` 多抓 1–2 頁
+輪盤照樣最多轉 `MAX_SEGMENTS = 12` 家 — 多出來的 13 家是給 client 篩選用的備料，
+不是拿去轉的。這兩個上限要分開，不要共用同一個常數。
+
+### 1c. client 瞬間篩選，只有三種情況才連網
+
+**證據等級：已確認（哪些欄位在回傳裡）**
+
+一次 `searchNearby` 實際打**兩個** Google API（`searchNearbyRestaurants` +
+`walkingMatrix`），所以「一個 chip 一次請求」是一次兩發。但大部分 chip 根本不需要連網：
+
+| 操作 | 要重新問 Google 嗎 | 為什麼 |
+|---|---|---|
+| 縮小步行時間 | 不用 | 900m 的結果裡就有 400m 內的 |
+| 縮小價位 | 不用 | `price_level` 已在回傳裡 |
+| 只看營業中 | 不用 | `open` 已在回傳裡 |
+| 換關鍵字 | **要** | 這是換一個查詢 |
+| 範圍變大 | **要** | 沒拿過那些店 |
+| 篩到 < `MIN_SEGMENTS` | **要** | 備料見底了 |
+
+**縮小條件永遠不需要新請求。** 需要的只有使用者在要「沒看過的東西」的時候。
+
+刻意**不做**「手動 trigger 按鈕」：那會讓 chip 顯示新狀態、清單顯示舊結果，
+畫面同時講兩個互相矛盾的事實 — 失敗模式 38 和 54 的形狀。瞬間篩選連這個狀態都不存在。
+
+見底時的處理照 `shared/spinBlock.ts` 已有的形狀：列出能把店放回來的解法，
+**最便宜的先講**，唯一會連網的那顆標明「重新搜尋」。
+
+### 1d. 自動排除 Google 評分過低的店
+
+**證據等級：已確認（`rating` / `user_ratings_total` 完全沒接）**
+
+`shared/placeMapping.ts` 沒有映射 `rating`，也沒有 `user_ratings_total` —
+Google 有回，我們直接丟掉。grep 整個 `shared/` 和 `server/` 是零次命中。
+
+規則（門檻是判斷，不是量測，所以做成好改的常數）：
+
+- 門檻 **3.0**。台灣營業中的餐廳絕大多數在 3.5–4.5，2.5 幾乎篩不掉東西
+- **只在 `user_ratings_total >= 5` 時套用**。沒評分 ≠ 評分低 —
+  新開的店和巷弄小店常常沒人評，而那正是這產品想找的。評論太少的保留並標註「評論太少」
+- **不能靜默隱藏**：顯示「已隱藏 N 家評分低於 3.0 的店」並可一鍵顯示（失敗模式 54）
+- 這是**候選階段**的硬篩（不該端上桌的不要端）。
+  已經在某人輪盤上的店，排除規則維持軟性 — `shared/nearby.ts` 的
+  「soft filters that RE-RANK instead of excluding」不動
+
+### 1e. `next_page_token` 多抓 1–2 頁
 
 **證據等級：已確認（API 行為）／假設（值不值得）**
 
@@ -85,7 +132,7 @@ Google 每頁最多 20 筆，`next_page_token` 最多到 60 筆。多抓能讓�
 候選可以挑，而不是 20 個。代價：每頁一個額外請求，且 Google 要求 token 生效前有短暫延遲
 （~2s）。first-run 的搜尋延遲是使用者看得到的，**先量測再決定**。
 
-### 1d. 定位權限預先偵測
+### 1f. 定位權限預先偵測
 
 **證據等級：已驗證（grep：`navigator.permissions` 在整個 `client/src` 出現 0 次）**
 
@@ -195,3 +242,5 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 
 - 2026-09-22 — 建立。來源：marketing / landing page 那一輪（P0 已 ship）+ onboarding
   第一次搜尋品質的討論。SEO 在 2a 之前暫停。
+- 2026-09-22 — Onboarding 定案走提案 A。1b/1c/1d 依 wireframe 討論改寫：
+  server 回 25 家、client 瞬間篩選、評分過濾。原 1c/1d 順延為 1e/1f。
