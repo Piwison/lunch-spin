@@ -1,0 +1,30 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lunch Wheel">
+  <!-- Square tile form of the mark in icon.svg, for PWA `purpose: maskable` and
+       for iOS, which ignores maskable and fills transparency with black.
+
+       The persimmon bleeds to the corners because Android crops a maskable icon
+       to whatever shape the launcher wants. All artwork sits inside the 80%
+       safe circle (r <= 204.8 from centre): the furthest points are the pointer's
+       base corners at 174.7 and the disc's bottom at 171. Sized by that budget
+       rather than by eye — a smaller disc would be safe too, but it reads as a
+       stamp floating on a square on an iOS home screen, where nothing is cropped. -->
+  <defs>
+    <linearGradient id="lwm-ember" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#de5c1f"/>
+      <stop offset="1" stop-color="#f0894a"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#lwm-ember)"/>
+  <g transform="translate(0,16)">
+    <path d="M256 256 L196.68 112.80 A155 155 0 0 1 315.32 112.80 Z" fill="#8f3409"/>
+    <path d="M256 256 L315.32 112.80 A155 155 0 0 1 399.20 196.68 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <path d="M256 256 L399.20 196.68 A155 155 0 0 1 399.20 315.32 Z" fill="#fbf7f2"/>
+    <path d="M256 256 L399.20 315.32 A155 155 0 0 1 315.32 399.20 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <path d="M256 256 L315.32 399.20 A155 155 0 0 1 196.68 399.20 Z" fill="#fbf7f2"/>
+    <path d="M256 256 L196.68 399.20 A155 155 0 0 1 112.80 315.32 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <path d="M256 256 L112.80 315.32 A155 155 0 0 1 112.80 196.68 Z" fill="#fbf7f2"/>
+    <path d="M256 256 L112.80 196.68 A155 155 0 0 1 196.68 112.80 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <circle cx="256" cy="256" r="39" fill="#fbf7f2"/>
+  </g>
+  <path d="M256 152 L298 78 L214 78 Z" fill="#fbf7f2"/>
+</svg>

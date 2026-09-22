@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { observeLiquidGlass } from "./lib/liquidGlass";
 import BrandLoader from "./components/BrandLoader";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+import { LangProvider } from "./i18n";
 import Home from "./pages/Home";
 import WheelApp from "./pages/WheelApp";
 
@@ -91,12 +92,18 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <ThemeProvider key={locked ? "locked-light" : "normal"} defaultTheme="light" switchable={!locked}>
-        <TooltipProvider>
-          <ThemedToaster />
-          <Router />
-        </TooltipProvider>
-      </ThemeProvider>
+      {/* Language wraps the theme rather than the other way round: it is not
+          route-locked the way the theme is on shared links (a Taiwanese visitor
+          opening someone's wheel should still read Chinese), so it must not be
+          torn down and re-mounted by ThemeProvider's `key`. */}
+      <LangProvider>
+        <ThemeProvider key={locked ? "locked-light" : "normal"} defaultTheme="light" switchable={!locked}>
+          <TooltipProvider>
+            <ThemedToaster />
+            <Router />
+          </TooltipProvider>
+        </ThemeProvider>
+      </LangProvider>
     </ErrorBoundary>
   );
 }

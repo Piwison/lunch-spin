@@ -1,15 +1,35 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="112" fill="#080b14"/>
-  <g>
-    <path d="M256 256 L406 256 A150 150 0 0 1 362.071 362.071 Z" fill="#ef4444"/>
-    <path d="M256 256 L362.071 362.071 A150 150 0 0 1 256 406 Z" fill="#f97316"/>
-    <path d="M256 256 L256 406 A150 150 0 0 1 149.929 362.071 Z" fill="#eab308"/>
-    <path d="M256 256 L149.929 362.071 A150 150 0 0 1 106 256 Z" fill="#22c55e"/>
-    <path d="M256 256 L106 256 A150 150 0 0 1 149.929 149.929 Z" fill="#06b6d4"/>
-    <path d="M256 256 L149.929 149.929 A150 150 0 0 1 256 106 Z" fill="#3b82f6"/>
-    <path d="M256 256 L256 106 A150 150 0 0 1 362.071 149.929 Z" fill="#8b5cf6"/>
-    <path d="M256 256 L362.071 149.929 A150 150 0 0 1 406 256 Z" fill="#ec4899"/>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lunch Wheel">
+  <!-- Ember mark. Rebuilt from the resting wheel's recipe (see AGENTS.md failure
+       mode 19: the old mark was eight saturated slices from the pre-Ember palette
+       and survived the whole re-skin unchanged).
+
+       What did NOT transfer from `.orb-wheel`: the 1.6deg pane gaps and the 22%
+       winner wash. Both are sub-pixel on a 16px tab icon. At mark scale the whole
+       thing survives on three things only — the persimmon ring, a white disc, and
+       ONE dark wedge under a solid pointer. Decided by looking at it at 16/24/32px,
+       not by matching the component. -->
+  <defs>
+    <linearGradient id="lw-ember" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#de5c1f"/>
+      <stop offset="1" stop-color="#f0894a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="248" fill="url(#lw-ember)"/>
+  <g transform="translate(0,14)">
+    <!-- Pane 0 (12 o'clock) is the winner: dark ember, because a persimmon pane on
+         a persimmon ring is invisible at 16px. Panes run clockwise from -22.5deg. -->
+    <path d="M256 256 L190.5 98.9 A170 170 0 0 1 321.5 98.9 Z" fill="#8f3409"/>
+    <path d="M256 256 L321.5 98.9 A170 170 0 0 1 413.1 190.5 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <path d="M256 256 L413.1 190.5 A170 170 0 0 1 413.1 321.5 Z" fill="#fbf7f2"/>
+    <path d="M256 256 L413.1 321.5 A170 170 0 0 1 321.5 413.1 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <path d="M256 256 L321.5 413.1 A170 170 0 0 1 190.5 413.1 Z" fill="#fbf7f2"/>
+    <path d="M256 256 L190.5 413.1 A170 170 0 0 1 98.9 321.5 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <path d="M256 256 L98.9 321.5 A170 170 0 0 1 98.9 190.5 Z" fill="#fbf7f2"/>
+    <path d="M256 256 L98.9 190.5 A170 170 0 0 1 190.5 98.9 Z" fill="#fbf7f2" fill-opacity=".72"/>
+    <!-- Solid hub: six-plus strokes meeting at a point clog at small sizes. -->
+    <circle cx="256" cy="256" r="43" fill="#fbf7f2"/>
   </g>
-  <circle cx="256" cy="256" r="34" fill="#0d0d1a" stroke="rgba(255,255,255,0.18)" stroke-width="3"/>
-  <path d="M256 70 L284 116 L228 116 Z" fill="#f97316" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Solid pointer biting the rim — it is what separates a wheel from a pie
+       chart, and solid shapes survive downscaling that strokes do not. -->
+  <path d="M256 150 L306 52 L206 52 Z" fill="#fbf7f2"/>
 </svg>

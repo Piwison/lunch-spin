@@ -1,7 +1,8 @@
 {
-  "name": "Lunch Wheel",
-  "short_name": "Lunch Wheel",
-  "description": "Spin to decide where the group eats — smart exclusions, fairness, and live shared decisions.",
+  "name": "Lunch Wheel 午餐轉盤",
+  "short_name": "午餐轉盤",
+  "description": "定位一次自動帶出走得到的餐廳，建立轉盤分享給同事，最近吃過的自動跳過。",
+  "lang": "zh-Hant-TW",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
@@ -13,7 +14,25 @@
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "share_target": {

@@ -3,22 +3,12 @@ import { getLoginUrl } from "@/const";
 import { readBootCache } from "@/lib/bootCache";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { Users, Clock, Tags, Sparkles, ArrowRight, Utensils, Play } from "lucide-react";
+import { ArrowRight, Footprints, CalendarX, Users, Ban, MapPin, ListChecks, Play, Utensils } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import ThemeToggle from "@/components/ThemeToggle";
-
-const FEATURES = [
-  { icon: Users, label: "Team wheels", desc: "Shared wheels for your whole squad" },
-  { icon: Clock, label: "Smart exclusion", desc: "Auto-skip recently picked spots" },
-  { icon: Tags, label: "Tag filtering", desc: "Filter by cuisine or food type" },
-  { icon: Sparkles, label: "A spin worth watching", desc: "The camera pushes into the wheel" },
-];
-
-const STATS = [
-  { value: "10s", label: "to decide lunch" },
-  { value: "0", label: "arguments" },
-  { value: "∞", label: "restaurants" },
-];
+import LangToggle from "@/components/LangToggle";
+import LandingWheel from "@/components/LandingWheel";
+import { useLang } from "@/i18n";
 
 /**
  * The real front door. Typing the domain or opening a bookmark lands here, not
@@ -29,12 +19,25 @@ const STATS = [
  * six hand-rolled `backdrop-filter` surfaces. The direction is a warm paper
  * ground that never blurs, with glass reserved for floating chrome — so the
  * ground is now flat paper, the sections are solid, and the only animation left
- * is the one-shot `reveal` entrance. That also takes the marketing page from
- * ~41 idle frames a second to zero.
+ * is the one-shot `reveal` entrance.
+ *
+ * The hero is a PLAYABLE wheel rather than a picture of one. The page's whole
+ * job is a first impression on someone who has never signed in, and its only
+ * call to action used to be a Google sign-in wall — so anyone arriving from a
+ * search for "中午吃什麼" had to create an account before the product did
+ * anything. `LandingWheel` spins entirely in the browser (no request, nothing
+ * recorded), and the sign-in ask is earned after a spin, the same rule
+ * shared/onboarding.ts applies to the guest wheel.
+ *
+ * The feature copy also changed: the four cards used to be Team wheels / Smart
+ * exclusion / Tag filtering / "a spin worth watching", none of which mentioned
+ * nearby search — the one thing that separates this from any generic wheel
+ * site, and what first-run actually does (OnboardingFlow: Locate → Pick → Spin).
  */
 export default function Home() {
   const { user, loading } = useAuth();
   const [, navigate] = useLocation();
+  const { t } = useLang();
 
   // A signed-in visitor is redirected to /app, so the public-wheels query is
   // pure waste for them. Gate it behind "we know this visitor is anonymous".
@@ -76,103 +79,149 @@ export default function Home() {
   // read. (After every hook, so the hook order stays stable.)
   if (hasStoredSession) return null;
 
+  const steps = [
+    { icon: MapPin, title: t("steps.1.title"), desc: t("steps.1.desc") },
+    { icon: ListChecks, title: t("steps.2.title"), desc: t("steps.2.desc") },
+    { icon: Play, title: t("steps.3.title"), desc: t("steps.3.desc") },
+  ];
+
+  const features = [
+    { icon: Footprints, title: t("features.1.title"), desc: t("features.1.desc") },
+    { icon: CalendarX, title: t("features.2.title"), desc: t("features.2.desc") },
+    { icon: Users, title: t("features.3.title"), desc: t("features.3.desc") },
+    { icon: Ban, title: t("features.4.title"), desc: t("features.4.desc") },
+  ];
+
+  const ctaStyle = {
+    minHeight: 56,
+    borderRadius: "var(--radius-control)",
+    background: "var(--brand-grad)",
+    color: "var(--on-accent)",
+    fontSize: 16,
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+  } as const;
+
   return (
-    <div className="relative min-h-screen overflow-x-hidden overflow-y-auto" style={{ background: "var(--ground)" }}>
-      {/* Theme toggle — the one piece of floating chrome, so the one piece of glass. */}
-      <div className="fixed top-3 right-3 z-30">
+    <div
+      className="relative min-h-screen overflow-x-hidden overflow-y-auto"
+      style={{ background: "var(--ground)" }}
+    >
+      {/* Floating chrome — the only glass on the page. */}
+      <div className="fixed top-3 right-3 z-30 flex items-center gap-2">
+        <LangToggle />
         <ThemeToggle />
       </div>
 
       {/* ── HERO ── */}
-      <section className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 pt-16 pb-24">
-        <div className="mb-10 flex justify-center reveal" style={{ animationDelay: "40ms" }}>
-          <div className="relative">
-            {/* Pointer — the same shape that bites into the rim in the app. It
-                sits mostly outside the disc: it and the winning pane are both
-                persimmon, and any more overlap merges the two into one shape. */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-5 z-30">
-              <svg width="20" height="24" viewBox="0 0 20 24" fill="none" aria-hidden="true">
-                <path d="M10 22L1.5 4.5H18.5L10 22Z" fill="var(--brand)" strokeLinejoin="round" />
-              </svg>
-            </div>
-            {/* Wheel face. The mark carries its own hub and winner pane now
-                (see .orb-wheel), so the hero is the app's resting wheel at
-                144px rather than a separate illustration of one. */}
-            <div className="w-36 h-36 orb-wheel" style={{ boxShadow: "var(--glass-card-shadow)" }} />
-          </div>
-        </div>
+      <section className="relative z-10 px-6 pt-5 pb-12">
+        {/* The brand appeared nowhere on this page before — no mark, no wordmark,
+            nothing a visitor could carry away and search for later. */}
+        <header className="max-w-5xl mx-auto flex items-center gap-2.5 mb-14">
+          <img src="/icon.svg" width={30} height={30} alt="" aria-hidden="true" />
+          <span style={{ fontSize: 16, fontWeight: 700, color: "var(--ink-warm)", letterSpacing: "-0.01em" }}>
+            Lunch Wheel
+          </span>
+        </header>
 
-        <div className="text-center mb-6">
-          <h1
-            className="type-display reveal"
-            style={{ fontSize: "clamp(3.25rem, 12vw, 7rem)", color: "var(--brand-text)", animationDelay: "120ms" }}
-          >
-            Spin
-          </h1>
-          <h1
-            className="type-display reveal"
-            style={{ fontSize: "clamp(3.25rem, 12vw, 7rem)", color: "var(--ink-strong)", animationDelay: "200ms" }}
-          >
-            your lunch
-          </h1>
-        </div>
-
-        <p
-          className="type-body text-center mb-12 max-w-md reveal"
-          style={{ color: "var(--body)", animationDelay: "320ms" }}
-        >
-          Stop debating. Start spinning. The lunch wheel for teams who can&apos;t decide.
-        </p>
-
-        <div className="reveal" style={{ animationDelay: "440ms" }}>
-          {loading ? (
-            <div className="h-14 w-48 animate-pulse" style={{ borderRadius: "var(--radius-control)", background: "var(--muted)" }} />
-          ) : (
-            <a
-              href={getLoginUrl()}
-              className="group inline-flex items-center justify-center gap-3 px-10 transition-colors duration-200 active:scale-[var(--press-scale)]"
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center lg:text-left mb-10">
+            <p
+              className="type-eyebrow mb-5 reveal"
+              style={{ color: "var(--brand-text)", animationDelay: "40ms" }}
+            >
+              {t("hero.eyebrow")}
+            </p>
+            <h1
+              className="type-display reveal mb-5"
               style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
+                fontSize: "clamp(2.75rem, 9vw, 5rem)",
+                color: "var(--ink-strong)",
+                animationDelay: "120ms",
               }}
             >
-              <span>Get started</span>
-              <ArrowRight size={17} className="transition-transform duration-200 group-hover:translate-x-1" />
-            </a>
-          )}
+              {t("hero.title")}
+            </h1>
+            <p
+              className="type-body reveal max-w-xl mx-auto lg:mx-0"
+              style={{ color: "var(--body)", animationDelay: "200ms" }}
+            >
+              {t("hero.subtitle")}
+            </p>
+          </div>
+
+          <div
+            className="reveal p-6 sm:p-8"
+            style={{
+              animationDelay: "300ms",
+              borderRadius: "var(--radius-sheet)",
+              background: "var(--paper)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <p className="type-meta mb-6 text-center lg:text-left" style={{ color: "var(--body-warm)" }}>
+              {t("hero.tryHint")}
+            </p>
+            <LandingWheel onSaveIntent={() => { window.location.href = getLoginUrl(); }} />
+          </div>
         </div>
       </section>
 
-      {/* ── STATS BAR ── */}
+      {/* ── THREE STEPS (what first run actually does) ── */}
       <section className="relative z-10 py-12 px-6">
-        <div
-          className="max-w-3xl mx-auto grid grid-cols-3 gap-4 p-6"
-          style={{ borderRadius: "var(--radius-card)", background: "var(--paper)", border: "1px solid var(--border)" }}
-        >
-          {STATS.map(({ value, label }, i) => (
-            <div key={label} className="text-center reveal" style={{ animationDelay: `${i * 80}ms` }}>
-              <div className="type-title mb-1.5" style={{ color: "var(--brand-text)" }}>{value}</div>
-              <div className="type-eyebrow" style={{ color: "var(--body-warm)" }}>{label}</div>
-            </div>
-          ))}
+        <div className="max-w-4xl mx-auto">
+          <p className="type-eyebrow text-center mb-10 reveal" style={{ color: "var(--brand-text)" }}>
+            {t("steps.eyebrow")}
+          </p>
+          <ol className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {steps.map(({ icon: Icon, title, desc }, i) => (
+              <li
+                key={title}
+                className="p-6 reveal"
+                style={{
+                  borderRadius: "var(--radius-card)",
+                  background: "var(--paper)",
+                  border: "1px solid var(--border)",
+                  animationDelay: `${i * 100}ms`,
+                }}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="w-10 h-10 flex items-center justify-center flex-shrink-0"
+                    style={{
+                      borderRadius: "var(--radius-chip)",
+                      background: "var(--brand-grad)",
+                      color: "var(--on-accent)",
+                    }}
+                  >
+                    <Icon size={18} />
+                  </div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>
+                    <span className="type-eyebrow mr-2" style={{ color: "var(--brand-text)" }}>
+                      {i + 1}
+                    </span>
+                    {title}
+                  </h3>
+                </div>
+                <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+                  {desc}
+                </p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
       {/* ── FEATURES ── */}
-      <section className="relative z-10 py-16 px-6">
+      <section className="relative z-10 py-12 px-6">
         <div className="max-w-4xl mx-auto">
-          <p className="type-eyebrow text-center mb-12 reveal" style={{ color: "var(--brand-text)" }}>
-            Built for the 11:45 scramble
+          <p className="type-eyebrow text-center mb-10 reveal" style={{ color: "var(--brand-text)" }}>
+            {t("features.eyebrow")}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {FEATURES.map(({ icon: Icon, label, desc }, i) => (
+            {features.map(({ icon: Icon, title, desc }, i) => (
               <div
-                key={label}
+                key={title}
                 className="p-6 reveal"
                 style={{
                   borderRadius: "var(--radius-card)",
@@ -193,8 +242,12 @@ export default function Home() {
                     <Icon size={19} style={{ color: "var(--brand-text)" }} />
                   </div>
                   <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)", marginBottom: 4 }}>{label}</h3>
-                    <p className="type-meta" style={{ color: "var(--body-warm)" }}>{desc}</p>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)", marginBottom: 4 }}>
+                      {title}
+                    </h3>
+                    <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+                      {desc}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -205,13 +258,13 @@ export default function Home() {
 
       {/* ── POPULAR WHEELS (try without signing in) ── */}
       {popularWheels && popularWheels.length > 0 && (
-        <section className="relative z-10 py-16 px-6">
+        <section className="relative z-10 py-12 px-6">
           <div className="max-w-4xl mx-auto">
             <p className="type-eyebrow text-center mb-3 reveal" style={{ color: "var(--brand-text)" }}>
-              Try without signing in
+              {t("popular.eyebrow")}
             </p>
             <h2 className="type-title text-center mb-10 reveal" style={{ color: "var(--ink-warm)" }}>
-              Popular wheels
+              {t("popular.title")}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {popularWheels.map((w, i) => (
@@ -241,15 +294,18 @@ export default function Home() {
                       className="type-eyebrow flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
                       style={{ color: "var(--brand-text)" }}
                     >
-                      Spin <Play size={11} />
+                      {t("popular.spin")} <Play size={11} />
                     </span>
                   </div>
-                  <h3 className="truncate" style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)", marginBottom: 4 }}>
+                  <h3
+                    className="truncate"
+                    style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)", marginBottom: 4 }}
+                  >
                     {w.name}
                   </h3>
                   <p className="type-meta" style={{ color: "var(--body-warm)" }}>
-                    {w.restaurantCount} restaurant{w.restaurantCount !== 1 ? "s" : ""}
-                    {w.spinCount > 0 && ` · ${w.spinCount} spin${w.spinCount !== 1 ? "s" : ""}`}
+                    {t("popular.restaurants", { n: w.restaurantCount })}
+                    {w.spinCount > 0 && ` · ${t("popular.spins", { n: w.spinCount })}`}
                   </p>
                 </button>
               ))}
@@ -259,30 +315,28 @@ export default function Home() {
       )}
 
       {/* ── FINAL CTA ── */}
-      <section className="relative z-10 py-24 px-6 text-center">
+      <section className="relative z-10 pt-12 pb-20 px-6 text-center">
         <div
-          className="max-w-2xl mx-auto p-12 reveal"
-          style={{ borderRadius: "var(--radius-sheet)", background: "var(--paper)", border: "1px solid var(--border)" }}
+          className="max-w-2xl mx-auto p-10 sm:p-12 reveal"
+          style={{
+            borderRadius: "var(--radius-sheet)",
+            background: "var(--paper)",
+            border: "1px solid var(--border)",
+          }}
         >
-          <h2 className="type-title mb-4" style={{ color: "var(--ink-warm)" }}>Ready to spin?</h2>
+          <h2 className="type-title mb-4" style={{ color: "var(--ink-warm)" }}>
+            {t("final.title")}
+          </h2>
           <p className="type-body mb-8" style={{ color: "var(--body)" }}>
-            Create your first wheel in seconds. Add your team&apos;s favourite spots and let fate decide.
+            {t("final.desc")}
           </p>
           {!loading && (
             <a
               href={getLoginUrl()}
               className="group inline-flex items-center gap-2 px-8 transition-colors duration-200 active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
+              style={ctaStyle}
             >
-              Start for free
+              {t("final.cta")}
               <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
             </a>
           )}
