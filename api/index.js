@@ -63,12 +63,32 @@ var wheels = mysqlTable("wheels", {
   originLat: decimal("originLat", { precision: 9, scale: 6 }),
   originLng: decimal("originLng", { precision: 9, scale: 6 }),
   originLabel: varchar("originLabel", { length: 64 }).default("Office"),
+  // The wheel this one was copied from (wheels.copy), or null for an original.
+  // There are no foreign keys anywhere in this schema, so this CAN point at a
+  // deleted wheel — every reader has to tolerate an id that no longer resolves.
+  // It exists so an owner can see their wheel was worth copying; the count is
+  // `WHERE sourceWheelId = ?`, which is what the index below is for.
+  sourceWheelId: int("sourceWheelId"),
+  // Where this wheel eats, as the owner writes it ("信義區", "竹科", "公館").
+  // Deliberately free text and not reverse-geocoded: it is the neighbourhood a
+  // person names, which is rarely the administrative district an API returns,
+  // and it avoids putting a second Google API behind an ops gate.
+  areaLabel: varchar("areaLabel", { length: 64 }),
+  // Two different questions that `isPublic` alone was answering as one:
+  // isPublic = anyone with the LINK can open /w/:id (what it has always meant,
+  // unchanged), listedInDirectory = it may also be FOUND by someone who was
+  // never given the link. Added rather than folded into isPublic because every
+  // existing public wheel was shared under the first promise and must not be
+  // opted into the second by a migration.
+  listedInDirectory: boolean("listedInDirectory").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 }, (t2) => ({
   // getWheelList reads owned wheels by ownerId; join-by-invite looks up inviteToken.
   ownerIdx: index("wheels_owner_idx").on(t2.ownerId),
-  inviteTokenIdx: index("wheels_invite_token_idx").on(t2.inviteToken)
+  inviteTokenIdx: index("wheels_invite_token_idx").on(t2.inviteToken),
+  // "How many wheels came from this one" — a plain count on a non-unique column.
+  sourceIdx: index("wheels_source_idx").on(t2.sourceWheelId)
 }));
 var wheelMembers = mysqlTable("wheel_members", {
   id: int("id").autoincrement().primaryKey(),
@@ -362,6 +382,12 @@ async function getWheelById(id) {
   if (!db) return void 0;
   const result = await db.select().from(wheels).where(eq(wheels.id, id)).limit(1);
   return result[0];
+}
+async function getWheelCopyCount(sourceWheelId) {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ n: sql`count(*)` }).from(wheels).where(eq(wheels.sourceWheelId, sourceWheelId));
+  return Number(rows[0]?.n ?? 0);
 }
 async function getWheelByInviteToken(token) {
   const db = await getDb();
@@ -2594,10 +2620,34 @@ var appRouter = router({
     // anything else is NOT_FOUND (a once-public wheel that went private reads the
     // same — the client shows a graceful "not available" state). Output is shaped
     // through `toPublicWheel` so no owner/member PII can leak.
+    // Superseded by publicBootstrap below for the /w/:id page itself; kept as the
+    // single-wheel read for callers that already have the restaurants.
     getPublic: publicProcedure.input(z2.object({ id: z2.number() })).query(async ({ input }) => {
       const wheel = await getWheelById(input.id);
       if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });
       return toPublicWheel(wheel);
+    }),
+    // One-hop guest entry for /w/:id, and what that page now uses. It used to
+    // issue getPublic and then, only once that resolved, restaurants.listPublic
+    // — two SERIAL round trips across a cold serverless function, for a visitor
+    // with no cookie, no warm lambda and nothing cached. A shared link is the
+    // front door for everyone who has not signed up yet, so it gets the same
+    // treatment the signed-in entry gets from `bootstrap`: one request, both
+    // reads issued together.
+    //
+    // The restaurant read is speculative — it runs before we know the wheel is
+    // public, and is thrown away if it isn't. Same trade as `speculativeWheelId`
+    // above: a cheap read we may discard, to avoid a serial hop. Authorization
+    // is unchanged, because nothing is returned unless `isPublic` holds, and
+    // both payloads still go through the toPublic* shapers that keep owner and
+    // member PII out of a guest response.
+    publicBootstrap: publicProcedure.input(z2.object({ id: z2.number() })).query(async ({ input }) => {
+      const [wheel, rests] = await Promise.all([
+        getWheelById(input.id),
+        getRestaurantsByWheel(input.id)
+      ]);
+      if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });
+      return { wheel: toPublicWheel(wheel), restaurants: rests.map(toPublicRestaurant) };
     }),
     // Popular public wheels for the landing "try without signing in" section,
     // ranked by spin count. No PII; just id/name/counts.
@@ -2728,8 +2778,20 @@ var appRouter = router({
           originLabel: source.originLabel ?? "Office"
         });
       }
+      await updateWheel(newId, { sourceWheelId: input.id });
       const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
       return { id: newId, name, restaurants: copied };
+    }),
+    // "12 teams started from this wheel" — social proof for the owner, and the
+    // cheapest possible answer to it: one indexed COUNT, on its own query so the
+    // wheel's hot reads never pay for it. Same visibility rule as wheels.get, so
+    // the share panel can show it without a surprise FORBIDDEN.
+    copyCount: protectedProcedure.input(z2.object({ id: z2.number() })).query(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.id);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      const isMember = await isWheelMember(input.id, ctx.user.id);
+      if (!isMember && !wheel.isPublic) throw new TRPCError3({ code: "FORBIDDEN" });
+      return { count: await getWheelCopyCount(input.id) };
     }),
     update: protectedProcedure.input(z2.object({
       id: z2.number(),
@@ -2896,8 +2958,10 @@ var appRouter = router({
         };
       });
     }),
-    // Guest read for the /w/:id view: the full restaurant list of a public wheel
-    // (guests spin everything — no exclusion state). Public-safe fields only.
+    // The restaurant half of a public wheel (guests spin everything — no exclusion
+    // state), public-safe fields only. The /w/:id page reads both halves through
+    // wheels.publicBootstrap in one hop; this stays for callers that want just
+    // the list.
     listPublic: publicProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ input }) => {
       const wheel = await getWheelById(input.wheelId);
       if (!wheel || !wheel.isPublic) throw new TRPCError3({ code: "NOT_FOUND" });

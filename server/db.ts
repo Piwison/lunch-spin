@@ -100,6 +100,24 @@ export async function getWheelById(id: number) {
   return result[0];
 }
 
+/**
+ * How many wheels were copied from this one.
+ *
+ * There are still no foreign keys in this schema, so this counts rows that
+ * merely POINT at the id. A copy whose source was later deleted keeps its
+ * sourceWheelId and would be counted by a query for that dead id — which is
+ * fine, because nobody can ask about a wheel they cannot open.
+ */
+export async function getWheelCopyCount(sourceWheelId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(wheels)
+    .where(eq(wheels.sourceWheelId, sourceWheelId));
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function getWheelByInviteToken(token: string) {
   const db = await getDb();
   if (!db) return undefined;
@@ -164,7 +182,7 @@ export async function getUserWheels(userId: number) {
   return [...owned, ...joined];
 }
 
-export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; isShared: boolean; inviteToken: string | null; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean }>) {
+export async function updateWheel(id: number, data: Partial<{ name: string; isPublic: boolean; isShared: boolean; inviteToken: string | null; exclusionDays: number; fairnessMode: boolean; rotateCuisines: boolean; sourceWheelId: number | null; areaLabel: string | null; listedInDirectory: boolean }>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(wheels).set(data).where(eq(wheels.id, id));

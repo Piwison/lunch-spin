@@ -54,12 +54,32 @@ export const wheels = mysqlTable("wheels", {
   originLat: decimal("originLat", { precision: 9, scale: 6 }),
   originLng: decimal("originLng", { precision: 9, scale: 6 }),
   originLabel: varchar("originLabel", { length: 64 }).default("Office"),
+  // The wheel this one was copied from (wheels.copy), or null for an original.
+  // There are no foreign keys anywhere in this schema, so this CAN point at a
+  // deleted wheel — every reader has to tolerate an id that no longer resolves.
+  // It exists so an owner can see their wheel was worth copying; the count is
+  // `WHERE sourceWheelId = ?`, which is what the index below is for.
+  sourceWheelId: int("sourceWheelId"),
+  // Where this wheel eats, as the owner writes it ("信義區", "竹科", "公館").
+  // Deliberately free text and not reverse-geocoded: it is the neighbourhood a
+  // person names, which is rarely the administrative district an API returns,
+  // and it avoids putting a second Google API behind an ops gate.
+  areaLabel: varchar("areaLabel", { length: 64 }),
+  // Two different questions that `isPublic` alone was answering as one:
+  // isPublic = anyone with the LINK can open /w/:id (what it has always meant,
+  // unchanged), listedInDirectory = it may also be FOUND by someone who was
+  // never given the link. Added rather than folded into isPublic because every
+  // existing public wheel was shared under the first promise and must not be
+  // opted into the second by a migration.
+  listedInDirectory: boolean("listedInDirectory").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => ({
   // getWheelList reads owned wheels by ownerId; join-by-invite looks up inviteToken.
   ownerIdx: index("wheels_owner_idx").on(t.ownerId),
   inviteTokenIdx: index("wheels_invite_token_idx").on(t.inviteToken),
+  // "How many wheels came from this one" — a plain count on a non-unique column.
+  sourceIdx: index("wheels_source_idx").on(t.sourceWheelId),
 }));
 
 export type Wheel = typeof wheels.$inferSelect;

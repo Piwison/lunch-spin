@@ -1,3 +1,4 @@
+import BrandLoader from "@/components/BrandLoader";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
 import { getLoginUrl } from "@/const";
@@ -6,7 +7,8 @@ import { primaryTag } from "@shared/primaryTag";
 import { trpc } from "@/lib/trpc";
 import { pickWinner } from "@shared/pick";
 import { shouldPromptSignup } from "@shared/onboarding";
-import { ArrowRight, Sparkles, Utensils } from "lucide-react";
+import { copyIntentUrl } from "@shared/copyIntent";
+import { ArrowRight, CopyPlus, Sparkles, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
 
@@ -25,13 +27,13 @@ export default function GuestWheel() {
   const wheelId = params.wheelId ? parseInt(params.wheelId) : NaN;
   const validId = Number.isFinite(wheelId);
 
-  const wheelQuery = trpc.wheels.getPublic.useQuery(
+  // One request for the whole page (server: wheels.publicBootstrap). This was
+  // getPublic followed by listPublic, the second gated on the first having
+  // succeeded — two SERIAL cold round trips on the one page whose entire job is
+  // to make a good first impression on someone who has never signed in.
+  const entryQuery = trpc.wheels.publicBootstrap.useQuery(
     { id: wheelId },
     { enabled: validId, retry: false },
-  );
-  const restaurantsQuery = trpc.restaurants.listPublic.useQuery(
-    { wheelId },
-    { enabled: validId && wheelQuery.isSuccess, retry: false },
   );
 
   const [isSpinning, setIsSpinning] = useState(false);
@@ -41,7 +43,7 @@ export default function GuestWheel() {
   // Client-only counter — gates the post-spin conversion CTA (decision 1b).
   const [spinCount, setSpinCount] = useState(0);
 
-  const restaurants = restaurantsQuery.data;
+  const restaurants = entryQuery.data?.restaurants;
 
   const segments: WheelSegment[] = useMemo(
     () =>
@@ -91,19 +93,16 @@ export default function GuestWheel() {
   };
 
   // ── Loading ────────────────────────────────────────────────────────────────
-  if (validId && (wheelQuery.isLoading || (wheelQuery.isSuccess && restaurantsQuery.isLoading))) {
-    return (
-      <Shell>
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 orb-wheel animate-orb-spin" />
-          <p className="text-sm text-muted-foreground">Loading wheel…</p>
-        </div>
-      </Shell>
-    );
+  // The same loader the route chunk shows (App.tsx's RouteFallback), so the
+  // chunk phase and the data phase are one continuous spinner. They used to be
+  // two different things in two different layouts — a centred fixed overlay
+  // swapping for an in-flow block — so the orb visibly jumped at the handover.
+  if (validId && entryQuery.isLoading) {
+    return <BrandLoader fullscreen label="Loading wheel…" />;
   }
 
   // ── Not available (bad id, private, or removed) ──────────────────────────────
-  if (!validId || wheelQuery.isError) {
+  if (!validId || entryQuery.isError) {
     return (
       <Shell>
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
@@ -120,7 +119,7 @@ export default function GuestWheel() {
     );
   }
 
-  const wheel = wheelQuery.data!;
+  const wheel = entryQuery.data!.wheel;
 
   return (
     <Shell>
@@ -189,9 +188,19 @@ export default function GuestWheel() {
           </>
         )}
 
-        {/* Persistent conversion CTA */}
-        <div className="mt-4 w-full">
-          <SignInCta subtle />
+        {/* Persistent conversion CTA. "Copy this wheel" leads, because for the
+            person reading a shared link it is strictly the better version of
+            "make your own": same destination, already filled in with places a
+            real team eats at. Starting from an empty wheel stays available
+            underneath for anyone who wants it. */}
+        <div className="mt-4 w-full flex flex-col items-center gap-3">
+          <CopyWheelCta wheelId={wheelId} />
+          <a
+            href={getLoginUrl()}
+            className="type-meta text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+          >
+            or start an empty wheel
+          </a>
         </div>
       </div>
 
@@ -229,6 +238,39 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh flex items-center justify-center overflow-x-clip text-foreground" style={{ background: "var(--ground)" }}>
       {children}
     </div>
+  );
+}
+
+/**
+ * Take this wheel as the starting point for your own.
+ *
+ * A plain link, not a mutation: a guest has no session to copy WITH, so the
+ * intent travels in the URL and WheelApp performs the copy once the person is
+ * signed in — including sending them through sign-in first and back here after
+ * (see the copyFrom handling there). That keeps this page at the one request it
+ * now costs, with no auth query of its own just to decide a button's label.
+ *
+ * Paper, not persimmon: Spin is why anyone opened the link, and two gradient
+ * buttons on one short page argue with each other. This takes the weight the
+ * old "Make your own wheel" button had, which is the thing it replaces.
+ */
+function CopyWheelCta({ wheelId }: { wheelId: number }) {
+  return (
+    <a
+      href={copyIntentUrl(wheelId)}
+      className="flex items-center justify-center gap-2 w-full px-5 transition-colors active:scale-[var(--press-scale)]"
+      style={{
+        minHeight: 56,
+        borderRadius: "var(--radius-control)",
+        background: "var(--paper)",
+        border: "1px solid var(--border)",
+        color: "var(--ink-warm)",
+        fontSize: 15,
+        fontWeight: 500,
+      }}
+    >
+      <CopyPlus size={15} style={{ color: "var(--brand-text)" }} /> Copy this wheel
+    </a>
   );
 }
 

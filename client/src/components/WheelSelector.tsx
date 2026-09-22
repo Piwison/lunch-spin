@@ -161,6 +161,27 @@ function WheelActionsMenu({
   );
 }
 
+/**
+ * "N teams started from this wheel."
+ *
+ * Its own query rather than a field on wheels.get: this is a COUNT that only
+ * this panel ever reads, and wheels.get sits on the wheel-switch path. Silent
+ * at zero — a brand new public wheel does not need to be told nobody has copied
+ * it yet — and silent on failure, because a share panel is not the place to
+ * report that a count query had a bad day.
+ */
+function CopyCountNote({ wheelId }: { wheelId: number }) {
+  const { data } = trpc.wheels.copyCount.useQuery({ id: wheelId }, { staleTime: 60_000, retry: false });
+  const n = data?.count ?? 0;
+  if (n < 1) return null;
+  return (
+    <p className="type-meta flex items-center gap-1.5 text-muted-foreground">
+      <CopyPlus size={12} className="flex-shrink-0" />
+      {n === 1 ? "1 team started their wheel from this one." : `${n} teams started their wheels from this one.`}
+    </p>
+  );
+}
+
 export default function WheelSelector({
   selectedWheelId,
   onSelect,
@@ -879,6 +900,7 @@ export default function WheelSelector({
                       <Globe size={12} className="flex-shrink-0" />
                       {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save settings."}
                     </p>
+                    {live && <CopyCountNote wheelId={editWheel.id} />}
                   </div>
                 );
               })()}
