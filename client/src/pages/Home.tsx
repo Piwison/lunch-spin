@@ -169,16 +169,15 @@ export default function Home() {
             </p>
           </div>
 
-          <div
-            className="reveal p-6 sm:p-8"
-            style={{
-              animationDelay: "300ms",
-              borderRadius: "var(--radius-sheet)",
-              background: "var(--paper)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <p className="type-meta mb-6 text-center lg:text-left" style={{ color: "var(--body-warm)" }}>
+          {/* On the ground, not on a --paper card: the demo is the app's own
+              wheel now, whose glass panes need the darker ground behind them
+              to read at all (failure mode 29 — see LandingWheel). */}
+          <div className="reveal" style={{ animationDelay: "300ms" }}>
+            {/* Phone only. From lg the hint heads the place list beside the
+                wheel instead (LandingWheel), which is what it describes — and
+                above the disc it cost the 45px that pushed Spin under the fold
+                at 1280x800. */}
+            <p className="type-meta mb-6 text-center lg:hidden" style={{ color: "var(--body-warm)" }}>
               {t("hero.tryHint")}
             </p>
             <LandingWheel onSaveIntent={saveDemoAndSignIn} />
