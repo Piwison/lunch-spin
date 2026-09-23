@@ -1,7 +1,7 @@
 # 2026-09-24 走查後續：實作計畫
 
 **來源**：`docs/user-tests/2026-09-24-walkthrough.md`（走查報告，含截圖與證據等級）、BACKLOG 第 7 節。
-**狀態**：計畫定稿，可以開工。四個業主決策已定案（第 0 節）。只有 B8 在等決定；其他幾個小決定有預設值，不擋開工。
+**狀態**：計畫定稿，可以開工。業主決策全部定案（第 0 節）：2026-09-24 先定 7a–7d，同日再定 B8（7k2）和其餘預設值。唯一沒定的是 E4，照預設不動。
 **怎麼用**：每個工作包（A1、B3……）是一個分支、一個 PR，可以單獨交給一個人或一個 agent。
 開工前先讀第 0、1、2 節（決策、核心規則、分工），然後只讀自己那個工作包。
 驗收步驟都能在本機複本上重現（`scripts/replica/README.md`），最後以 staging 為準（第 4 節）。
@@ -18,21 +18,25 @@
 | 7b | 一天可以有幾個「今天吃這家」 | **可以多個（分團吃）** | 今日卡片列出今天所有的決定，不阻擋再轉 |
 | 7c | 「Use my location」建的輪盤沒有辦公室 | **建完問一次「存成辦公室？」** | 明確同意才存，隱私承諾保留 |
 | 7d | 隊友轉的時候別人看到什麼 | **延後通知＋點開重播** | 通知等轉的人落定才出現，點開在自己的輪盤上重播同一個落點 |
+| 7k2 | 否決、「Avoid today」永不過期，而且任何人按 Clear round 都會一起清掉 | **否決、投票當天（台北日）有效；「我不吃 X」改成個人的長期設定**，只在這個人今天有出現時套用 | B8。schema 併進 P0 |
+| C4 | 按「Spin these 8」之後 | **直接轉** | A7 |
+| — | 「Add starter restaurants」（Taco Truck 這類假店名） | **拿掉** | B9 |
+| — | 快關門的店，剩多少時間算來不及 | **剩餘營業時間 < 步行 + 20 分鐘** | A6 |
+| — | 公開連結 `/w/:id` 給誰用 | **給外人**：頁面標明「結果不會記錄，也不會避開團隊最近吃過的」 | B10 |
 
 **7a × 7b 的合併規則**（實作上的推論，不是另外的決定）：如果「輪盤當天最後一次轉」才算午餐，
 第二團一轉，第一團的決定就被蓋掉了，和 7b 互相矛盾。所以午餐的單位是**「每個人」當天最後一次轉**。
 Amy 自己重轉，會蓋掉她自己的上一個；Ben 轉，不會動到 Amy 的。詳細規則見第 1 節。
 
-### 待決定（有預設值，可以先照預設做，merge 前業主可改）
+### 沒有定案的（照預設不動）
 
-| # | 問題 | 預設 | 擋住哪個工作包 |
-|---|---|---|---|
-| 7k / K2 | 否決（「Veto — not today」）和「Avoid today」目前**永不過期**，只有 Clear round 會清，而且會清掉別人的 | 否決、投票當天（台北時間）有效；「不吃牛」這類改成**個人的長期設定** | **B8**（沒定案前不要動） |
-| C4 | 首次設定按「Spin these 8」後，要直接轉，還是把按鈕改名 | 直接轉 | A7 |
-| — | 「Add starter restaurants」（Taco Truck 這類假店名） | 拿掉這個選項 | B9 的一小項 |
-| — | 快關門的店，要剩多少時間才算來不及 | 剩餘營業時間 < 步行 + 20 分鐘 | A6（只是常數） |
-| — | 公開連結 `/w/:id` 是給外人複製用，還是給沒帳號的隊友用 | 給外人：頁面標明「結果不會記錄，也不看團隊最近吃過的」 | B10 的一小項 |
-| E4 | 本機 http 不能登入登出（`cookies.ts` 的 `SameSite=None` 沒有 `Secure`） | **不動**。這是 session 合約，要改先問（AGENTS.md「Hard stop」） | 不指派 |
+| # | 問題 | 預設 |
+|---|---|---|
+| E4 | 本機 http 不能登入登出（`cookies.ts` 的 `SameSite=None` 沒有 `Secure`） | **不動**。這是 session 合約，要改先問（AGENTS.md「Hard stop」）。不指派 |
+
+**「今天有出現」的定義（B8 的實作推論）**：presence 的「here now」只有 25 秒（`PRESENCE_TTL_MS`），
+大家不會在同一秒都開著 app，拿它來判斷誰今天一起吃飯太嚴格了。所以個人飲食偏好的套用條件是：
+**這個人今天（台北日）打開過這個輪盤**，也就是 `wheel_presence.lastSeen` 落在今天。轉的人自己一定算。
 
 ---
 
@@ -85,7 +89,7 @@ B 線給 Codex 或另一個 Claude session。
 
 | | A 線：規則、今天、紀錄 | B 線：首次設定、店家、設定 |
 |---|---|---|
-| 擁有的檔案 | `shared/lunch.ts`（新）、`shared/exclusion.ts`、`shared/stats.ts`、`shared/wheelGeometry.ts`、`shared/openHours.ts`、`shared/spinBlock.ts`；`client/src/pages/WheelApp.tsx`、`WinnerSurface.tsx`、`SpinWheel.tsx`、`HistoryTab.tsx`、`RestaurantStats.tsx`、`TasteProfile.tsx`、`TodayCard.tsx`（新）、`RecentLunchPrompt.tsx`（新）；`client/src/i18n/messages/app.ts`、`history.ts`、`landing.ts`；`.claude/skills/wheel-logic/` | `client/src/components/OnboardingFlow.tsx`、`onboarding/*`、`LocationPicker.tsx`、`NearbyDialog.tsx`、`NearbyPicker.tsx`（新）、`RestaurantTab.tsx`、`WheelSelector.tsx`、`RoundPanel.tsx`、`FilterBar.tsx`、`GuestWheel.tsx`、`ui/switch.tsx`；`shared/nameMatch.ts`（新）、`shared/cuisineGuess.ts`（新）、`shared/candidates.ts`；`client/src/i18n/messages/onboarding.ts`、`places.ts`、`settings.ts` |
+| 擁有的檔案 | `shared/lunch.ts`（新）、`shared/exclusion.ts`、`shared/stats.ts`、`shared/wheelGeometry.ts`、`shared/openHours.ts`、`shared/spinBlock.ts`；`client/src/pages/WheelApp.tsx`、`WinnerSurface.tsx`、`SpinWheel.tsx`、`HistoryTab.tsx`、`RestaurantStats.tsx`、`TasteProfile.tsx`、`TodayCard.tsx`（新）、`RecentLunchPrompt.tsx`（新）；`client/src/i18n/messages/app.ts`、`history.ts`、`landing.ts`；`.claude/skills/wheel-logic/` | `client/src/components/OnboardingFlow.tsx`、`onboarding/*`、`LocationPicker.tsx`、`NearbyDialog.tsx`、`NearbyPicker.tsx`（新）、`RestaurantTab.tsx`、`WheelSelector.tsx`、`RoundPanel.tsx`、`FilterBar.tsx`、`GuestWheel.tsx`、`ui/switch.tsx`；`shared/nameMatch.ts`（新）、`shared/cuisineGuess.ts`（新）、`shared/candidates.ts`、`shared/realtimeState.ts`、`shared/session.ts`（B8）；`client/src/i18n/messages/onboarding.ts`、`places.ts`、`settings.ts` |
 | 共用的檔案 | `server/routers.ts`、`server/db.ts`、`client/src/i18n/messages/wheel.ts`：兩邊都會改。**只改自己那一段**，新增的 i18n key 放在自己那條線的註解區塊下（`// ── A: today ──`／`// ── B: round ──`），不要都加在物件最後一行。 | |
 | migration | **只有 P0 能新增 migration**。兩條線各自產生 migration，編號和 `drizzle/meta/_journal.json` 一定會衝突（`drizzle/meta/` 不能手改，見 AGENTS.md Prohibited #2）。 | |
 
@@ -122,6 +126,8 @@ flowchart LR
   A2 --> B5
   B2["B2 搜尋改為加入"] --> B6["B6 Nearby 共用挑選清單"]
   B4["B4 店名語言"] --> B3["B3 首頁草稿對 Google"]
+  P0 --> B8["B8 否決當天有效＋我不吃"]
+  A1 --> B8
 ```
 
 | 階段 | A 線 | B 線 |
@@ -129,7 +135,7 @@ flowchart LR
 | 0 | **P0**（半天，先合進 staging，兩條線都從它開分支） | ← 同左 |
 | 1 | A1 → A2、A9（bug，隨時） | B4、B3、B1、B2 |
 | 2 | A3、A4、A6、A7 | B5、B7、B9 |
-| 3 | A5 → A8、A10、A11 | B6、B10、（B8 等決定） |
+| 3 | A5 → A8、A10、A11 | B6、B8、B10 |
 
 ---
 
@@ -140,15 +146,26 @@ flowchart LR
 
 ### P0 — Schema（S，兩條線共用）
 
-- **做法**：`drizzle/schema.ts` 新增三個欄位，全部可為 null 或有預設值，不刪不改名：
+- **做法**：`drizzle/schema.ts` 只新增，不刪不改名：
   - `spin_history.skipped` boolean，預設 false（「這次沒去成」，A5 用）
   - `restaurants.googleRating` decimal(2,1)，可為 null（B5 用）
   - `restaurants.googleRatingCount` int，可為 null（B5 用）
+  - `round_marks.createdAt` timestamp，預設 `CURRENT_TIMESTAMP`（B8：否決、投票只算今天）。
+    既有的列會拿到 migration 當下的時間，所以上線那天的舊否決會再多算一天，這沒關係。
+  - 新表 `user_dietary`（`userId`、`tagId`、`createdAt`，主鍵 `(userId, tagId)`）：個人的「我不吃」（B8）。
+    和這個 schema 其他地方一樣，不加 foreign key（失敗模式 15）。
+    `deleteUserAccount` 要順便刪掉這個人的列，這一行是 A10 的範圍。
 
-  用 `drizzle-kit generate` 產生 `0018_*.sql`，**先套到 staging DB**（STAGING.md），驗證方式是查欄位，
+  migration 產生後，**在同一個 `.sql` 最後手動加一段資料複製**：把舊的飲食標記搬到個人設定，
+  `INSERT IGNORE INTO user_dietary (userId, tagId) SELECT DISTINCT userId, refId FROM round_marks WHERE kind = 'dietary'`。
+  舊的列留著不刪（AGENTS.md Prohibited #6）。可以改的只有 `.sql` 檔，`drizzle/meta/` 一律不能手改。
+
+  用 `drizzle-kit generate` 產生 `0018_*.sql`，**先套到 staging DB**（STAGING.md）。驗證方式是查欄位，
   不是查 `__drizzle_migrations`（失敗模式 50）：
-  `SHOW COLUMNS FROM spin_history LIKE 'skipped'`。上線 DB 等 merge 進 `main` 之後再套。
-- **驗收**：staging DB 上三個欄位都在；現有畫面行為不變；`pnpm check && pnpm test && pnpm build` 通過。
+  `SHOW COLUMNS FROM spin_history LIKE 'skipped'`、`SHOW COLUMNS FROM round_marks LIKE 'createdAt'`、
+  `SHOW TABLES LIKE 'user_dietary'`。上線 DB 等 merge 進 `main` 之後再套。
+- **驗收**：staging DB 上欄位和表都在，舊的飲食標記已經複製到 `user_dietary`；現有畫面行為不變；
+  `pnpm check && pnpm test && pnpm build` 通過。
 
 ---
 
@@ -271,7 +288,7 @@ flowchart LR
 - **驗收**：R2，時鐘設 12:20（`REPLICA_TIME`），台記（12:25 關門、走 7 分鐘）不在輪盤上，說明寫「1 家快打烊」；
   時鐘 11:00 時它在輪盤上。
 
-#### A7 — 首次設定按下去就轉（S，C4 預設）
+#### A7 — 首次設定按下去就轉（S，C4 已定案）
 
 - **對應**：P1-G
 - **做法**：OnboardingFlow 建立完成後帶一個一次性旗標（router state 或 sessionStorage），
@@ -418,14 +435,44 @@ flowchart LR
 - **驗收**：R2，「Korean」chip 只有在輪盤上有韓式店時才出現。從 Nearby 加入「Seoul Korean Kitchen」（R1 的假資料裡有）→
   自動帶 Korean → 勾「今天不想吃 Korean」會把它移出輪盤；否決按鈕用 `getBoundingClientRect` 量，高度 ≥ 44。
 
-#### B8 — 否決當天有效＋個人飲食偏好（L，**等 7k／K2 決定，先不要動**）
+#### B8 — 否決當天有效＋「我不吃」改成個人設定（L，依賴 P0、A1）
 
-- **對應**：P1-K2
-- **預設方案**
-  - `round_marks` 加 `createdAt`（另開一個 migration，排在 P0 之後）。投票、否決只算今天（台北日）。
-  - 「不吃牛」這類改成個人設定（新表 `user_dietary(userId, tagId)`），這個人在線上（presence）時套用。
-  - 「Clear round」只清投票和否決，不清別人的飲食偏好。
-  - `wheel-logic` 的 invariant 7 要跟著改。
+- **對應**：P1-K2、7k2（已定案）
+- **目標**
+  - 「今天不要」真的只算今天；
+  - 「我不吃牛」設一次就一直有效，但只在我今天有出現時影響輪盤；
+  - 別人按 Clear round 不會把我的設定清掉。
+- **做法**
+  - **否決、投票當天有效**
+    - `shared/realtimeState.ts`：`RoundMarkRow` 加 `createdAt`，新增 `isActiveMark(row, now)`（同一個台北日）。
+      `buildSessionState(rows, now)` 只收有效的否決和投票。
+    - 台北日用 A1 在 `shared/lunch.ts` export 的函式，不要再寫一份（AGENTS.md Pivot flags）。
+    - `toggleRoundMark`：找到的是**過期**的列時，把它的 `createdAt` 更新成現在，也就是重新標記，不是刪掉。
+      否則使用者按「今天不要」會看起來沒反應。
+    - `getRoundMarks` 只讀最近 48 小時。過期的列不刪。
+  - **「我不吃」**
+    - query／mutation `me.dietary`、`me.setDietary({ tagIds })`，讀寫 `user_dietary`。
+    - `spins.create` 在現有的 wave B 裡多讀一個 `getPresentDietary(wheelId, startOfTaipeiToday)`：
+      `user_dietary` JOIN `wheel_presence`，條件是今天出現過，再加上轉的人自己。
+      **一個 query 就好，不要先查誰在、再查他們的偏好**，那樣會多一趟（失敗模式 52）。
+    - 讀出來之後，用現有的 `applyDietary` 排除。`round_marks` 裡 `kind = 'dietary'` 的列不再讀取。
+  - **UI**（`RoundPanel.tsx`）
+    - 「Avoid today」chip 列改成「我不吃（一直有效）」，開關寫進個人設定；用 `Chip`。
+    - 下面一行列出今天有出現的人的偏好：「Ben 不吃：Korean → 輪盤少 1 家」。
+    - Clear round 只清投票和否決。
+  - **wheel-logic**：更新 `.claude/skills/wheel-logic/SKILL.md` 的 invariant 5、7。這是 A 線的檔案，
+    只改這兩條，和 A1 改的段落不同。
+- **先寫的測試**
+  - `isActiveMark`：同一天 → 有效；前一天 23:59 → 無效；台北午夜邊界。
+  - `buildSessionState`：昨天的否決不出現。
+  - `shared/session.ts` 新 helper `dietaryForPresent(prefs, presentUserIds, spinnerId)`：沒出現的人不套用；轉的人一定套用。
+- **驗收**（R2）
+  1. Ben 否決火鍋 106 → 今天輪盤上沒有它。
+  2. 把 `REPLICA_TIME` 改成隔天，重啟 `db.sh`、`server.sh`、`drv.mjs` → 火鍋 106 回來，Ben 的否決不見了。
+  3. Ben 設「我不吃 Korean」，而且今天打開過輪盤 → Seoul Korean Kitchen 不在 Amy 的輪盤上
+     （這家店要先由 B7 自動帶上 Korean）。
+  4. 隔天 Ben 沒打開 app → 那家店回到 Amy 的輪盤。
+  5. Amy 按 Clear round → Ben 的「我不吃」還在。
 
 #### B9 — 建立／設定對話框（S–M）
 
@@ -435,7 +482,7 @@ flowchart LR
   - Fairness mode、Rotate cuisines、Distance mode 下面各加一行說明。
   - 設定對話框不要自動全選名稱：`onOpenAutoFocus={(e) => e.preventDefault()}`。
   - 開啟共享後跳出的「Invite link」對話框，加上分享按鈕（沿用 `shareInviteLink`，也就是 `navigator.share` → LINE）。
-  - 拿掉「Add starter restaurants」（預設；待決定）。
+  - 拿掉「Add starter restaurants」（已定案）。
   - toast「6 located, 2 skipped」改成「6 家算好步行時間，2 家沒有位置」。
   - 桌面版側欄的輪盤名稱不要被截成「Lun…」：名稱 `flex-1 min-w-0`，圖示不要佔掉名稱的寬度。
 - **驗收**：點「Fairness mode」這幾個字就會切換；1280×800 下側欄看得到完整的「Lunch near Ruiguang Rd」或合理的截斷。
