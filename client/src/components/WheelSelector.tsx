@@ -22,6 +22,7 @@ import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import LocationPicker from "@/components/LocationPicker";
 import { STARTER_RESTAURANTS } from "@shared/starter";
+import { useLang } from "@/i18n";
 
 interface WheelSelectorProps {
   selectedWheelId: number | null;
@@ -65,21 +66,14 @@ interface WheelSelectorProps {
   pickerHidden?: boolean;
 }
 
-const EXCLUSION_OPTIONS = [
-  { value: "0", label: "Off" },
-  { value: "1", label: "1 day" },
-  { value: "3", label: "3 days" },
-  { value: "7", label: "7 days" },
-];
+const EXCLUSION_OPTIONS = [0, 1, 3, 7];
 
 /** The preset options, plus the wheel's current value if it isn't a preset
  *  (possible via import, which allows any 0–30) — otherwise the settings
  *  select renders blank. */
 function exclusionOptionsFor(current: number) {
-  if (EXCLUSION_OPTIONS.some((o) => o.value === String(current))) return EXCLUSION_OPTIONS;
-  return [...EXCLUSION_OPTIONS, { value: String(current), label: `${current} days` }].sort(
-    (a, b) => parseInt(a.value) - parseInt(b.value),
-  );
+  if (EXCLUSION_OPTIONS.includes(current)) return EXCLUSION_OPTIONS;
+  return [...EXCLUSION_OPTIONS, current].sort((a, b) => a - b);
 }
 
 /** Per-wheel actions, consolidated into one kebab menu so they can never overlap
@@ -116,11 +110,12 @@ function WheelActionsMenu({
   onDelete: () => void;
   onLeave: () => void;
 }) {
+  const { t } = useLang();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label="Wheel actions"
+          aria-label={t("settings.actions.label")}
           onClick={(e) => e.stopPropagation()}
           className={`flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors ${
             large ? "h-14 w-12" : "h-11 w-11"
@@ -133,22 +128,22 @@ function WheelActionsMenu({
         {/* Public wheels can be shared with anyone — no sign-in, no token. */}
         {wheel.isPublic && (
           <DropdownMenuItem onClick={onCopyPublic} className="gap-2.5">
-            <Globe size={14} /> Copy public link
+            <Globe size={14} /> {t("settings.actions.copyPublic")}
           </DropdownMenuItem>
         )}
         {wheel.isShared && isOwner && (
           <DropdownMenuItem onClick={onShare} className="gap-2.5">
-            <Share2 size={14} /> Share invite link
+            <Share2 size={14} /> {t("settings.actions.shareInvite")}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={onCopyWheel} className="gap-2.5">
-          <CopyPlus size={14} /> Copy wheel
+          <CopyPlus size={14} /> {t("settings.actions.copyWheel")}
         </DropdownMenuItem>
         {/* Members get Settings too — read-only inside (see `canEdit`), so a
             teammate can see the office and the spin rules without being able to
             change them. */}
         <DropdownMenuItem onClick={onSettings} className="gap-2.5">
-          <Settings size={14} /> Settings
+          <Settings size={14} /> {t("settings.actions.open")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {/* The owner's exit is Delete and a member's is Leave — never both, and
@@ -157,11 +152,11 @@ function WheelActionsMenu({
             administer; the server refuses it too. */}
         {isOwner ? (
           <DropdownMenuItem onClick={onDelete} variant="destructive" className="gap-2.5">
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {t("settings.actions.delete")}
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem onClick={onLeave} variant="destructive" className="gap-2.5">
-            <LogOut size={14} /> Leave wheel
+            <LogOut size={14} /> {t("settings.actions.leave")}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -179,13 +174,14 @@ function WheelActionsMenu({
  * report that a count query had a bad day.
  */
 function CopyCountNote({ wheelId }: { wheelId: number }) {
+  const { t } = useLang();
   const { data } = trpc.wheels.copyCount.useQuery({ id: wheelId }, { staleTime: 60_000, retry: false });
   const n = data?.count ?? 0;
   if (n < 1) return null;
   return (
     <p className="type-meta flex items-center gap-1.5 text-muted-foreground">
       <CopyPlus size={12} className="flex-shrink-0" />
-      {n === 1 ? "1 team started their wheel from this one." : `${n} teams started their wheels from this one.`}
+      {t(n === 1 ? "settings.copyCount.one" : "settings.copyCount.other", { n })}
     </p>
   );
 }
@@ -200,6 +196,7 @@ export default function WheelSelector({
   pickerHidden = false,
 }: WheelSelectorProps) {
   const { user } = useAuth();
+  const { t } = useLang();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [isShared, setIsShared] = useState(false);
@@ -252,7 +249,7 @@ export default function WheelSelector({
       utils.wheels.bootstrap.invalidate();
       onSelect(data.id);
       setShowSwitcher(false);
-      toast.success(`Copied to "${data.name}" — rename it in Settings`);
+      toast.success(t("settings.toast.copiedWheel", { name: data.name }));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -324,7 +321,7 @@ export default function WheelSelector({
       if (data.inviteToken) {
         setShowInvite({ wheelId: data.id, token: data.inviteToken, name: newName });
       }
-      toast.success("Wheel created!");
+      toast.success(t("settings.toast.created"));
     },
     onError: (e) => { setCreateError(e.message); },
   });
@@ -349,9 +346,9 @@ export default function WheelSelector({
       // ever read it again.
       setConfirmDelete(null);
       setEditWheel(null);
-      toast.success("Wheel deleted");
+      toast.success(t("settings.toast.deleted"));
     },
-    onError: (e) => toast.error(`Failed to delete wheel: ${e.message}`),
+    onError: (e) => toast.error(t("settings.error.delete", { message: e.message })),
   });
   const leaveWheel = trpc.wheels.leave.useMutation({
     onSuccess: (_data, vars) => {
@@ -365,13 +362,13 @@ export default function WheelSelector({
       // payload that carries it is stale.
       utils.auth.me.invalidate();
       setConfirmLeave(null);
-      toast.success("You left the wheel");
+      toast.success(t("settings.toast.left"));
     },
-    onError: (e) => toast.error(`Failed to leave wheel: ${e.message}`),
+    onError: (e) => toast.error(t("settings.error.leave", { message: e.message })),
   });
   const setDefaultWheel = trpc.wheels.setDefault.useMutation({
     onSuccess: () => { utils.auth.me.invalidate(); },
-    onError: (e) => toast.error(`Failed to set default wheel: ${e.message}`),
+    onError: (e) => toast.error(t("settings.error.default", { message: e.message })),
   });
   const regenInvite = trpc.wheels.regenerateInvite.useMutation({
     onSuccess: (data, vars) => {
@@ -381,7 +378,7 @@ export default function WheelSelector({
       utils.wheels.list.invalidate();
       setShowInvite({ wheelId: vars.id, token: data.inviteToken, name: w?.name ?? "" });
     },
-    onError: (e) => toast.error(`Failed to regenerate invite: ${e.message}`),
+    onError: (e) => toast.error(t("settings.error.invite", { message: e.message })),
   });
   // Settings + distance mode used to be two independent save buttons in one
   // dialog. That was a trap: "Save Settings" (the first, more prominent
@@ -402,7 +399,7 @@ export default function WheelSelector({
     setUpdateError(null);
     setOriginError(null);
     if (editWheel.distanceEnabled && (editWheel.originLat == null || editWheel.originLng == null)) {
-      setOriginError("Set an origin location first.");
+      setOriginError(t("settings.error.origin"));
       return;
     }
     // Sharing was OFF before this save — if this save turns it on, the response
@@ -443,12 +440,14 @@ export default function WheelSelector({
       // Recompute button), so still close the dialog, just warn instead of
       // claiming success on the part that didn't work.
       if (editWheel.distanceEnabled && distanceRes.matrixFailed) {
-        toast.error("Settings saved, but couldn't reach the Distance Matrix service — check it's enabled on the server's Google Maps API key.");
+        toast.error(t("settings.error.distanceSave"));
       } else {
         toast.success(
           editWheel.distanceEnabled && (distanceRes.computed || distanceRes.unlocatable)
-            ? `Wheel settings saved — ${distanceRes.computed} located${distanceRes.unlocatable ? `, ${distanceRes.unlocatable} skipped` : ""}`
-            : "Wheel settings saved",
+            ? distanceRes.unlocatable
+              ? t("settings.toast.savedDistanceSkipped", { computed: distanceRes.computed, skipped: distanceRes.unlocatable })
+              : t("settings.toast.savedDistance", { computed: distanceRes.computed })
+            : t("settings.toast.saved"),
         );
       }
     } catch {
@@ -471,14 +470,14 @@ export default function WheelSelector({
     if (await copyText(url)) {
       toast.success(copiedMsg);
     } else {
-      toast.error("Couldn't copy automatically — copy this link", {
+      toast.error(t("settings.copy.failed"), {
         description: url,
         duration: 15000,
       });
     }
   };
-  const copyPublicLink = (wheelId: number) => copyLink(publicLinkFor(wheelId), "Public link copied!");
-  const copyInvite = () => copyLink(inviteUrl, "Invite link copied!");
+  const copyPublicLink = (wheelId: number) => copyLink(publicLinkFor(wheelId), t("settings.copy.public"));
+  const copyInvite = () => copyLink(inviteUrl, t("settings.copy.invite"));
 
   // Native share sheet on devices that support it (a phone's real "Share to…"),
   // falling back to a plain copy on desktop. A cancelled share throws, so we
@@ -495,9 +494,9 @@ export default function WheelSelector({
     copyLink(url, copiedMsg);
   };
   const sharePublicLink = (wheelId: number, wheelName: string) =>
-    shareLink(publicLinkFor(wheelId), wheelName, `Spin the wheel: ${wheelName}`, "Public link copied!");
+    shareLink(publicLinkFor(wheelId), wheelName, t("settings.share.public", { name: wheelName }), t("settings.copy.public"));
   const shareInviteLink = (token: string, wheelName: string) =>
-    shareLink(inviteLinkFor(token), wheelName, `Join the lunch wheel: ${wheelName}`, "Invite link copied!");
+    shareLink(inviteLinkFor(token), wheelName, t("settings.share.invite", { name: wheelName }), t("settings.copy.invite"));
 
   const selectedWheel = wheels?.find((w) => w.id === selectedWheelId);
   const isSelectedWheelOwner = selectedWheel?.ownerId === user?.id;
@@ -549,7 +548,7 @@ export default function WheelSelector({
           {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand-text)" }} className="flex-shrink-0" />}
           <span
             className="text-muted-foreground/50 flex-shrink-0"
-            title={wheel.isPublic ? "Public — anyone with the link can view" : "Private — only you and invited members"}
+            title={wheel.isPublic ? t("settings.visibility.public") : t("settings.visibility.private")}
           >
             {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
           </span>
@@ -557,8 +556,8 @@ export default function WheelSelector({
         <button
           onClick={(e) => { e.stopPropagation(); setDefaultWheel.mutate({ wheelId: isDefault ? null : wheel.id }); }}
           disabled={setDefaultWheel.isPending}
-          aria-label={isDefault ? "Unset default wheel" : "Set as default wheel"}
-          title={isDefault ? "Default wheel — opens automatically. Click to unset." : "Set as default wheel (opens automatically on entry)"}
+          aria-label={isDefault ? t("settings.default.unset") : t("settings.default.set")}
+          title={isDefault ? t("settings.default.activeTitle") : t("settings.default.inactiveTitle")}
           className={`flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors ${inSheet ? "h-14 w-11" : "h-11 w-11"}`}
         >
           <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
@@ -598,7 +597,7 @@ export default function WheelSelector({
       >
         <div className="px-3 pt-2 pb-3">
           <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
-            My wheels
+            {t("settings.myWheels")}
           </span>
         </div>
 
@@ -610,7 +609,7 @@ export default function WheelSelector({
           style={{ minHeight: 56, borderRadius: "var(--radius-control)" }}
         >
           <Plus size={17} className="flex-shrink-0" />
-          <span style={{ fontSize: 15, fontWeight: 500 }}>New wheel</span>
+          <span style={{ fontSize: 15, fontWeight: 500 }}>{t("settings.newWheel")}</span>
         </button>
       </aside>
 
@@ -627,7 +626,7 @@ export default function WheelSelector({
                 style={selectedWheel ? undefined : { background: "var(--border)" }}
               />
               <span className="flex-1 truncate" style={{ fontSize: 16, fontWeight: 600, color: "var(--ink-warm)" }}>
-                {selectedWheel?.name ?? "Select a wheel"}
+                {selectedWheel?.name ?? t("settings.selectWheel")}
               </span>
               <ChevronDown size={16} className="text-muted-foreground flex-shrink-0" />
             </button>
@@ -645,14 +644,14 @@ export default function WheelSelector({
           >
             <SheetHeader className="flex-row items-center justify-between pl-2 pr-12 pb-1">
               <SheetTitle className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
-                My wheels
+                {t("settings.myWheels")}
               </SheetTitle>
               <button
                 onClick={() => { setShowSwitcher(false); setShowCreate(true); }}
                 className="flex items-center gap-1.5 px-4 hover:bg-white/10 transition-colors"
                 style={{ minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 15, fontWeight: 500, color: "var(--ink-warm)" }}
               >
-                <Plus size={16} /> New
+                <Plus size={16} /> {t("settings.new")}
               </button>
             </SheetHeader>
             <div className="flex flex-col gap-1 overflow-y-auto py-1">
@@ -668,8 +667,8 @@ export default function WheelSelector({
           (selectedWheel && (
             <button
               onClick={() => openSettingsFor(selectedWheel)}
-              aria-label="Wheel settings"
-              title={isSelectedWheelOwner ? "Wheel settings" : "Wheel settings (view only)"}
+              aria-label={t("settings.open.aria")}
+              title={isSelectedWheelOwner ? t("settings.open.title") : t("settings.open.viewOnlyTitle")}
               className="flex-shrink-0 flex items-center justify-center glass-bar text-muted-foreground hover:text-foreground transition-transform active:scale-[var(--press-scale)]"
               style={{ minHeight: 56, minWidth: 56, borderRadius: "var(--radius-control)" }}
             >
@@ -682,59 +681,59 @@ export default function WheelSelector({
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="glass-sheet max-w-sm">
           <DialogHeader>
-            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Create wheel</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("settings.create.title")}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
             <Input
-              placeholder="Wheel name (e.g. Office Lunch)"
+              placeholder={t("settings.create.namePlaceholder")}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines })}
               className="bg-secondary/50 border-border/50"
             />
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">Shared team wheel</Label>
+              <Label className="text-sm text-muted-foreground">{t("settings.create.shared")}</Label>
               <Switch checked={isShared} onCheckedChange={setIsShared} />
             </div>
             {isShared && (
               <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Public (anyone with link)</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.create.public")}</Label>
                 <Switch checked={isPublic} onCheckedChange={setIsPublic} />
               </div>
             )}
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
+              <Label className="text-sm text-muted-foreground">{t("settings.create.exclusion")}</Label>
               <Select value={exclusionDays} onValueChange={setExclusionDays}>
                 <SelectTrigger size="sm" className="w-28 bg-secondary/50 border-border/50">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXCLUSION_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  {EXCLUSION_OPTIONS.map((days) => (
+                    <SelectItem key={days} value={String(days)}>{t(days === 0 ? "settings.days.off" : days === 1 ? "settings.days.one" : "settings.days.other", { n: days })}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">Fairness mode</Label>
+              <Label className="text-sm text-muted-foreground">{t("settings.create.fairness")}</Label>
               <Switch checked={fairnessMode} onCheckedChange={setFairnessMode} />
             </div>
             {fairnessMode && (
               <p className="-mt-2 type-meta text-muted-foreground">
-                Spins lean toward restaurants you haven't picked in a while.
+                {t("settings.create.fairnessDesc")}
               </p>
             )}
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">Rotate cuisines</Label>
+              <Label className="text-sm text-muted-foreground">{t("settings.create.rotate")}</Label>
               <Switch checked={rotateCuisines} onCheckedChange={setRotateCuisines} />
             </div>
             {rotateCuisines && (
               <p className="-mt-2 type-meta text-muted-foreground">
-                Spins lean away from a cuisine you just had toward neglected ones.
+                {t("settings.create.rotateDesc")}
               </p>
             )}
             <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">Add starter restaurants</Label>
+              <Label className="text-sm text-muted-foreground">{t("settings.create.starter")}</Label>
               <Switch checked={addStarterPack} onCheckedChange={setAddStarterPack} />
             </div>
             <ErrorChip error={createError} onDismiss={() => setCreateError(null)} />
@@ -753,8 +752,8 @@ export default function WheelSelector({
               }}
             >
               {createWheel.isPending ? (
-                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />Creating…</span>
-              ) : "Create wheel"}
+                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{t("settings.create.creating")}</span>
+              ) : t("settings.create.submit")}
             </Button>
           </div>
         </DialogContent>
@@ -764,10 +763,10 @@ export default function WheelSelector({
       <Dialog open={!!showInvite} onOpenChange={() => setShowInvite(null)}>
         <DialogContent className="glass-sheet max-w-sm">
           <DialogHeader>
-            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Invite link</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("settings.invite.title")}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
-            <p className="text-sm text-muted-foreground">Share this link with your team to join <strong className="text-foreground">{showInvite?.name}</strong>:</p>
+            <p className="text-sm text-muted-foreground">{t("settings.invite.share", { name: showInvite?.name ?? "" })}</p>
             <div className="flex gap-2">
               <Input value={inviteUrl} readOnly className="bg-secondary/50 border-border/50 type-meta" />
               <Button size="icon" variant="outline" onClick={copyInvite}>
@@ -787,7 +786,7 @@ export default function WheelSelector({
             flex-col overrides DialogContent's default grid/padding.) */}
         <DialogContent className="glass-sheet max-w-sm p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
           <DialogHeader className="px-5 pt-5 pb-3 flex-shrink-0">
-            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Wheel settings</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("settings.title")}</DialogTitle>
           </DialogHeader>
           {editWheel && (
             /* A BLOCK with space-y — deliberately not `flex flex-col gap-4`. As a
@@ -804,22 +803,21 @@ export default function WheelSelector({
                 <div className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-secondary/30 px-3 py-2.5">
                   <Eye size={14} className="flex-shrink-0 mt-0.5 text-muted-foreground" />
                   <p className="type-meta text-muted-foreground">
-                    <strong className="text-foreground">View only.</strong> Only the wheel's creator can change these
-                    settings — ask them if something needs updating.
+                    <strong className="text-foreground">{t("settings.viewOnly.lead")}</strong>{" "}{t("settings.viewOnly.body")}
                   </p>
                 </div>
               )}
-              <SettingsSection>Basics</SettingsSection>
+              <SettingsSection>{t("settings.section.basics")}</SettingsSection>
               <Input
-                placeholder="Wheel name"
+                placeholder={t("settings.namePlaceholder")}
                 value={editWheel.name}
                 onChange={(e) => setEditWheel({ ...editWheel, name: e.target.value })}
                 disabled={!canEdit}
                 className="bg-secondary/50 border-border/50"
               />
-              <SettingsSection>Sharing</SettingsSection>
+              <SettingsSection>{t("settings.section.sharing")}</SettingsSection>
               <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Shared team wheel</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.create.shared")}</Label>
                 <Switch disabled={!canEdit} checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
               </div>
               {editWheel.isShared && (() => {
@@ -837,10 +835,10 @@ export default function WheelSelector({
                 return (
                   <div className="-mt-1 flex flex-col gap-2 rounded-lg border border-border/40 bg-secondary/30 p-3">
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Users size={14} className="flex-shrink-0" /> Team invite
+                      <Users size={14} className="flex-shrink-0" /> {t("settings.invite.team")}
                     </div>
                     {!sharedLive ? (
-                      <p className="type-meta text-muted-foreground">Press Save settings to turn on sharing — you'll get an invite link right away.</p>
+                      <p className="type-meta text-muted-foreground">{t("settings.invite.enableFirst")}</p>
                     ) : token ? (
                       <>
                         <div className="flex items-center gap-2">
@@ -850,10 +848,10 @@ export default function WheelSelector({
                             onFocus={(e) => e.currentTarget.select()}
                             className="h-9 bg-background/60 border-border/50 type-meta font-mono"
                           />
-                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Copy invite link" onClick={() => copyLink(inviteLinkFor(token), "Invite link copied!")}>
+                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.invite.copyTitle")} onClick={() => copyLink(inviteLinkFor(token), t("settings.copy.invite"))}>
                             <Copy size={14} />
                           </Button>
-                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Share invite" onClick={() => shareInviteLink(token, editWheel.name)}>
+                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.invite.shareTitle")} onClick={() => shareInviteLink(token, editWheel.name)}>
                             <Share2 size={14} />
                           </Button>
                         </div>
@@ -862,26 +860,26 @@ export default function WheelSelector({
                             the server, so don't offer a button that 403s. */}
                         {canEdit && (
                           <button type="button" onClick={regenerate} className="self-start type-meta text-muted-foreground hover:text-foreground underline underline-offset-2">
-                            Regenerate link (invalidates the old one)
+                            {t("settings.invite.regenerate")}
                           </button>
                         )}
-                        <p className="type-meta text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                        <p className="type-meta text-muted-foreground">{t("settings.invite.anyone")}</p>
                       </>
                     ) : canEdit ? (
                       <>
                         <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
-                          <Share2 size={14} /> Generate invite link
+                          <Share2 size={14} /> {t("settings.invite.generate")}
                         </Button>
-                        <p className="type-meta text-muted-foreground">Anyone with this link can sign in and join the team.</p>
+                        <p className="type-meta text-muted-foreground">{t("settings.invite.anyone")}</p>
                       </>
                     ) : (
-                      <p className="type-meta text-muted-foreground">No invite link yet — ask the wheel's creator to generate one.</p>
+                      <p className="type-meta text-muted-foreground">{t("settings.invite.missing")}</p>
                     )}
                   </div>
                 );
               })()}
               <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Public (anyone with link can view &amp; spin)</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.public.label")}</Label>
                 <Switch disabled={!canEdit} checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
               </div>
               {editWheel.isPublic && (() => {
@@ -898,51 +896,51 @@ export default function WheelSelector({
                         onFocus={(e) => e.currentTarget.select()}
                         className="h-9 bg-background/60 border-border/50 type-meta font-mono"
                       />
-                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Copy link" onClick={() => copyPublicLink(editWheel.id)}>
+                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.public.copyTitle")} onClick={() => copyPublicLink(editWheel.id)}>
                         <Copy size={14} />
                       </Button>
-                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title="Share" onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
+                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.public.shareTitle")} onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
                         <Share2 size={14} />
                       </Button>
                     </div>
                     <p className={`type-meta flex items-center gap-1.5 ${live ? "" : "text-muted-foreground"}`} style={live ? { color: "var(--ok)" } : undefined}>
                       <Globe size={12} className="flex-shrink-0" />
-                      {live ? "Live — anyone with this link can view & spin." : "Turns live when you press Save settings."}
+                      {live ? t("settings.public.live") : t("settings.public.pending")}
                     </p>
                     {live && <CopyCountNote wheelId={editWheel.id} />}
                   </div>
                 );
               })()}
-              <SettingsSection>Spin rules</SettingsSection>
+              <SettingsSection>{t("settings.section.rules")}</SettingsSection>
               <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Skip recently-spun for</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.rules.exclusion")}</Label>
                 <Select disabled={!canEdit} value={String(editWheel.exclusionDays)} onValueChange={(v) => setEditWheel({ ...editWheel, exclusionDays: parseInt(v) })}>
                   <SelectTrigger size="sm" className="w-28 bg-secondary/50 border-border/50">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {exclusionOptionsFor(editWheel.exclusionDays).map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    {exclusionOptionsFor(editWheel.exclusionDays).map((days) => (
+                      <SelectItem key={days} value={String(days)}>{t(days === 0 ? "settings.days.off" : days === 1 ? "settings.days.one" : "settings.days.other", { n: days })}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Fairness mode</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.rules.fairness")}</Label>
                 <Switch disabled={!canEdit} checked={editWheel.fairnessMode} onCheckedChange={(v) => setEditWheel({ ...editWheel, fairnessMode: v })} />
               </div>
               <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">Rotate cuisines</Label>
+                <Label className="text-sm text-muted-foreground">{t("settings.rules.rotate")}</Label>
                 <Switch disabled={!canEdit} checked={editWheel.rotateCuisines} onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })} />
               </div>
 
-              <SettingsSection>Distance</SettingsSection>
+              <SettingsSection>{t("settings.section.distance")}</SettingsSection>
               {/* Distance mode — its origin (paste a link / geolocate) is resolved
                   into local state here and only actually persisted by the single
                   save button below, together with everything else in this dialog. */}
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">Distance mode</Label>
+                  <Label className="text-sm text-muted-foreground">{t("settings.distance.mode")}</Label>
                   <Switch
                     disabled={!canEdit}
                     checked={editWheel.distanceEnabled}
@@ -952,13 +950,13 @@ export default function WheelSelector({
                 {editWheel.distanceEnabled && (
                   <>
                     <p className="-mt-1 type-meta text-muted-foreground">
-                      Shows walking time from one point to every restaurant.
-                      {editWheel.isShared ? " Shared wheels use a single office/meeting point, visible to the team." : ""}
+                      {t("settings.distance.desc")}
+                      {editWheel.isShared ? ` ${t("settings.distance.sharedDesc")}` : ""}
                     </p>
                     {editingOrigin && canEdit && (
                       <>
                         <Input
-                          placeholder="Label (e.g. Office)"
+                          placeholder={t("settings.distance.labelPlaceholder")}
                           value={editWheel.originLabel}
                           onChange={(e) => setEditWheel({ ...editWheel, originLabel: e.target.value })}
                           className="bg-secondary/50 border-border/50"
@@ -967,7 +965,7 @@ export default function WheelSelector({
                             location, search a place, or paste a link. */}
                         <LocationPicker
                           compact
-                          primaryLabel="Use my current location"
+                          primaryLabel={t("settings.distance.useCurrent")}
                           onPicked={(at) =>
                             setEditWheel({
                               ...editWheel,
@@ -995,7 +993,7 @@ export default function WheelSelector({
                         return (
                           <p className="type-meta flex items-center gap-1.5 text-muted-foreground">
                             <MapPin size={12} className="flex-shrink-0" />
-                            No location set yet — pick one above
+                            {t("settings.distance.missing")}
                           </p>
                         );
                       }
@@ -1011,9 +1009,9 @@ export default function WheelSelector({
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="text-sm truncate">{editWheel.originLabel.trim() || "Office"}</span>
                             <span className="type-meta flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand-text)" }}>
-                              {isPersisted ? "Saved" : "Press Save settings to apply"}
+                              {isPersisted ? t("settings.distance.saved") : t("settings.distance.pending")}
                               <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
-                                view on map
+                                {t("settings.distance.map")}
                               </a>
                             </span>
                           </div>
@@ -1024,7 +1022,7 @@ export default function WheelSelector({
                               className="flex-shrink-0 type-meta font-semibold px-2.5 py-1 rounded-full hover:bg-white/10 transition-colors"
                               style={{ color: "var(--foreground)" }}
                             >
-                              Edit
+                              {t("settings.distance.edit")}
                             </button>
                           )}
                         </div>
@@ -1038,11 +1036,11 @@ export default function WheelSelector({
                   accident on the way to anything else. */}
               {canEdit && (
                 <>
-                  <SettingsSection>Danger zone</SettingsSection>
+                  <SettingsSection>{t("settings.section.danger")}</SettingsSection>
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
                     <div className="flex flex-col min-w-0">
-                      <span className="text-sm">Delete this wheel</span>
-                      <span className="type-meta text-muted-foreground">Permanent — restaurants and history go with it.</span>
+                      <span className="text-sm">{t("settings.danger.title")}</span>
+                      <span className="type-meta text-muted-foreground">{t("settings.danger.desc")}</span>
                     </div>
                     <button
                       type="button"
@@ -1050,7 +1048,7 @@ export default function WheelSelector({
                       className="flex-shrink-0 flex items-center gap-1.5 type-meta font-semibold px-3 py-1.5 rounded-full transition-colors hover:bg-destructive/15"
                       style={{ color: "var(--destructive)", border: "1px solid oklch(from var(--destructive) l c h / 0.4)" }}
                     >
-                      <Trash2 size={13} /> Delete
+                      <Trash2 size={13} /> {t("settings.danger.delete")}
                     </button>
                   </div>
                 </>
@@ -1083,14 +1081,14 @@ export default function WheelSelector({
                   }}
                 >
                   {savingWheelSettings ? (
-                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving…</span>
-                  ) : "Save settings"}
+                    <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{t("settings.save.saving")}</span>
+                  ) : t("settings.save.submit")}
                 </Button>
               ) : (
                 /* Members see the settings but can't change them — no Save at
                    all, rather than a button that would only fail server-side. */
                 <p className="type-meta text-muted-foreground text-center py-1">
-                  Only the wheel's creator can change these settings.
+                  {t("settings.save.ownerOnly")}
                 </p>
               )}
             </div>
@@ -1104,19 +1102,14 @@ export default function WheelSelector({
       <ConfirmDangerDialog
         open={!!confirmLeave}
         onOpenChange={(open) => { if (!open && !leaveWheel.isPending) setConfirmLeave(null); }}
-        title="LEAVE WHEEL"
-        confirmLabel="Leave wheel"
+        title={t("settings.leave.title")}
+        confirmLabel={t("settings.leave.confirm")}
         pending={leaveWheel.isPending}
         onConfirm={() => confirmLeave && leaveWheel.mutate({ id: confirmLeave.id })}
         body={
           <>
-            <p>
-              Leave <strong className="text-foreground">{confirmLeave?.name}</strong>? It stays with the rest of the
-              team — you just stop seeing it.
-            </p>
-            <p>
-              Your ratings stay on the places you rated, so rejoining with the invite link brings everything back.
-            </p>
+            <p>{t("settings.leave.body", { name: confirmLeave?.name ?? "" })}</p>
+            <p>{t("settings.leave.ratings")}</p>
           </>
         }
       />
@@ -1124,17 +1117,14 @@ export default function WheelSelector({
       <ConfirmDangerDialog
         open={!!confirmDelete}
         onOpenChange={(open) => { if (!open && !deleteWheel.isPending) setConfirmDelete(null); }}
-        title="DELETE WHEEL"
-        confirmLabel="Delete wheel"
+        title={t("settings.delete.title")}
+        confirmLabel={t("settings.delete.confirm")}
         pending={deleteWheel.isPending}
         onConfirm={() => confirmDelete && deleteWheel.mutate({ id: confirmDelete.id })}
         body={
           <>
-            <p>
-              Delete <strong className="text-foreground">{confirmDelete?.name}</strong> and everything on it — its
-              restaurants, spin history and, on a shared wheel, the team's access.
-            </p>
-            <p style={{ color: "var(--destructive)" }}>This cannot be undone.</p>
+            <p>{t("settings.delete.body", { name: confirmDelete?.name ?? "" })}</p>
+            <p style={{ color: "var(--destructive)" }}>{t("settings.delete.irreversible")}</p>
           </>
         }
       />
