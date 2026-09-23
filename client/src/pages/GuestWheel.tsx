@@ -11,6 +11,7 @@ import { copyIntentUrl } from "@shared/copyIntent";
 import { ArrowRight, CopyPlus, Sparkles, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
+import { useLang } from "@/i18n";
 
 /**
  * Guest (no sign-in) wheel view at /w/:wheelId.
@@ -23,6 +24,7 @@ import { useParams } from "wouter";
  * a persistent "make your own" call to action.
  */
 export default function GuestWheel() {
+  const { t } = useLang();
   const params = useParams<{ wheelId?: string }>();
   const wheelId = params.wheelId ? parseInt(params.wheelId) : NaN;
   const validId = Number.isFinite(wheelId);
@@ -98,7 +100,7 @@ export default function GuestWheel() {
   // two different things in two different layouts — a centred fixed overlay
   // swapping for an in-flow block — so the orb visibly jumped at the handover.
   if (validId && entryQuery.isLoading) {
-    return <BrandLoader fullscreen label="Loading wheel…" />;
+    return <BrandLoader fullscreen label={t("app.guest.loading")} />;
   }
 
   // ── Not available (bad id, private, or removed) ──────────────────────────────
@@ -108,10 +110,10 @@ export default function GuestWheel() {
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
           <div className="text-5xl">🍽️</div>
           <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
-            This wheel isn’t available
+            {t("app.guest.unavailableTitle")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            It may be private or no longer shared. Make your own in seconds — it’s free.
+            {t("app.guest.unavailableBody")}
           </p>
           <SignInCta />
         </div>
@@ -135,7 +137,7 @@ export default function GuestWheel() {
               color: "var(--brand-text)",
             }}
           >
-            <Utensils size={12} /> Public wheel
+            <Utensils size={12} /> {t("app.guest.public")}
           </div>
           <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
             {wheel.name}
@@ -146,7 +148,7 @@ export default function GuestWheel() {
           /* Empty public wheel */
           <div className="flex flex-col items-center gap-3 text-center mt-8">
             <div className="text-4xl">🪹</div>
-            <p className="text-sm text-muted-foreground">This wheel has no restaurants yet.</p>
+            <p className="text-sm text-muted-foreground">{t("app.guest.empty")}</p>
           </div>
         ) : (
           <>
@@ -176,14 +178,11 @@ export default function GuestWheel() {
                 letterSpacing: "0.05em",
               }}
             >
-              {isSpinning ? "Spinning…" : "Spin"}
+              {isSpinning ? t("app.guest.spinning") : t("app.guest.spin")}
             </button>
 
             <p className="type-meta text-muted-foreground">
-              <span className="font-semibold" style={{ color: "var(--brand-text)" }}>
-                {segments.length}
-              </span>{" "}
-              restaurant{segments.length !== 1 ? "s" : ""} on the wheel
+              {t(segments.length === 1 ? "app.guest.count.one" : "app.guest.count.other", { n: segments.length })}
             </p>
           </>
         )}
@@ -199,7 +198,7 @@ export default function GuestWheel() {
             href={getLoginUrl()}
             className="type-meta text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
           >
-            or start an empty wheel
+            {t("app.guest.emptyWheel")}
           </a>
         </div>
       </div>
@@ -213,7 +212,7 @@ export default function GuestWheel() {
       {showResult && spinResult && (
         <WinnerSurface
           name={spinResult.label}
-          acceptLabel="Sounds good"
+          acceptLabel={t("app.guest.accept")}
           onAccept={() => setShowResult(false)}
           onRespin={handleReSpin}
           onDirections={() => openDirections(spinResult)}
@@ -255,6 +254,7 @@ function Shell({ children }: { children: React.ReactNode }) {
  * old "Make your own wheel" button had, which is the thing it replaces.
  */
 function CopyWheelCta({ wheelId }: { wheelId: number }) {
+  const { t } = useLang();
   return (
     <a
       href={copyIntentUrl(wheelId)}
@@ -269,13 +269,14 @@ function CopyWheelCta({ wheelId }: { wheelId: number }) {
         fontWeight: 500,
       }}
     >
-      <CopyPlus size={15} style={{ color: "var(--brand-text)" }} /> Copy this wheel
+      <CopyPlus size={15} style={{ color: "var(--brand-text)" }} /> {t("app.guest.copy")}
     </a>
   );
 }
 
 /** "Make your own wheel — sign in." conversion call to action. */
 function SignInCta({ subtle = false }: { subtle?: boolean }) {
+  const { t } = useLang();
   if (subtle) {
     return (
       <a
@@ -292,7 +293,7 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
         }}
       >
         <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
-        Make your own wheel
+        {t("app.guest.create")}
         <ArrowRight size={14} />
       </a>
     );
@@ -311,7 +312,7 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
         letterSpacing: "0.05em",
       }}
     >
-      Make your own wheel <ArrowRight size={16} />
+      {t("app.guest.create")} <ArrowRight size={16} />
     </a>
   );
 }

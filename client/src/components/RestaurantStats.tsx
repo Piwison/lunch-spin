@@ -10,6 +10,7 @@ import {
   picksByPerson,
   type RestaurantStat,
 } from "@shared/stats";
+import { useLang } from "@/i18n";
 
 interface RestaurantStatsProps {
   stats: RestaurantStat[];
@@ -27,16 +28,15 @@ interface RestaurantStatsProps {
 const barColor = (idx: number) =>
   idx === 0 ? "var(--brand)" : "oklch(from var(--brand) l c h / 0.35)";
 
-/** "3d ago" / "today" / "never" from a whole-day count. */
-function lastPickedLabel(lastPickedAt: Date | null): string {
-  const days = daysSinceLastPick(lastPickedAt);
-  if (days === null) return "never picked";
-  if (days === 0) return "picked today";
-  if (days === 1) return "picked yesterday";
-  return `picked ${days}d ago`;
-}
-
 export function RestaurantStats({ stats, history, showPeople, isLoading }: RestaurantStatsProps) {
+  const { t } = useLang();
+  const lastPickedLabel = (lastPickedAt: Date | null): string => {
+    const days = daysSinceLastPick(lastPickedAt);
+    if (days === null) return t("history.stats.lastNever");
+    if (days === 0) return t("history.stats.lastToday");
+    if (days === 1) return t("history.stats.lastYesterday");
+    return t("history.stats.lastDays", { n: days });
+  };
   const ranked = useMemo(() => rankStats(stats), [stats]);
   const total = useMemo(() => sumPicks(stats), [stats]);
   const placesTried = useMemo(() => stats.filter((s) => s.pickCount > 0).length, [stats]);
@@ -69,7 +69,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
     return (
       <Card className="p-6 text-center text-muted-foreground">
         <div className="text-3xl mb-2 opacity-30">📊</div>
-        <p className="text-sm">No spins recorded yet. Spin the wheel to start building insights.</p>
+        <p className="text-sm">{t("history.stats.empty")}</p>
       </Card>
     );
   }
@@ -81,17 +81,17 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {/* Summary row */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Total spins</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.total")}</div>
           <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>{total}</div>
         </Card>
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Places tried</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.tried")}</div>
           <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>
             {placesTried}<span style={{ fontSize: 16, fontWeight: 400, color: "var(--body-warm)" }}>/{stats.length}</span>
           </div>
         </Card>
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Favourite</div>
+          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.favorite")}</div>
           <div
             className="mt-1.5 leading-tight line-clamp-2 break-words"
             title={favorite?.name}
@@ -107,9 +107,9 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Due for a comeback</h3>
+            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.comeback")}</h3>
           </div>
-          <p className="type-meta text-muted-foreground mb-3">Spots you haven't had in a while (or ever) — maybe spin one of these.</p>
+          <p className="type-meta text-muted-foreground mb-3">{t("history.stats.comebackBody")}</p>
           <div className="flex flex-wrap gap-2">
             {overdue.map(({ stat, daysSince }) => (
               <span
@@ -126,7 +126,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
               >
                 {stat.name}
                 <span className="type-meta text-muted-foreground">
-                  {daysSince === null ? "never" : `${daysSince}d`}
+                  {daysSince === null ? t("history.stats.never") : t("history.stats.days", { n: daysSince })}
                 </span>
               </span>
             ))}
@@ -138,7 +138,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       <Card className="p-5">
         <div className="flex items-center gap-2 mb-4">
           <Crown size={15} style={{ color: "var(--brand-text)" }} />
-          <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Most picked</h3>
+          <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.mostPicked")}</h3>
         </div>
         <div className="space-y-3">
           {top.map((r, idx) => {
@@ -168,18 +168,18 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
             <Users size={15} style={{ color: "var(--brand-text)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Who&apos;s been picking</h3>
+            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.people")}</h3>
           </div>
-          <p className="type-meta text-muted-foreground mb-3">Who's been driving the spins — keep it balanced.</p>
+          <p className="type-meta text-muted-foreground mb-3">{t("history.stats.peopleBody")}</p>
           <div className="space-y-3">
             {people.map((p, idx) => {
               const pct = maxPersonPicks > 0 ? (p.count / maxPersonPicks) * 100 : 0;
               return (
                 <div key={p.userId}>
                   <div className="flex items-center justify-between mb-1 gap-2">
-                    <span className="text-sm font-medium truncate">{p.name ?? "Unknown"}</span>
+                    <span className="text-sm font-medium truncate">{p.name ?? t("history.unknown")}</span>
                     <span className="type-meta text-muted-foreground flex-shrink-0">
-                      {p.count} spin{p.count !== 1 ? "s" : ""}
+                      {t(p.count === 1 ? "history.stats.spins.one" : "history.stats.spins.other", { n: p.count })}
                     </span>
                   </div>
                   <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>

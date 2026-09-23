@@ -1,10 +1,74 @@
-/**
- * `wheel.*` — the Wheel tab: SpinWheel hub, spin button, result surface (WinnerSurface), filters (FilterBar), round panel (votes, vetoes, dietary).
- *
- * Empty on purpose: registered in ../dict.ts up front so whoever translates this
- * area only ever edits THIS file, never the shared combiner. See ./README.md.
- */
+/** `wheel.*` — spinning, results, filters, round controls and members. */
+export const zh = {
+  "wheel.inPlay": "本輪店家",
+  "wheel.empty": "先加入店家\n才能開轉",
+  "wheel.result.aria": "抽選結果：{name}",
+  "wheel.result.today": "今天午餐吃",
+  "wheel.result.closingIn": "約 {n} 分鐘後休息，動作要快！",
+  "wheel.result.closing": "即將休息，動作要快！",
+  "wheel.result.accept": "就吃這家",
+  "wheel.result.respin": "再轉一次",
+  "wheel.result.directions": "查看路線",
+  "wheel.filter.label": "篩選",
+  "wheel.filter.active": "篩選（已套用 {n} 項）",
+  "wheel.filter.distance": "步行時間",
+  "wheel.filter.within": "{n} 分鐘內",
+  "wheel.filter.setLimit": "設定時間上限",
+  "wheel.filter.minutes": "{n} 分",
+  "wheel.filter.clear": "清除所有篩選",
+  "wheel.filter.matches": "輪盤上有 {match}／{total} 家店",
+  "wheel.round.title": "本輪設定",
+  "wheel.round.marks": "本輪已有投票或否決",
+  "wheel.round.clear": "清除本輪設定",
+  "wheel.round.avoid": "今天先不要：",
+  "wheel.round.allow": "你已排除這類料理，按一下即可取消",
+  "wheel.round.avoidTitle": "今天先不要這類料理",
+  "wheel.round.removeVote": "取消投票",
+  "wheel.round.vote": "投給這家",
+  "wheel.round.undoVeto": "取消否決",
+  "wheel.round.veto": "今天不要這家",
+  "wheel.members.team": "團隊成員",
+  "wheel.members.here": "{n} 人在線上",
+  "wheel.members.member": "成員",
+  "wheel.members.creator": "{name}・建立者",
+  "wheel.members.present": "{name}・在線上",
+  "wheel.members.creatorPresent": "{name}・建立者・在線上",
+  "wheel.members.you": "你",
+} as const satisfies Record<`wheel.${string}`, string>;
 
-export const zh = {} as const satisfies Record<`wheel.${string}`, string>;
-
-export const en: Record<keyof typeof zh, string> = {};
+export const en: Record<keyof typeof zh, string> = {
+  "wheel.inPlay": "in play",
+  "wheel.empty": "Add restaurants\nto spin the wheel",
+  "wheel.result.aria": "Spin result: {name}",
+  "wheel.result.today": "Today's lunch",
+  "wheel.result.closingIn": "Closing in ~{n} min — hurry!",
+  "wheel.result.closing": "Closing soon — hurry!",
+  "wheel.result.accept": "Lock it in",
+  "wheel.result.respin": "Respin",
+  "wheel.result.directions": "Directions",
+  "wheel.filter.label": "Filter",
+  "wheel.filter.active": "Filter ({n} active)",
+  "wheel.filter.distance": "Distance",
+  "wheel.filter.within": "Within {n} min",
+  "wheel.filter.setLimit": "Set a limit",
+  "wheel.filter.minutes": "{n}m",
+  "wheel.filter.clear": "Clear all filters",
+  "wheel.filter.matches": "{match}/{total} on the wheel",
+  "wheel.round.title": "This round",
+  "wheel.round.marks": "Votes or vetoes in this round",
+  "wheel.round.clear": "Clear round",
+  "wheel.round.avoid": "Avoid today:",
+  "wheel.round.allow": "You're avoiding this — tap to allow",
+  "wheel.round.avoidTitle": "Avoid this today",
+  "wheel.round.removeVote": "Remove your vote",
+  "wheel.round.vote": "Vote for this",
+  "wheel.round.undoVeto": "Take back your veto",
+  "wheel.round.veto": "Veto — not today",
+  "wheel.members.team": "Team",
+  "wheel.members.here": "{n} here now",
+  "wheel.members.member": "Member",
+  "wheel.members.creator": "{name} · creator",
+  "wheel.members.present": "{name} · here now",
+  "wheel.members.creatorPresent": "{name} · creator · here now",
+  "wheel.members.you": "You",
+};

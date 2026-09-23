@@ -17,6 +17,7 @@ import {
   WHEEL_REF_FRAME_PX,
 } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useLang } from "@/i18n";
 
 export interface WheelSegment {
   id: number;
@@ -180,6 +181,7 @@ export default function SpinWheel({
   receded = false,
   onPointerIndexChange,
 }: SpinWheelProps) {
+  const { t } = useLang();
   const frameRef = useRef<HTMLDivElement>(null);
   const rotRef = useRef<HTMLDivElement>(null);
   const [frameW, setFrameW] = useState(0);
@@ -992,7 +994,7 @@ export default function SpinWheel({
                   {count}
                 </span>
                 <span className="type-eyebrow mt-1" style={{ color: "var(--brand-text)" }}>
-                  in play
+                  {t("wheel.inPlay")}
                 </span>
               </div>
             </div>
@@ -1043,11 +1045,9 @@ export default function SpinWheel({
             >
               <p className="type-meta" style={{ color: "var(--muted-foreground)" }}>
                 {emptyHint ?? (
-                  <>
-                    Add restaurants
-                    <br />
-                    to spin the wheel
-                  </>
+                  t("wheel.empty").split("\n").map((line, index) => (
+                    <span key={line}>{index > 0 && <br />}{line}</span>
+                  ))
                 )}
               </p>
             </div>

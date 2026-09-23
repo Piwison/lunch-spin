@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { Loader2 } from "lucide-react";
+import { useLang } from "@/i18n";
 
 /** Full-height centered shell. Uses grid (not flex) so the global
  *  `.flex { min-height: 0 }` reset in index.css can't collapse min-h-dvh and
@@ -18,6 +19,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 }
 
 export default function JoinWheel() {
+  const { t } = useLang();
   const { user, loading } = useAuth();
   const params = useParams<{ token: string }>();
   const [, navigate] = useLocation();
@@ -54,7 +56,7 @@ export default function JoinWheel() {
     return (
       <Centered>
         <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand-text)" }} />
-        <p className="text-muted-foreground">Joining wheel…</p>
+        <p className="text-muted-foreground">{t("app.join.joining")}</p>
       </Centered>
     );
   }
@@ -66,9 +68,9 @@ export default function JoinWheel() {
           className="w-20 h-20 orb-wheel animate-orb-spin" />
         <div>
           <h1 className="type-title mb-2" style={{ color: "var(--ink-warm)" }}>
-            You&apos;ve been invited
+            {t("app.join.invited")}
           </h1>
-          <p className="text-muted-foreground">Sign in to join this lunch wheel.</p>
+          <p className="text-muted-foreground">{t("app.join.signInBody")}</p>
         </div>
         <a
           href={getLoginUrl(`/join/${params.token}`)}
@@ -83,7 +85,7 @@ export default function JoinWheel() {
             letterSpacing: "0.05em",
           }}
         >
-          Sign in to join
+          {t("app.join.signIn")}
         </a>
       </Centered>
     );
@@ -95,12 +97,12 @@ export default function JoinWheel() {
         <div className="text-6xl">🎉</div>
         <div>
           <h1 className="type-title mb-1.5" style={{ color: "var(--brand-text)" }}>
-            Joined!
+            {t("app.join.success")}
           </h1>
           <p className="text-muted-foreground">
             {joinWheel.data?.wheelName
-              ? <>You’re in <strong className="text-foreground">{joinWheel.data.wheelName}</strong> — taking you there…</>
-              : "Taking you to the wheel…"}
+              ? t("app.join.redirectNamed", { name: joinWheel.data.wheelName })
+              : t("app.join.redirect")}
           </p>
         </div>
         <Loader2 className="animate-spin" size={20} style={{ color: "var(--brand-text)" }} />
@@ -113,8 +115,8 @@ export default function JoinWheel() {
       <Centered>
         <div className="text-6xl">😕</div>
         <div>
-          <h1 className="type-title mb-2" style={{ color: "var(--ink-warm)" }}>Invalid invite</h1>
-          <p className="text-muted-foreground">{error}</p>
+          <h1 className="type-title mb-2" style={{ color: "var(--ink-warm)" }}>{t("app.join.invalid")}</h1>
+          <p className="text-muted-foreground">{t("app.join.invalidBody")}</p>
         </div>
         <button
           onClick={() => navigate("/app")}
@@ -129,7 +131,7 @@ export default function JoinWheel() {
             fontWeight: 500,
           }}
         >
-          Go to the app
+          {t("app.join.goApp")}
         </button>
       </Centered>
     );

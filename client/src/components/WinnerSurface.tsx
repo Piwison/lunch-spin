@@ -1,6 +1,7 @@
 import { Check, Clock3, MapPin, RotateCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { DISPLAY_MAX_LINES, fitDisplayName } from "@shared/displayFit";
+import { useLang } from "@/i18n";
 
 interface WinnerSurfaceProps {
   /** The winning restaurant's name. Set full bleed, with no card around it. */
@@ -66,12 +67,13 @@ export default function WinnerSurface({
   meta,
   children,
   onAccept,
-  acceptLabel = "Lock it in",
+  acceptLabel,
   onRespin,
   respinDisabled = false,
   onDirections,
   onDismiss,
 }: WinnerSurfaceProps) {
+  const { t } = useLang();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onDismiss();
@@ -139,7 +141,7 @@ export default function WinnerSurface({
       className="fixed inset-0 z-50 flex flex-col justify-end"
       role="dialog"
       aria-modal="true"
-      aria-label={`Spin result: ${name}`}
+      aria-label={t("wheel.result.aria", { name })}
       onClick={onDismiss}
       style={{
         // No scrim. There used to be a gradient here fading the ground up from
@@ -201,7 +203,7 @@ export default function WinnerSurface({
         />
         <div className="w-full">
           <p className="type-eyebrow mb-3" style={{ color: "var(--brand-text)" }}>
-            Today&apos;s lunch
+            {t("wheel.result.today")}
           </p>
           {/* Full bleed, no frame. --accent-ink is the accent tuned for text on
               light glass; in dark it resolves to the accent itself.
@@ -253,8 +255,8 @@ export default function WinnerSurface({
             <Clock3 size={15} className="flex-shrink-0" />
             <span className="type-meta font-semibold">
               {closingSoonMinutes != null
-                ? `Closing in ~${closingSoonMinutes} min — hurry!`
-                : "Closing soon — hurry!"}
+                ? t("wheel.result.closingIn", { n: closingSoonMinutes })
+                : t("wheel.result.closing")}
             </span>
           </div>
         )}
@@ -275,7 +277,7 @@ export default function WinnerSurface({
               transitionDuration: "var(--dur-tap)",
             }}
           >
-            <Check size={18} /> {acceptLabel}
+            <Check size={18} /> {acceptLabel ?? t("wheel.result.accept")}
           </button>
           <div className="flex gap-2.5">
             <button
@@ -284,14 +286,14 @@ export default function WinnerSurface({
               className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40"
               style={GHOST_ON_GLASS}
             >
-              <RotateCw size={16} /> Respin
+              <RotateCw size={16} /> {t("wheel.result.respin")}
             </button>
             <button
               onClick={onDirections}
               className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)]"
               style={GHOST_ON_GLASS}
             >
-              <MapPin size={16} /> Directions
+              <MapPin size={16} /> {t("wheel.result.directions")}
             </button>
           </div>
         </div>
