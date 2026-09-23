@@ -1,3 +1,5 @@
+import { useLang } from "@/i18n";
+
 /**
  * The one loading indicator for the whole app: the lunch-wheel brand mark
  * (.orb-wheel) spinning at loading speed. Used for route-chunk loading, the
@@ -11,7 +13,7 @@
  * zeroes the animation (index.css); the label carries the meaning in that case.
  */
 export default function BrandLoader({
-  label = "LOADING…",
+  label,
   size = 48,
   fullscreen = false,
 }: {
@@ -19,15 +21,17 @@ export default function BrandLoader({
   size?: number;
   fullscreen?: boolean;
 }) {
+  const { t } = useLang();
+  const resolvedLabel = label ?? t("app.loading");
   const orb = (
     <div className="flex flex-col items-center gap-4">
       <div
         className="orb-wheel animate-orb-spin"
         style={{ width: size, height: size }}
       />
-      {label ? (
+      {resolvedLabel ? (
         <p className="type-meta" style={{ color: "var(--body-warm)" }}>
-          {label}
+          {resolvedLabel}
         </p>
       ) : null}
     </div>

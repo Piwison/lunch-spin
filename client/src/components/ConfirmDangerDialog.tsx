@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { AlertTriangle } from "lucide-react";
+import { useLang } from "@/i18n";
 
 /**
  * The one confirmation for anything that destroys data permanently — deleting a
@@ -49,6 +50,7 @@ export default function ConfirmDangerDialog({
   pending?: boolean;
   onConfirm: () => void;
 }) {
+  const { t } = useLang();
   const [typed, setTyped] = useState("");
 
   // Never carry a previous "DELETE" into the next open — that would turn the
@@ -75,7 +77,7 @@ export default function ConfirmDangerDialog({
         {confirmWord && (
           <div className="flex flex-col gap-1.5">
             <span className="type-meta text-muted-foreground">
-              Type <strong className="text-foreground font-mono">{confirmWord}</strong> to confirm
+              {t("app.dialog.type", { word: confirmWord })}
             </span>
             <Input
               value={typed}
@@ -83,14 +85,14 @@ export default function ConfirmDangerDialog({
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              aria-label={`Type ${confirmWord} to confirm`}
+              aria-label={t("app.dialog.type", { word: confirmWord })}
               className="bg-secondary/50 border-border/50 font-mono"
             />
           </div>
         )}
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{t("app.dialog.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             disabled={!armed || pending}
             onClick={(e) => {
@@ -101,7 +103,7 @@ export default function ConfirmDangerDialog({
             }}
             style={{ background: "var(--destructive)", color: "var(--destructive-foreground)", minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 16, fontWeight: 500 }}
           >
-            {pending ? "Deleting…" : confirmLabel}
+            {pending ? t("app.dialog.deleting") : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

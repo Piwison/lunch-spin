@@ -20,7 +20,7 @@ import WheelMembers from "@/components/WheelMembers";
 import { TabRail, type TabRailItem } from "@/components/TabRail";
 import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
-import { X, AlertTriangle, MapPin, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2 } from "lucide-react";
+import { X, AlertTriangle, MapPin, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2, Languages } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
@@ -34,6 +34,8 @@ import { formatWalk } from "@shared/nearby";
 import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useLang } from "@/i18n";
+import { userError } from "@/lib/userError";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,26 +52,9 @@ const SPINS_SEEN_KEY = "lw:spinsSeen";
 /** Show the exclusion explainer on this many spins, then retire it. */
 const EXPLAINER_SPINS = 2;
 
-// Compact relative time for notification rows ("just now", "3m ago", "2d ago").
-function formatTimeAgo(d: Date): string {
-  const s = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (s < 60) return "just now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
 /* `ComponentType`, not `typeof Utensils`: the Wheel tab's icon is drawn in this
    repo rather than borrowed from lucide, and TabRail only ever asks an icon for
    a `size`. */
-const TAB_CONFIG: TabRailItem<Tab>[] = [
-  { id: "wheel", label: "Wheel", icon: SpinWheelIcon },
-  { id: "restaurants", label: "Restaurants", icon: Utensils },
-  { id: "history", label: "History", icon: History },
-];
-
 /** The one-hop entry payload (server: wheels.bootstrap). */
 type BootstrapPayload = RouterOutputs["wheels"]["bootstrap"];
 
@@ -98,6 +83,21 @@ function seedFromBootstrap(utils: ReturnType<typeof trpc.useUtils>, data: Bootst
 export default function WheelApp() {
   const { user, loading, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { t, toggleLang } = useLang();
+  const tabConfig: TabRailItem<Tab>[] = [
+    { id: "wheel", label: t("app.tabs.wheel"), icon: SpinWheelIcon },
+    { id: "restaurants", label: t("app.tabs.places"), icon: Utensils },
+    { id: "history", label: t("app.tabs.history"), icon: History },
+  ];
+  const formatTimeAgo = (d: Date): string => {
+    const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (seconds < 60) return t("app.time.now");
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return t("app.time.minutes", { n: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t("app.time.hours", { n: hours });
+    return t("app.time.days", { n: Math.floor(hours / 24) });
+  };
   const [, navigate] = useLocation();
   const params = useParams<{ wheelId?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("wheel");
@@ -348,7 +348,7 @@ export default function WheelApp() {
     // Record it BEFORE dropping the selection: the entry payload still names
     // this wheel, and without this the auto-open effect hands it straight back.
     if (selectedWheelId != null) unavailableWheelIds.current.add(selectedWheelId);
-    toast.error("That wheel isn't available anymore.");
+    toast.error(t("app.wheelUnavailable"));
     setSelectedWheelId(null);
     navigate("/app", { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,7 +366,7 @@ export default function WheelApp() {
       setConfirmDeleteAccount(false);
       window.location.href = "/";
     },
-    onError: (e) => toast.error(`Couldn't delete your account: ${e.message}`),
+    onError: (e) => toast.error(t("app.account.deleteError", { message: userError(e, t) })),
   });
 
   const createSpin = trpc.spins.create.useMutation();
@@ -383,9 +383,9 @@ export default function WheelApp() {
     onSuccess: () => {
       refetchRestaurants();
       utils.spins.history.invalidate();
-      toast.success("Back on the wheel");
+      toast.success(t("app.reenabled"));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
   const acceptSpin = trpc.spins.accept.useMutation({
     onSuccess: () => {
@@ -435,12 +435,12 @@ export default function WheelApp() {
     const KEY = "lw:lastToastedNotifId";
     if (latest.id <= Number(localStorage.getItem(KEY) || 0)) return;
     localStorage.setItem(KEY, String(latest.id));
-    toast(`${latest.actorName || "Someone"} chose ${latest.restaurantName}`, {
-      description: `${latest.wheelName} · tap the bell to see more`,
-      action: { label: "Directions", onClick: () => openNotificationMap(latest) },
+    toast(t("app.notification.toast", { actor: latest.actorName || t("app.someone"), restaurant: latest.restaurantName }), {
+      description: t("app.notification.desc", { wheel: latest.wheelName }),
+      action: { label: t("app.directions"), onClick: () => openNotificationMap(latest) },
     });
      
-  }, [notifications]);
+  }, [notifications, t]);
 
   // Wheel count drives the first-run experience. Same query key as WheelSelector's
   // list and seeded by bootstrap, so this is a cache read — no extra request.
@@ -484,14 +484,14 @@ export default function WheelApp() {
       // reload or a back-button must not copy the same wheel a second time.
       navigate(`/app/${id}`, { replace: true });
       setCopyPending(false);
-      toast.success(`Copied “${name}” — it's yours to edit now`);
+      toast.success(t("app.copy.success", { name }));
     },
     onError: () => {
       // Release the gate before anything else: leaving copyPending true would
       // hold the "Finding your wheel" loader forever on a wheel that has since
       // gone private or been deleted.
       setCopyPending(false);
-      toast.error("Couldn't copy that wheel — it may be private now.");
+      toast.error(t("app.copy.error"));
     },
   });
 
@@ -626,7 +626,7 @@ export default function WheelApp() {
     if (latest.id !== lastSpinIdRef.current) {
       lastSpinIdRef.current = latest.id;
       if (user && latest.spunBy !== user.id) {
-        toast(`${latest.spunByName ?? "A teammate"} spun ${latest.restaurantName}`, { icon: "🎡" });
+        toast(t("app.realtime.spin", { name: latest.spunByName ?? t("app.teammate"), restaurant: latest.restaurantName }), { icon: "🎡" });
         refetchRestaurants();
       }
     }
@@ -661,9 +661,9 @@ export default function WheelApp() {
     onSuccess: (res) => {
       setSharedText(null);
       refetchRestaurants();
-      toast.success(`Added ${res.added} restaurant${res.added !== 1 ? "s" : ""} to the wheel`);
+      toast.success(t(res.added === 1 ? "app.shared.added.one" : "app.shared.added.other", { n: res.added }));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
 
   // Closed-right-now restaurants come off the wheel entirely (the server enforces
@@ -765,7 +765,7 @@ export default function WheelApp() {
 
   const handleSpin = async () => {
     if (wheelSegments.length === 0) {
-      setSpinError("No restaurants available. Add some or adjust your filters.");
+      setSpinError(t("app.spin.noRestaurants"));
       return;
     }
     if (!selectedWheelId || createSpin.isPending || isSpinning) return;
@@ -785,10 +785,10 @@ export default function WheelApp() {
       });
       setSpinId(id);
       setTargetId(restaurantId);
-    } catch (e) {
+    } catch {
       setIsSpinning(false);
       setTargetId(null);
-      setSpinError(e instanceof Error ? e.message : "Couldn't start the spin. Try again.");
+      setSpinError(t("app.spin.failed"));
     }
   };
 
@@ -862,23 +862,17 @@ export default function WheelApp() {
     const { reason, counts } = spinBlock;
     switch (reason) {
       case "round":
-        return `Nothing to spin — this round's vetoes and avoids rule out every place${
-          counts.round > 0 ? ` (${counts.round})` : ""
-        }.`;
+        return t("app.block.round", { n: counts.round });
       case "filters":
         return maxWalkMinutes != null && selectedTagIds.length === 0
-          ? `Nothing to spin — no place is within a ${maxWalkMinutes}-minute walk.`
-          : "Nothing to spin — your filters rule out every place on this wheel.";
+          ? t("app.block.distance", { n: maxWalkMinutes })
+          : t("app.block.filters");
       case "closed":
-        return `Nothing to spin — every place on this wheel is closed right now${
-          counts.closed > 0 ? ` (${counts.closed})` : ""
-        }.`;
+        return t("app.block.closed", { n: counts.closed });
       case "excluded":
-        return `Nothing to spin — every place was picked recently${
-          counts.excluded > 0 ? ` (${counts.excluded})` : ""
-        } and is still resting.`;
+        return t("app.block.excluded", { n: counts.excluded });
       default:
-        return "Nothing to spin right now.";
+        return t("app.block.default");
     }
   })();
 
@@ -886,12 +880,12 @@ export default function WheelApp() {
     switch (spinBlock.reason) {
       case "round":
         return {
-          label: "Clear this round",
+          label: t("app.block.clearRound"),
           run: () => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId }),
         };
       case "filters":
         return {
-          label: "Clear filters",
+          label: t("app.block.clearFilters"),
           run: () => {
             setSelectedTagIds([]);
             setMaxWalkMinutes(null);
@@ -899,7 +893,7 @@ export default function WheelApp() {
         };
       case "excluded":
         // Re-enabling lives in History, next to the spin that caused it.
-        return { label: "Bring one back", run: () => setActiveTab("history") };
+        return { label: t("app.block.restore"), run: () => setActiveTab("history") };
       default:
         return null;
     }
@@ -931,7 +925,7 @@ export default function WheelApp() {
     // `loading` is false there too — so the real app paints straight away.
     // `loading` must stay INSIDE the `!seeded` guard: gating on it separately is
     // what used to make the persisted cache worthless.
-    return <BrandLoader fullscreen label="Warming up your wheel" />;
+    return <BrandLoader fullscreen label={t("app.loading.warming")} />;
   }
 
   if (!user) return null;
@@ -957,7 +951,7 @@ export default function WheelApp() {
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 orb-wheel flex-shrink-0" style={{ animationDuration: "20s" }} />
           <span className="type-section" style={{ fontSize: 17, color: "var(--ink-warm)" }}>
-            Lunch Wheel
+            {t("app.brand")}
           </span>
         </div>
 
@@ -973,7 +967,7 @@ export default function WheelApp() {
           >
             <DropdownMenuTrigger asChild>
               <button
-                aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
+                aria-label={unreadCount > 0 ? t("app.notifications.unread", { n: unreadCount }) : t("app.notifications.label")}
                 className="relative w-11 h-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors flex-shrink-0"
               >
                 <Bell size={18} />
@@ -986,12 +980,12 @@ export default function WheelApp() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="glass-card w-80 p-0 overflow-hidden">
-              <DropdownMenuLabel className="px-3 py-2.5 text-sm">Notifications</DropdownMenuLabel>
+              <DropdownMenuLabel className="px-3 py-2.5 text-sm">{t("app.notifications.label")}</DropdownMenuLabel>
               <DropdownMenuSeparator className="my-0" />
               <div className="max-h-[60vh] overflow-y-auto">
                 {notifications.length === 0 ? (
                   <div className="px-3 py-6 text-center type-meta text-muted-foreground">
-                    No notifications yet — a teammate's accepted pick shows up here.
+                    {t("app.notifications.empty")}
                   </div>
                 ) : (
                   notifications.map((n) => (
@@ -1004,14 +998,13 @@ export default function WheelApp() {
                         {n.unread && (
                           <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: "var(--brand)" }} />
                         )}
-                        <strong className="font-semibold">{n.actorName || "Someone"}</strong> accepted{" "}
-                        <strong className="font-semibold">{n.restaurantName}</strong>
+                        {t("app.notifications.accepted", { actor: n.actorName || t("app.someone"), restaurant: n.restaurantName })}
                       </span>
                       <span className="type-meta text-muted-foreground">
                         {n.wheelName} · {formatTimeAgo(new Date(n.createdAt))}
                       </span>
                       <span className="type-meta flex items-center gap-1 mt-0.5" style={{ color: "var(--brand-text)" }}>
-                        <MapPin size={11} /> Open in Google Maps
+                        <MapPin size={11} /> {t("app.notifications.maps")}
                       </span>
                     </button>
                   ))
@@ -1022,7 +1015,7 @@ export default function WheelApp() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                aria-label="Account menu"
+                aria-label={t("app.account.menu")}
                 className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-transform active:scale-[var(--press-scale)] hover:brightness-105"
                 style={{ background: "var(--brand-grad)", color: "var(--on-accent)" }}
               >
@@ -1039,19 +1032,23 @@ export default function WheelApp() {
                 <DropdownMenuItem onClick={() => { setSelectedWheelId(defaultWheel.id); navigate(`/app/${defaultWheel.id}`); }} className="gap-2.5">
                   <Star size={14} fill="var(--brand)" style={{ color: "var(--brand-text)" }} />
                   <span className="flex flex-col">
-                    <span>Default wheel</span>
+                    <span>{t("app.account.default")}</span>
                     <span className="type-meta text-muted-foreground truncate max-w-40">{defaultWheel.name}</span>
                   </span>
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem disabled className="gap-2.5">
                   <Star size={14} />
-                  <span className="type-meta">No default wheel — star one in the sidebar</span>
+                  <span className="type-meta">{t("app.account.noDefault")}</span>
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={toggleTheme} className="gap-2.5">
                 {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-                {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                {theme === "dark" ? t("app.theme.light") : t("app.theme.dark")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={toggleLang} className="gap-2.5">
+                <Languages size={14} />
+                {t("lang.switch")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {/* Neutral, not destructive. Signing out is routine and reversible;
@@ -1061,7 +1058,7 @@ export default function WheelApp() {
                 onClick={() => logout().then(() => navigate("/"))}
                 className="gap-2.5"
               >
-                <LogOut size={14} /> Sign out
+                <LogOut size={14} /> {t("app.account.signOut")}
               </DropdownMenuItem>
               {/* Its own rule and an extra gap below Sign out: this is the only
                   action in the app with no undo, and on a phone it otherwise sits
@@ -1074,7 +1071,7 @@ export default function WheelApp() {
                 variant="destructive"
                 className="gap-2.5 mt-0.5 type-meta opacity-65 transition-opacity focus:opacity-100 [&_svg]:size-3.5"
               >
-                <Trash2 /> Delete account
+                <Trash2 /> {t("app.account.delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1084,22 +1081,16 @@ export default function WheelApp() {
       <ConfirmDangerDialog
         open={confirmDeleteAccount}
         onOpenChange={(open) => { if (!open && !deleteAccount.isPending) setConfirmDeleteAccount(false); }}
-        title="DELETE ACCOUNT"
-        confirmWord="DELETE"
-        confirmLabel="Delete my account"
+        title={t("app.account.deleteTitle")}
+        confirmWord={t("app.account.deleteWord")}
+        confirmLabel={t("app.account.deleteConfirm")}
         pending={deleteAccount.isPending}
         onConfirm={() => deleteAccount.mutate()}
         body={
           <>
-            <p>
-              This deletes <strong className="text-foreground">{user.email || user.name}</strong>, every wheel you
-              created, and all of their restaurants and spin history.
-            </p>
-            <p>
-              Wheels you were <em>invited</em> to stay with their owner — you're just removed from the team. Signing in
-              again later creates a brand-new, empty account.
-            </p>
-            <p style={{ color: "var(--destructive)" }}>This cannot be undone.</p>
+            <p>{t("app.account.deleteBody", { account: user.email || user.name || "" })}</p>
+            <p>{t("app.account.deleteInvited")}</p>
+            <p style={{ color: "var(--destructive)" }}>{t("app.irreversible")}</p>
           </>
         }
       />
@@ -1133,9 +1124,9 @@ export default function WheelApp() {
                 open={showFilters}
                 onOpenChange={setShowFilters}
                 tagGroups={[
-                  { label: "Cuisine", items: cuisineTags },
-                  { label: "Food type", items: foodTypeTags },
-                  { label: "Custom", items: customTags },
+                  { label: t("app.filter.cuisine"), items: cuisineTags },
+                  { label: t("app.filter.foodType"), items: foodTypeTags },
+                  { label: t("app.filter.custom"), items: customTags },
                 ]}
                 selectedTagIds={selectedTagIds}
                 onToggleTag={toggleTag}
@@ -1144,7 +1135,7 @@ export default function WheelApp() {
                 onChangeMaxWalkMinutes={setMaxWalkMinutes}
                 matchCount={filteredRestaurants.length}
                 totalCount={restaurants?.length ?? 0}
-                emptyMessage="No restaurants match your filters. Try removing some."
+                emptyMessage={t("app.filter.empty")}
               />
             ) : undefined
           }
@@ -1158,7 +1149,7 @@ export default function WheelApp() {
               gradient, no glow — persimmon is the only saturated colour and it
               is flat), and 56px of height like every other control. */}
           <div className="hidden md:flex px-4 py-2.5 flex-shrink-0 md:justify-center xl:justify-start">
-            <TabRail items={TAB_CONFIG} value={activeTab} onChange={setActiveTab} variant="rail" />
+            <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="rail" />
           </div>
 
           {/* ── SHARED TEXT BANNER ── */}
@@ -1169,7 +1160,7 @@ export default function WheelApp() {
             >
               <MapPin size={14} className="flex-shrink-0" style={{ color: "var(--brand-2)" }} />
               <span className="text-sm flex-1 min-w-0 truncate">
-                Add <strong>{sharedText}</strong>{selectedWheelId ? "" : " — pick a wheel first"}
+                {t("app.shared.prompt", { name: sharedText })}{selectedWheelId ? "" : ` — ${t("app.shared.pickFirst")}`}
               </span>
               <button
                 onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
@@ -1185,7 +1176,7 @@ export default function WheelApp() {
                   letterSpacing: "0.05em",
                 }}
               >
-                {addShared.isPending ? "Adding…" : "Add"}
+                {addShared.isPending ? t("app.shared.adding") : t("app.shared.add")}
               </button>
               <button onClick={() => setSharedText(null)} className="p-1 rounded text-muted-foreground hover:text-foreground flex-shrink-0">
                 <X size={14} />
@@ -1217,7 +1208,7 @@ export default function WheelApp() {
                    unlabelled orb on an otherwise empty screen reads as a page
                    that failed rather than one that is working. */
                 <div className="flex grow items-center justify-center p-8">
-                  <BrandLoader label={copyPending ? "Copying this wheel" : "Finding your wheel"} size={64} />
+                  <BrandLoader label={copyPending ? t("app.loading.copying") : t("app.loading.finding")} size={64} />
                 </div>
               ) : firstRun ? (
                 /* First-run — no wheels yet. Nearby search IS the onboarding:
@@ -1241,9 +1232,9 @@ export default function WheelApp() {
                   <div className="w-20 h-20 orb-wheel opacity-20" />
                   <div>
                     <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
-                      No wheel selected
+                      {t("app.noWheel.title")}
                     </p>
-                    <p className="text-sm text-muted-foreground">Pick a wheel from the menu or create a new one</p>
+                    <p className="text-sm text-muted-foreground">{t("app.noWheel.body")}</p>
                   </div>
                 </div>
               )
@@ -1288,8 +1279,8 @@ export default function WheelApp() {
                         )}
                         <button
                           onClick={() => settingsOpenerRef.current?.(selectedWheelId)}
-                          aria-label="Wheel settings"
-                          title={isOwner ? "Wheel settings" : "Wheel settings (view only)"}
+                          aria-label={t("app.settings.aria")}
+                          title={isOwner ? t("app.settings.title") : t("app.settings.viewOnly")}
                           className="flex items-center justify-center h-11 w-11 rounded-full text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors active:scale-90"
                         >
                           <Settings size={16} />
@@ -1338,7 +1329,7 @@ export default function WheelApp() {
                          that failed to draw its labels. The pill below stands in
                          for the SPIN button. */
                       <div className="flex flex-col items-center gap-8 py-16 w-full md:col-start-1 md:row-start-1 md:row-span-5 xl:col-auto xl:row-auto">
-                        <BrandLoader label="Warming up your wheel" size={72} />
+                        <BrandLoader label={t("app.loading.warming")} size={72} />
                         {/* Token background, not bg-white/5: on the light theme a
                             5%-white pill over a near-white page is invisible, so
                             the SPIN placeholder simply wasn't there. */}
@@ -1347,13 +1338,13 @@ export default function WheelApp() {
                     ) : restaurantsError && !accessDeniedCode ? (
                       <div className="flex flex-col items-center gap-4 py-12 text-center">
                         <AlertTriangle size={32} className="text-amber-500/60" />
-                        <p className="text-sm text-muted-foreground">Couldn't load restaurants: {restaurantsError.message}</p>
+                        <p className="text-sm text-muted-foreground">{t("app.loadRestaurants", { message: restaurantsError.message })}</p>
                         <button
                           onClick={() => refetchRestaurants()}
                           className="glass-chip flex items-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
                           style={{ minHeight: 56, color: "var(--ink-warm)", fontSize: 15, fontWeight: 500 }}
                         >
-                          <RefreshCw size={15} /> Retry
+                          <RefreshCw size={15} /> {t("app.retry")}
                         </button>
                       </div>
                     ) : (
@@ -1373,11 +1364,7 @@ export default function WheelApp() {
                           receded={showResult}
                           emptyHint={
                             (restaurants?.length ?? 0) > 0 ? (
-                              <>
-                                No places in play
-                                <br />
-                                right now
-                              </>
+                              t("app.wheel.empty")
                             ) : undefined
                           }
                         />
@@ -1398,9 +1385,9 @@ export default function WheelApp() {
                                 letterSpacing: "0.05em",
                               }}
                             >
-                              <Plus size={17} /> Add restaurants
+                              <Plus size={17} /> {t("app.wheel.add")}
                             </button>
-                            <p className="type-meta text-muted-foreground">Add a few places, then spin to decide.</p>
+                            <p className="type-meta text-muted-foreground">{t("app.wheel.addHelp")}</p>
                           </div>
                         ) : (
                           /* Gone while the camera is in, not merely receded.
@@ -1424,7 +1411,7 @@ export default function WheelApp() {
                                 where the names are before the user looks for them. */}
                             {pointerTier.indexOnly && (
                               <p className="type-meta" style={{ color: "var(--muted-foreground)" }}>
-                                Names arrive as the wheel passes the pointer, and in full when it lands.
+                                {t("app.wheel.indexHelp")}
                               </p>
                             )}
 
@@ -1443,7 +1430,7 @@ export default function WheelApp() {
                                 transitionDuration: "var(--dur-tap)",
                               }}
                             >
-                              {isSpinning || createSpin.isPending ? "Spinning…" : "Spin the wheel"}
+                              {isSpinning || createSpin.isPending ? t("app.wheel.spinning") : t("app.wheel.spin")}
                             </button>
 
                             {/* The muted line under the stack: how many are on the
@@ -1489,14 +1476,13 @@ export default function WheelApp() {
                               </div>
                             ) : (
                               <p className="type-meta text-center" style={{ color: "var(--muted-foreground)" }}>
-                                <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{filteredRestaurants.length}</span>
-                                {" "}restaurant{filteredRestaurants.length !== 1 ? "s" : ""} on the wheel
+                                {t(filteredRestaurants.length === 1 ? "app.wheel.count.one" : "app.wheel.count.other", { n: filteredRestaurants.length })}
                                 {closedCount > 0 && (
                                   <>
                                     {" · "}
                                     <span className="inline-flex items-center gap-1">
                                       <Clock3 size={12} className="flex-shrink-0" />
-                                      {closedCount} closed now
+                                      {t("app.wheel.closed", { n: closedCount })}
                                     </span>
                                   </>
                                 )}
@@ -1520,7 +1506,7 @@ export default function WheelApp() {
                               style={{ minHeight: 56 }}
                             >
                               <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
-                                <Clock size={12} /> Skipping (picked recently)
+                                <Clock size={12} /> {t("app.excluded.title")}
                                 <span
                                   className="px-2 py-0.5 type-meta font-semibold"
                                   style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
@@ -1548,7 +1534,7 @@ export default function WheelApp() {
                                             color: "var(--brand-text)",
                                           }}
                                         >
-                                          back in {formatExclusionTimeLeft(new Date(r.excludedUntil))}
+                                          {t("app.excluded.backIn", { time: formatExclusionTimeLeft(new Date(r.excludedUntil)) })}
                                         </span>
                                       )}
                                       {/* 44px, not the row's own height: this is a
@@ -1560,7 +1546,7 @@ export default function WheelApp() {
                                           reenableRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: r.id })
                                         }
                                         disabled={reenableRestaurant.isPending}
-                                        aria-label={`Put ${r.name} back on the wheel now`}
+                                        aria-label={t("app.excluded.restoreAria", { name: r.name })}
                                         className="flex items-center justify-center gap-1.5 px-3 transition-colors active:scale-[var(--press-scale)] disabled:opacity-50"
                                         style={{
                                           minHeight: 44,
@@ -1571,7 +1557,7 @@ export default function WheelApp() {
                                           fontWeight: 500,
                                         }}
                                       >
-                                        <RefreshCw size={11} /> Now
+                                        <RefreshCw size={11} /> {t("app.excluded.now")}
                                       </button>
                                     </span>
                                   </li>
@@ -1621,7 +1607,7 @@ export default function WheelApp() {
               paddingTop: "var(--dock-lift)",
               paddingBottom: "var(--dock-floor)",
             }}
-            aria-label="Views"
+            aria-label={t("app.views")}
           >
             {/* No scrim. This wrapper used to paint
                 `linear-gradient(to top, var(--background) 55%, transparent)` to
@@ -1630,7 +1616,7 @@ export default function WheelApp() {
                 blurred flat gradient is the same flat gradient, so the dock
                 could only ever read as a slightly paler rectangle. The list
                 running under it IS the material. */}
-            <TabRail items={TAB_CONFIG} value={activeTab} onChange={setActiveTab} variant="dock" />
+            <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="dock" />
           </nav>
         </div>
       </div>
@@ -1653,7 +1639,7 @@ export default function WheelApp() {
               walkSeconds != null ? (
                 <span className="flex items-center gap-1.5">
                   <Footprints size={14} className="flex-shrink-0" />
-                  {formatWalk(walkSeconds / 60)} from {wheelData?.originLabel || "Office"}
+                  {formatWalk(walkSeconds / 60)}・{t("app.result.from", { name: wheelData?.originLabel || "Office" })}
                 </span>
               ) : null
             }
@@ -1667,19 +1653,16 @@ export default function WheelApp() {
               <div className="glass-chip flex items-start gap-2.5 px-4 py-3 w-full text-left">
                 <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand-text)" }} />
                 <span className="type-meta" style={{ color: "var(--body)" }}>
-                  We&apos;ll skip{" "}
-                  <span className="font-semibold" style={{ color: "var(--foreground)" }}>
-                    {spinResult.label}
-                  </span>{" "}
-                  for the next {wheelData.exclusionDays}{" "}
-                  {wheelData.exclusionDays === 1 ? "day" : "days"} so you don&apos;t get it twice.
-                  Change that in wheel settings.
+                  {t(wheelData.exclusionDays === 1 ? "app.result.exclusion.one" : "app.result.exclusion.other", {
+                    name: spinResult.label,
+                    n: wheelData.exclusionDays,
+                  })}
                 </span>
               </div>
             )}
             <div className="flex items-center gap-3 w-full">
               <span className="type-eyebrow" style={{ color: "var(--muted-foreground)" }}>
-                Rate it
+                {t("app.result.rate")}
               </span>
               <StarRating
                 value={myStarsFor(spinResult.id)}

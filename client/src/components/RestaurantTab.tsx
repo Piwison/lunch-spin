@@ -26,6 +26,8 @@ import FilterBar from "@/components/FilterBar";
 import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
 import NearbyDialog from "@/components/NearbyDialog";
+import { useLang } from "@/i18n";
+import { userError } from "@/lib/userError";
 
 /** Loose check: does this string look like a Google Maps link worth resolving? */
 const looksLikeMapLink = (s: string) =>
@@ -39,11 +41,7 @@ const CURATED_CUISINE = ["Japanese", "Chinese", "Italian", "Thai", "Korean"];
 const CURATED_FOOD_TYPE = ["Pizza", "Burgers", "Noodles", "Salad", "Sandwiches"];
 
 type TagCategory = "cuisine" | "food_type" | "custom";
-const TAG_CATEGORY_OPTIONS: { value: TagCategory; label: string }[] = [
-  { value: "cuisine", label: "Cuisine" },
-  { value: "food_type", label: "Food Type" },
-  { value: "custom", label: "Custom" },
-];
+const TAG_CATEGORY_OPTIONS: TagCategory[] = ["cuisine", "food_type", "custom"];
 
 /** Curated-first ordering: named presets in their given order, then whatever's left. */
 function splitCurated<T extends { name: string }>(items: T[], curatedNames: string[]) {
@@ -90,6 +88,7 @@ function placeSearchMapUrl(placeId: string, name: string): string {
 }
 
 export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, distanceEnabled, originLabel }: RestaurantTabProps) {
+  const { t } = useLang();
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<RestaurantForm>(EMPTY_FORM);
@@ -129,12 +128,12 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   };
 
   const addRestaurant = trpc.restaurants.add.useMutation({
-    onSuccess: () => { invalidate(); setShowAdd(false); setForm(EMPTY_FORM); setFormError(null); toast.success("Restaurant added!"); },
-    onError: (e) => setFormError(e.message),
+    onSuccess: () => { invalidate(); setShowAdd(false); setForm(EMPTY_FORM); setFormError(null); toast.success(t("places.added")); },
+    onError: (e) => setFormError(userError(e, t)),
   });
   const updateRestaurant = trpc.restaurants.update.useMutation({
-    onSuccess: () => { invalidate(); setEditId(null); setForm(EMPTY_FORM); setFormError(null); toast.success("Restaurant updated!"); },
-    onError: (e) => setFormError(e.message),
+    onSuccess: () => { invalidate(); setEditId(null); setForm(EMPTY_FORM); setFormError(null); toast.success(t("places.updated")); },
+    onError: (e) => setFormError(userError(e, t)),
   });
   // Pull weekly opening hours for provider-sourced places. Reports the
   // misconfigured-key case explicitly instead of a silent success (the trap that
@@ -143,28 +142,28 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
     onSuccess: (res) => {
       invalidate();
       if (!res.configured) {
-        toast.error("Place lookups aren't configured on the server");
+        toast.error(t("places.hours.config"));
       } else if (res.providerFailed) {
-        toast.error("Couldn't reach Google Places — check the server's Maps API key");
+        toast.error(t("places.hours.provider"));
       } else if (res.updated === 0) {
-        toast.success("Opening hours are already up to date");
+        toast.success(t("places.hours.current"));
       } else {
-        toast.success(`Updated opening hours for ${res.updated} place${res.updated === 1 ? "" : "s"}`);
+        toast.success(t(res.updated === 1 ? "places.hours.updated.one" : "places.hours.updated.other", { n: res.updated }));
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
   const rateRestaurant = trpc.restaurants.rate.useMutation({
     onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
-    onError: () => toast.error("Couldn't save your rating"),
+    onError: () => toast.error(t("places.ratingError")),
   });
   const deleteRestaurant = trpc.restaurants.delete.useMutation({
-    onSuccess: () => { invalidate(); toast.success("Restaurant removed"); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: () => { invalidate(); toast.success(t("places.removed")); },
+    onError: (e) => toast.error(userError(e, t)),
   });
   const createTag = trpc.tags.createCustom.useMutation({
-    onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setNewTagCategory("custom"); setShowTagCreate(false); setTagError(null); toast.success("Tag created!"); },
-    onError: (e) => setTagError(e.message),
+    onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setNewTagCategory("custom"); setShowTagCreate(false); setTagError(null); toast.success(t("places.tagCreated")); },
+    onError: (e) => setTagError(userError(e, t)),
   });
   const recomputeDistances = trpc.wheels.recomputeDistances.useMutation({
     onSuccess: (res) => {
@@ -175,12 +174,14 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       // search). Surface it clearly instead of a blanket success toast that
       // would otherwise look identical to "nothing needed updating".
       if (res.matrixFailed) {
-        toast.error("Couldn't reach the Distance Matrix service — check it's enabled on the server's Google Maps API key.");
+        toast.error(t("places.distance.error"));
         return;
       }
-      toast.success(`Distances updated — ${res.computed} located${res.unlocatable ? `, ${res.unlocatable} skipped` : ""}`);
+      toast.success(res.unlocatable
+        ? t("places.distance.updatedSkipped", { computed: res.computed, skipped: res.unlocatable })
+        : t("places.distance.updated", { computed: res.computed }));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
 
   // Paste a Google Maps link → look the place up → prefill the name (and a
@@ -210,10 +211,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       const kind = err instanceof GeoError ? err.kind : "failed";
       setNameGeoError(
         kind === "unsupported"
-          ? "This device can't share its location, so search isn't available — type the name and add it."
+          ? t("places.geo.unsupported")
           : kind === "denied"
-            ? "Search needs your location to find places near you. You can still add the name by hand."
-            : "Couldn't get your location. Try again, or add the name by hand.",
+            ? t("places.geo.denied")
+            : t("places.geo.failed"),
       );
     } finally {
       setLocatingForName(false);
@@ -248,9 +249,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         };
       });
       setFormError(null);
-      toast.success(`Found: ${place.name}`);
+      toast.success(t("places.found", { name: place.name }));
     },
-    onError: (e) => setFormError(e.message),
+    onError: (e) => setFormError(userError(e, t)),
   });
 
   // Full catalog — for the add/edit form, where you can assign any tag.
@@ -357,9 +358,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       showAll: boolean;
       setShowAll: (v: boolean) => void;
     }[] = [
-      { label: "Cuisine", ...cuisineSplit, showAll: showAllCuisine, setShowAll: setShowAllCuisine },
-      { label: "Food Type", ...foodTypeSplit, showAll: showAllFoodType, setShowAll: setShowAllFoodType },
-      { label: "Custom", curated: customTags, rest: [], showAll: false, setShowAll: () => {} },
+      { label: t("places.tag.cuisine"), ...cuisineSplit, showAll: showAllCuisine, setShowAll: setShowAllCuisine },
+      { label: t("places.tag.foodType"), ...foodTypeSplit, showAll: showAllFoodType, setShowAll: setShowAllFoodType },
+      { label: t("places.tag.custom"), curated: customTags, rest: [], showAll: false, setShowAll: () => {} },
     ];
     return (
       <div className="flex flex-col gap-2">
@@ -377,7 +378,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     className="px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors duration-150"
                     style={{ borderRadius: "var(--radius-chip)", border: "1px dashed var(--border)", fontSize: 15, fontWeight: 500 }}
                   >
-                    {showAll ? "Show less" : `+${rest.length} more`}
+                    {showAll ? t("places.tag.showLess") : t("places.tag.more", { n: rest.length })}
                   </button>
                 )}
               </div>
@@ -389,7 +390,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           onClick={() => setShowTagCreate(true)}
           className="self-start flex items-center gap-1 type-meta text-muted-foreground hover:text-foreground transition-colors mt-1"
         >
-          <Plus size={12} /> Create tag
+          <Plus size={12} /> {t("places.tag.create")}
         </button>
       </div>
     );
@@ -400,9 +401,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>Places</h2>
+          <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>{t("places.title")}</h2>
           {restaurants && restaurants.length > 0 && (
-            <p className="type-meta text-muted-foreground mt-0.5">{restaurants.length} place{restaurants.length !== 1 ? "s" : ""} on this wheel</p>
+            <p className="type-meta text-muted-foreground mt-0.5">{t(restaurants.length === 1 ? "places.count.one" : "places.count.other", { n: restaurants.length })}</p>
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -413,7 +414,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               what kept the best thing in the app hidden. */}
           <button
             onClick={() => setShowNearby(true)}
-            title="Add nearby restaurants"
+            title={t("places.nearby.title")}
             className="flex items-center justify-center gap-2 px-5 transition-colors duration-150 active:scale-[var(--press-scale)]"
             style={{
               minHeight: 56,
@@ -425,7 +426,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               letterSpacing: "0.05em",
             }}
           >
-            <Navigation size={16} /> Nearby
+            <Navigation size={16} /> {t("places.nearby.action")}
           </button>
           {/* IMPORT (paste a list of names) was removed: ADD NEARBY and the
               name search in the add form cover the same ground with real place
@@ -433,7 +434,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               starter pack still uses it. */}
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-            title="Add restaurant"
+            title={t("places.add.title")}
             className="flex items-center justify-center gap-2 px-4 transition-colors duration-150 active:scale-[var(--press-scale)] hover:bg-white/5"
             style={{
               minHeight: 56,
@@ -447,7 +448,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               letterSpacing: "0.05em",
             }}
           >
-            <Plus size={16} /> <span className="hidden sm:inline">Add</span>
+            <Plus size={16} /> <span className="hidden sm:inline">{t("places.add.action")}</span>
           </button>
         </div>
       </div>
@@ -464,7 +465,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           }}
         >
           <Tag size={12} className="flex-shrink-0" />
-          You can add and edit restaurants. Only the wheel creator can delete.
+          {t("places.memberNote")}
         </div>
       )}
 
@@ -485,7 +486,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             {distanceEnabled && (
               <span className="flex items-center gap-1">
                 <Footprints size={12} className="flex-shrink-0" />
-                from <strong className="text-foreground font-semibold">{originLabel || "Office"}</strong>
+                {t("places.meta.from", { name: originLabel || "Office" })}
               </span>
             )}
             {/* Only surface hours when they say something actionable. */}
@@ -494,7 +495,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 {distanceEnabled && <span className="opacity-40">·</span>}
                 <span className="flex items-center gap-1">
                   <Clock3 size={12} className="flex-shrink-0" />
-                  {closedCount} closed now
+                  {t("places.meta.closed", { n: closedCount })}
                 </span>
               </>
             )}
@@ -509,7 +510,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   }}
                 >
                   <Clock3 size={11} className="flex-shrink-0" />
-                  {noHoursCount} need hours
+                  {t("places.meta.needHours", { n: noHoursCount })}
                 </span>
               </>
             )}
@@ -519,7 +520,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    aria-label="List tools"
+                    aria-label={t("places.tools.label")}
                     className="flex items-center justify-center h-11 w-11 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
                   >
                     {refreshHours.isPending || recomputeDistances.isPending ? (
@@ -536,7 +537,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       className="gap-2.5"
                     >
                       <Star size={14} style={{ fill: sortByRating ? "var(--star)" : "none", color: "var(--star-edge)" }} />
-                      Top rated first
+                      {t("places.tools.topRated")}
                       {sortByRating && <Check size={13} className="ml-auto" />}
                     </DropdownMenuItem>
                   )}
@@ -546,7 +547,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       className="gap-2.5"
                     >
                       <ArrowDownWideNarrow size={14} />
-                      Nearest first
+                      {t("places.tools.nearest")}
                       {sortNearest && <Check size={13} className="ml-auto" />}
                     </DropdownMenuItem>
                   )}
@@ -558,7 +559,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       className="gap-2.5"
                     >
                       <Clock3 size={14} />
-                      Refresh opening hours
+                      {t("places.tools.refreshHours")}
                     </DropdownMenuItem>
                   )}
                   {distanceEnabled && (
@@ -568,7 +569,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       className="gap-2.5"
                     >
                       <RefreshCw size={14} />
-                      Recompute distances
+                      {t("places.tools.refreshDistance")}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
@@ -583,9 +584,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         open={showFilters}
         onOpenChange={setShowFilters}
         tagGroups={[
-          { label: "CUISINE", items: usedCuisineTags },
-          { label: "FOOD TYPE", items: usedFoodTypeTags },
-          { label: "CUSTOM", items: usedCustomTags },
+          { label: t("places.filter.cuisine"), items: usedCuisineTags },
+          { label: t("places.filter.foodType"), items: usedFoodTypeTags },
+          { label: t("places.filter.custom"), items: usedCustomTags },
         ]}
         selectedTagIds={selectedTagIds}
         onToggleTag={toggleFilterTag}
@@ -594,7 +595,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         onChangeMaxWalkMinutes={setMaxWalkMinutes}
         matchCount={visibleRestaurants.length}
         totalCount={restaurants?.length ?? 0}
-        emptyMessage="No restaurants match your filters."
+        emptyMessage={t("places.filter.empty")}
       />
 
       {/* Restaurant list */}
@@ -616,9 +617,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             <MapPin size={26} style={{ color: "var(--brand-text)" }} />
           </div>
           <div>
-            <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>No places yet</p>
+            <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>{t("places.empty.title")}</p>
             <p className="text-sm text-muted-foreground max-w-xs">
-              Find real places near you, sorted by walking time — or add them yourself.
+              {t("places.empty.body")}
             </p>
           </div>
           <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
@@ -635,7 +636,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 letterSpacing: "0.05em",
               }}
             >
-              <Navigation size={16} /> Add nearby
+              <Navigation size={16} /> {t("places.empty.nearby")}
             </button>
             <button
               onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
@@ -651,7 +652,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 letterSpacing: "0.05em",
               }}
             >
-              <Plus size={15} /> Add one by hand
+              <Plus size={15} /> {t("places.empty.manual")}
             </button>
           </div>
         </div>
@@ -678,7 +679,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               {/* Color swatch — matches wheel segment */}
               <div
                 className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 transition-all duration-200"
-                title={primary?.name ? `Tagged "${primary.name}"` : "Wheel color"}
+                title={primary?.name ? t("places.row.tagged", { name: primary.name }) : t("places.row.color")}
                 style={{ background: dotColor }}
               />
 
@@ -694,13 +695,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                         border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
                       }}
                     >
-                      excluded
+                      {t("places.row.excluded")}
                     </span>
                   )}
                   {distanceEnabled && (
                     <span className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium text-muted-foreground" style={{ background: "var(--muted)" }}>
                       <Footprints size={10} className="flex-shrink-0" />
-                      {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : "no location"}
+                      {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : t("places.row.noLocation")}
                     </span>
                   )}
                   {/* Opening hours. "unknown" shows nothing — those places stay on
@@ -709,9 +710,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     <span
                       className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium"
                       style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
-                      title="Closed right now — off the wheel until it reopens"
+                      title={t("places.row.closedTitle")}
                     >
-                      <Clock3 size={10} className="flex-shrink-0" /> closed now
+                      <Clock3 size={10} className="flex-shrink-0" /> {t("places.row.closed")}
                     </span>
                   )}
                   {r.openStatus === "closing_soon" && (
@@ -722,10 +723,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                         color: "var(--destructive)",
                         border: "1px solid oklch(from var(--destructive) l c h / 0.25)",
                       }}
-                      title="Still on the wheel, but closing soon"
+                      title={t("places.row.closingTitle")}
                     >
                       <Clock3 size={10} className="flex-shrink-0" />
-                      {r.minutesUntilClose != null ? `closes in ${r.minutesUntilClose}m` : "closing soon"}
+                      {r.minutesUntilClose != null ? t("places.row.closesIn", { n: r.minutesUntilClose }) : t("places.row.closing")}
                     </span>
                   )}
                 </div>
@@ -756,7 +757,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 <button
                   onClick={() => setDetailId(r.id)}
                   className="flex items-center justify-center h-11 w-11 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-foreground transition-colors duration-150 active:scale-[var(--press-scale)]"
-                  aria-label={`Open ${r.name}`}
+                  aria-label={t("places.row.openDetails", { name: r.name })}
                 >
                   <MoreVertical size={18} />
                 </button>
@@ -797,7 +798,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   )}
                   {r.mapUrl && (
                     <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand-text)", fontSize: 15, fontWeight: 500 }}>
-                      <Navigation size={12} />Directions
+                      <Navigation size={12} />{t("places.detail.directions")}
                     </a>
                   )}
                 </div>
@@ -808,35 +809,35 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 <div className="mt-5 flex items-center gap-2 type-meta">
                   <Clock3 size={13} className="flex-shrink-0 text-muted-foreground" />
                   {r.openStatus === "closed" ? (
-                    <span className="text-muted-foreground">Closed right now — off the wheel until it reopens</span>
+                    <span className="text-muted-foreground">{t("places.detail.closed")}</span>
                   ) : r.openStatus === "closing_soon" ? (
                     <span style={{ color: "var(--destructive)" }} className="font-semibold">
-                      {r.minutesUntilClose != null ? `Closing in ~${r.minutesUntilClose} min` : "Closing soon"}
+                      {r.minutesUntilClose != null ? t("places.detail.closingIn", { n: r.minutesUntilClose }) : t("places.detail.closing")}
                     </span>
                   ) : r.openStatus === "open" ? (
-                    <span style={{ color: "var(--ok)" }} className="font-semibold">Open now</span>
+                    <span style={{ color: "var(--ok)" }} className="font-semibold">{t("places.detail.open")}</span>
                   ) : (
-                    <span className="text-muted-foreground">Hours unknown — always on the wheel</span>
+                    <span className="text-muted-foreground">{t("places.detail.hoursUnknown")}</span>
                   )}
                 </div>
 
                 <div className="mt-6">
-                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>Team rating</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>{t("places.detail.teamRating")}</div>
                   {avg == null ? (
-                    <p className="text-sm text-muted-foreground">No ratings yet — be the first.</p>
+                    <p className="text-sm text-muted-foreground">{t("places.detail.noRatings")}</p>
                   ) : (
                     <div className="flex items-center gap-3">
                       <span className="type-section tabular-nums" style={{ fontSize: 34, color: "var(--ink-warm)" }}>{avg.toFixed(1)}</span>
                       <div>
                         <StarRating value={avg} size={18} />
-                        <div className="type-meta text-muted-foreground mt-0.5">{count} rating{count === 1 ? "" : "s"}</div>
+                        <div className="type-meta text-muted-foreground mt-0.5">{t(count === 1 ? "places.detail.rating.one" : "places.detail.rating.other", { n: count })}</div>
                       </div>
                     </div>
                   )}
                 </div>
 
                 <div className="mt-6">
-                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>Your rating</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>{t("places.detail.yourRating")}</div>
                   <StarRating
                     value={mine}
                     size={30}
@@ -851,7 +852,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
                     style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "var(--border)", color: "var(--ink-warm)", fontSize: 15, fontWeight: 500 }}
                   >
-                    <Pencil size={16} /> Edit
+                    <Pencil size={16} /> {t("places.detail.edit")}
                   </button>
                   {isOwner && (
                     <button
@@ -868,11 +869,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
                       style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)", fontSize: 15, fontWeight: 500 }}
                     >
-                      <Trash2 size={16} /> Delete
+                      <Trash2 size={16} /> {t("places.detail.delete")}
                     </button>
                   )}
                 </div>
-                {!isOwner && <p className="type-meta text-muted-foreground text-center mt-2">Only the wheel creator can delete.</p>}
+                {!isOwner && <p className="type-meta text-muted-foreground text-center mt-2">{t("places.detail.ownerDelete")}</p>}
               </div>
             );
           })()}
@@ -884,7 +885,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         <DialogContent className="glass-sheet max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>
-              {editId !== null ? "Edit place" : "Add a place"}
+              {editId !== null ? t("places.form.editTitle") : t("places.form.addTitle")}
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 pt-2">
@@ -896,7 +897,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             <div className="flex flex-col gap-1.5">
               <div className="flex gap-2">
                 <Input
-                  placeholder="Restaurant name"
+                  placeholder={t("places.form.name")}
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   onKeyDown={(e) => {
@@ -911,7 +912,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   type="button"
                   onClick={searchByName}
                   disabled={!form.name.trim() || nameSearchBusy}
-                  title="Search for this restaurant near you"
+                  title={t("places.form.searchTitle")}
                   className="flex-shrink-0"
                   style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
                 >
@@ -929,12 +930,18 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   className="type-meta px-1 leading-relaxed"
                   style={{ color: nameAlert.quota ? "var(--brand-text)" : "var(--destructive)" }}
                 >
-                  {nameAlert.message}
+                  {nameAlert.quota
+                    ? t("places.provider.quota")
+                    : nameAlert.config
+                      ? t("places.provider.config")
+                      : nameAlert.retryable
+                        ? t("places.provider.transient")
+                        : t("places.provider.request")}
                 </p>
               )}
               {nameSearch.data && nameResults.length === 0 && !nameSearchBusy && (
                 <p className="type-meta text-muted-foreground px-1">
-                  Nothing matching that near you — type the name and add it anyway.
+                  {t("places.form.noMatch")}
                 </p>
               )}
 
@@ -965,7 +972,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               )}
             </div>
             <Textarea
-              placeholder="Notes (optional)"
+              placeholder={t("places.form.notes")}
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               className="bg-secondary/50 border-border/50 resize-none"
@@ -978,7 +985,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   <Input
                     type="url"
                     inputMode="url"
-                    placeholder="Paste a Google Maps link"
+                    placeholder={t("places.form.mapLink")}
                     value={form.mapUrl}
                     onChange={(e) => setForm((f) => ({ ...f, mapUrl: e.target.value }))}
                     className="bg-secondary/50 border-border/50 pl-9"
@@ -988,17 +995,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   type="button"
                   onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim() }); }}
                   disabled={!looksLikeMapLink(form.mapUrl) || resolveLink.isPending}
-                  title="Look up the place name from this Google Maps link"
+                  title={t("places.form.lookupTitle")}
                   className="flex-shrink-0"
                   style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
                 >
                   {resolveLink.isPending
                     ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                    : "Look up"}
+                    : t("places.form.lookup")}
                 </Button>
               </div>
               <p className="type-meta text-muted-foreground px-1">
-                Paste a Google Maps link and tap <span className="font-medium">Look up</span> to fill the name automatically — the link also powers "DIRECTIONS" after a spin.
+                {t("places.form.mapHelp")}
               </p>
             </div>
             <TagSelector />
@@ -1018,8 +1025,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               }}
             >
               {addRestaurant.isPending || updateRestaurant.isPending ? (
-                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{editId !== null ? "Saving…" : "Adding…"}</span>
-              ) : editId !== null ? "Save changes" : "Add place"}
+                <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{editId !== null ? t("places.form.saving") : t("places.form.adding")}</span>
+              ) : editId !== null ? t("places.form.save") : t("places.form.add")}
             </Button>
           </div>
         </DialogContent>
@@ -1037,11 +1044,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       <Dialog open={showTagCreate} onOpenChange={setShowTagCreate}>
         <DialogContent className="glass-sheet max-w-sm">
           <DialogHeader>
-            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>Create tag</DialogTitle>
+            <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("places.tagDialog.title")}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3 pt-2">
             <div className="flex gap-1.5">
-              {TAG_CATEGORY_OPTIONS.map(({ value, label }) => (
+              {TAG_CATEGORY_OPTIONS.map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -1056,13 +1063,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     fontWeight: 500,
                   }}
                 >
-                  {label}
+                  {t(value === "cuisine" ? "places.tag.cuisine" : value === "food_type" ? "places.tag.foodType" : "places.tag.custom")}
                 </button>
               ))}
             </div>
             <div className="flex gap-2">
               <Input
-                placeholder="Tag name"
+                placeholder={t("places.tagDialog.name")}
                 value={newTagName}
                 onChange={(e) => { setNewTagName(e.target.value); setTagError(null); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { setTagError(null); createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); } }}
@@ -1089,8 +1096,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       <ConfirmDangerDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => { if (!open && !deleteRestaurant.isPending) setPendingDelete(null); }}
-        title="Remove this place?"
-        confirmLabel="Remove it"
+        title={t("places.delete.title")}
+        confirmLabel={t("places.delete.confirm")}
         pending={deleteRestaurant.isPending}
         onConfirm={() => {
           if (pendingDelete) deleteRestaurant.mutate({ id: pendingDelete.id });
@@ -1098,11 +1105,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         }}
         body={
           <>
-            <p>
-              <strong className="text-foreground">{pendingDelete?.name}</strong> comes off this wheel for
-              everyone, along with its ratings.
-            </p>
-            <p>This can&apos;t be undone.</p>
+            <p>{t("places.delete.body", { name: pendingDelete?.name ?? "" })}</p>
+            <p>{t("places.delete.irreversible")}</p>
           </>
         }
       />

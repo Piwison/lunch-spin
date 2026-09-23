@@ -2,6 +2,7 @@ import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { AlertTriangle, ChevronDown, Footprints, SlidersHorizontal, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useLang } from "@/i18n";
 
 interface FilterTag {
   id: number;
@@ -70,10 +71,11 @@ export const FilterTrigger = forwardRef<
   HTMLButtonElement,
   { activeCount: number } & ComponentPropsWithoutRef<"button">
 >(function FilterTrigger({ activeCount, ...rest }, ref) {
+  const { t } = useLang();
   return (
     <button
       ref={ref}
-      aria-label={activeCount > 0 ? `Filter (${activeCount} active)` : "Filter"}
+      aria-label={activeCount > 0 ? t("wheel.filter.active", { n: activeCount }) : t("wheel.filter.label")}
       className="relative flex-shrink-0 flex items-center justify-center glass-bar transition-transform active:scale-[var(--press-scale)]"
       style={{
         minHeight: 56,
@@ -124,6 +126,7 @@ export default function FilterBar({
   emptyMessage,
   variant = "inline",
 }: FilterBarProps) {
+  const { t } = useLang();
   const hasTags = tagGroups.some((g) => g.items.length > 0);
   if (totalCount === 0 || (!hasTags && !distanceEnabled)) return null;
 
@@ -176,24 +179,24 @@ export default function FilterBar({
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="type-eyebrow flex items-center gap-1.5" style={{ color: "var(--body-warm)" }}>
-                  <Footprints size={12} className="flex-shrink-0" /> Distance
+                  <Footprints size={12} className="flex-shrink-0" /> {t("wheel.filter.distance")}
                 </p>
                 {distanceActive ? (
                   <span className="type-meta font-medium" style={{ color: "var(--brand-text)" }}>
-                    Within {maxWalkMinutes} min
+                    {t("wheel.filter.within", { n: maxWalkMinutes ?? MAX_WALK_MINUTES })}
                   </span>
                 ) : (
                   <button
                     onClick={() => onChangeMaxWalkMinutes(MAX_WALK_MINUTES)}
                     className="type-meta text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    Set a limit
+                    {t("wheel.filter.setLimit")}
                   </button>
                 )}
               </div>
               {distanceActive && (
                 <div className="flex items-center gap-3 px-1">
-                  <span className="type-meta text-muted-foreground tabular-nums flex-shrink-0">{MIN_WALK_MINUTES}m</span>
+                  <span className="type-meta text-muted-foreground tabular-nums flex-shrink-0">{t("wheel.filter.minutes", { n: MIN_WALK_MINUTES })}</span>
                   <Slider
                     value={[maxWalkMinutes]}
                     onValueChange={([v]) => onChangeMaxWalkMinutes(v ?? MAX_WALK_MINUTES)}
@@ -201,7 +204,7 @@ export default function FilterBar({
                     max={MAX_WALK_MINUTES}
                     step={1}
                   />
-                  <span className="type-meta text-muted-foreground tabular-nums flex-shrink-0">{MAX_WALK_MINUTES}m</span>
+                  <span className="type-meta text-muted-foreground tabular-nums flex-shrink-0">{t("wheel.filter.minutes", { n: MAX_WALK_MINUTES })}</span>
                 </div>
               )}
             </div>
@@ -212,7 +215,7 @@ export default function FilterBar({
               onClick={clearAll}
               className="mt-3 flex items-center gap-1.5 type-meta text-muted-foreground hover:text-foreground transition-colors"
             >
-              <X size={11} /> Clear all filters
+              <X size={11} /> {t("wheel.filter.clear")}
             </button>
           )}
         </div>
@@ -251,11 +254,11 @@ export default function FilterBar({
           <SheetHeader className="flex-row items-center gap-2.5 pl-2 pr-12 pb-1">
             <SlidersHorizontal size={17} style={{ color: "var(--brand-text)" }} />
             <SheetTitle className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
-              Filter
+              {t("wheel.filter.label")}
             </SheetTitle>
             {activeCount > 0 && (
               <span className="type-meta tabular-nums" style={{ color: "var(--body-warm)" }}>
-                {matchCount}/{totalCount} on the wheel
+                {t("wheel.filter.matches", { match: matchCount, total: totalCount })}
               </span>
             )}
           </SheetHeader>
@@ -283,7 +286,7 @@ export default function FilterBar({
         <div className="flex items-center gap-2.5">
           <SlidersHorizontal size={17} style={{ color: activeCount > 0 ? "var(--brand-text)" : "var(--body-warm)" }} />
           <span className="type-eyebrow" style={{ color: activeCount > 0 ? "var(--ink-warm)" : "var(--body-warm)" }}>
-            Filter
+            {t("wheel.filter.label")}
           </span>
           {activeCount > 0 && (
             <span
