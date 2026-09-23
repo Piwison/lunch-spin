@@ -30,7 +30,7 @@ export default function NotFound() {
           </div>
         </div>
 
-        <p className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>404</p>
+        <p className="type-eyebrow mb-2" style={{ color: "var(--ink-warm)" }}>404</p>
         <h1 className="type-title mb-4" style={{ color: "var(--ink-warm)" }}>{t("app.notFound.title")}</h1>
         <p className="type-body mb-8" style={{ color: "var(--body)" }}>
           {t("app.notFound.body")}

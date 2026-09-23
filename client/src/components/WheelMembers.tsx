@@ -63,7 +63,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
         className={`flex items-center justify-between gap-2 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         style={collapsible ? { minHeight: 56 } : undefined}
       >
-        <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
+        <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
           <Users size={12} /> {t("wheel.members.team")}
           <span style={{ color: "var(--body-warm)" }}>· {roster.length}</span>
           {present.size > 0 && <span style={{ color: "var(--ok)" }}>· {t("wheel.members.here", { n: present.size })}</span>}

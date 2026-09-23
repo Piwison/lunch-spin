@@ -993,7 +993,7 @@ export default function SpinWheel({
                 >
                   {count}
                 </span>
-                <span className="type-eyebrow mt-1" style={{ color: "var(--brand-text)" }}>
+                <span className="type-eyebrow mt-1" style={{ color: "var(--ink-warm)" }}>
                   {t("wheel.inPlay")}
                 </span>
               </div>

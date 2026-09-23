@@ -81,17 +81,17 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       {/* Summary row */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.total")}</div>
+          <div className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.total")}</div>
           <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>{total}</div>
         </Card>
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.tried")}</div>
+          <div className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.tried")}</div>
           <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>
             {placesTried}<span style={{ fontSize: 16, fontWeight: 400, color: "var(--body-warm)" }}>/{stats.length}</span>
           </div>
         </Card>
         <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.favorite")}</div>
+          <div className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.favorite")}</div>
           <div
             className="mt-1.5 leading-tight line-clamp-2 break-words"
             title={favorite?.name}
@@ -107,7 +107,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.comeback")}</h3>
+            <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.comeback")}</h3>
           </div>
           <p className="type-meta text-muted-foreground mb-3">{t("history.stats.comebackBody")}</p>
           <div className="flex flex-wrap gap-2">
@@ -138,7 +138,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
       <Card className="p-5">
         <div className="flex items-center gap-2 mb-4">
           <Crown size={15} style={{ color: "var(--brand-text)" }} />
-          <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.mostPicked")}</h3>
+          <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.mostPicked")}</h3>
         </div>
         <div className="space-y-3">
           {top.map((r, idx) => {
@@ -168,7 +168,7 @@ export function RestaurantStats({ stats, history, showPeople, isLoading }: Resta
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-1">
             <Users size={15} style={{ color: "var(--brand-text)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.stats.people")}</h3>
+            <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.people")}</h3>
           </div>
           <p className="type-meta text-muted-foreground mb-3">{t("history.stats.peopleBody")}</p>
           <div className="space-y-3">

@@ -823,7 +823,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-6">
-                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>{t("places.detail.teamRating")}</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--ink-warm)" }}>{t("places.detail.teamRating")}</div>
                   {avg == null ? (
                     <p className="text-sm text-muted-foreground">{t("places.detail.noRatings")}</p>
                   ) : (
@@ -838,7 +838,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-6">
-                  <div className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>{t("places.detail.yourRating")}</div>
+                  <div className="type-eyebrow mb-2" style={{ color: "var(--ink-warm)" }}>{t("places.detail.yourRating")}</div>
                   <StarRating
                     value={mine}
                     size={30}

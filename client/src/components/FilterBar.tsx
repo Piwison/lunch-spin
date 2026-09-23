@@ -255,7 +255,7 @@ export default function FilterBar({
         >
           <SheetHeader className="flex-row items-center gap-2.5 pl-2 pr-12 pb-1">
             <SlidersHorizontal size={17} style={{ color: "var(--brand-text)" }} />
-            <SheetTitle className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
+            <SheetTitle className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
               {t("wheel.filter.label")}
             </SheetTitle>
             {activeCount > 0 && (

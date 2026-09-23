@@ -134,10 +134,10 @@ export default function GuestWheel() {
               borderRadius: "var(--radius-chip)",
               background: "oklch(from var(--brand) l c h / 0.10)",
               border: "1px solid oklch(from var(--brand) l c h / 0.25)",
-              color: "var(--brand-text)",
+              color: "var(--ink-warm)",
             }}
           >
-            <Utensils size={12} /> {t("app.guest.public")}
+            <Utensils size={12} style={{ color: "var(--brand-text)" }} /> {t("app.guest.public")}
           </div>
           <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
             {wheel.name}

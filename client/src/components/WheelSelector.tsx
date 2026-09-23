@@ -85,7 +85,7 @@ function exclusionOptionsFor(current: number) {
  *  controls into scannable sections (Basics / Sharing / Spin rules / Distance). */
 function SettingsSection({ children }: { children: React.ReactNode }) {
   return (
-    <div className="type-eyebrow pt-2 first:pt-0" style={{ color: "var(--brand-text)" }}>
+    <div className="type-eyebrow pt-2 first:pt-0" style={{ color: "var(--ink-warm)" }}>
       {children}
     </div>
   );
@@ -598,7 +598,7 @@ export default function WheelSelector({
         style={{ borderRadius: "var(--radius-card)" }}
       >
         <div className="px-3 pt-2 pb-3">
-          <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
+          <span className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
             {t("settings.myWheels")}
           </span>
         </div>
@@ -645,7 +645,7 @@ export default function WheelSelector({
             }}
           >
             <SheetHeader className="flex-row items-center justify-between pl-2 pr-12 pb-1">
-              <SheetTitle className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
+              <SheetTitle className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
                 {t("settings.myWheels")}
               </SheetTitle>
               <button

@@ -27,7 +27,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
   const Title = (
     <div className="flex items-center gap-2">
       <Star size={16} style={{ fill: "var(--star)", color: "var(--star-edge)" }} />
-      <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.taste.title")}</h3>
+      <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.taste.title")}</h3>
     </div>
   );
 

@@ -1145,7 +1145,11 @@ export default function WheelApp() {
         />
 
         {/* ── MAIN CONTENT ── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {/* The page's one h1, for screen readers: the wheel's name. The
+              visible title was dropped on purpose (the picker already shows
+              it), and first run renders its own h1 in this same region. */}
+          {!firstRun && <h1 className="sr-only">{wheelData?.name ?? t("app.brand")}</h1>}
 
           {/* ── VIEW TABS (desktop) — floating glass segmented control ──
               Ember: one glass bar, solid persimmon on the active segment (no
@@ -1508,7 +1512,7 @@ export default function WheelApp() {
                               className="w-full flex items-center justify-between gap-2 px-4 text-left transition-colors hover:bg-white/3"
                               style={{ minHeight: 56 }}
                             >
-                              <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
+                              <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
                                 <Clock size={12} /> {t("app.excluded.title")}
                                 <span
                                   className="px-2 py-0.5 type-meta font-semibold"
@@ -1621,7 +1625,7 @@ export default function WheelApp() {
                 running under it IS the material. */}
             <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="dock" />
           </nav>
-        </div>
+        </main>
       </div>
 
       {/* ── RESULT ──

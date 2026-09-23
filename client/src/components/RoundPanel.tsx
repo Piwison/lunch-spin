@@ -63,7 +63,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           onClick={() => collapsible && setOpen((o) => !o)}
           className={`flex items-center gap-1.5 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         >
-          <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
+          <span className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
             {t("wheel.round.title")}
           </span>
           <span className="type-meta font-normal text-muted-foreground/70">· {restaurants.length}</span>

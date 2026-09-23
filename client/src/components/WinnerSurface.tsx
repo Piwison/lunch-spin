@@ -202,7 +202,7 @@ export default function WinnerSurface({
           }}
         />
         <div className="w-full">
-          <p className="type-eyebrow mb-3" style={{ color: "var(--brand-text)" }}>
+          <p className="type-eyebrow mb-3" style={{ color: "var(--ink-warm)" }}>
             {t("wheel.result.today")}
           </p>
           {/* Full bleed, no frame. --accent-ink is the accent tuned for text on
