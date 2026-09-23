@@ -1,11 +1,17 @@
 /**
- * Language for the public site. Traditional Chinese first, English kept.
+ * Language for the whole app. English unless the visitor has chosen otherwise.
  *
- * Same shape as ThemeContext (stored choice wins, else follow the browser), with
- * one addition: `<html lang>` is rewritten on change. index.html ships
- * `lang="zh-Hant-TW"` because the static shell is what crawlers read and Taiwan is
- * the primary audience — so an English visitor who switches has to correct it, or
- * the page claims to be Chinese to every screen reader and translation prompt.
+ * A visitor's choice is stored and wins on every later visit; with no choice
+ * stored the answer is English — deliberately NOT the browser locale (owner's
+ * call, 2026-09-23: a Chinese-language browser used to land in Chinese). Only
+ * an explicit switch writes the key, so the default is never "remembered" as a
+ * choice and changing the default later still reaches everyone who never chose.
+ *
+ * `<html lang>` is rewritten on change. index.html still ships
+ * `lang="zh-Hant-TW"` and Chinese title/description, because the static shell is
+ * what crawlers and link previews read — so the provider corrects it on mount,
+ * or the page claims to be Chinese to every screen reader and translation
+ * prompt.
  *
  * Deliberately not i18next: the public surface is one page of strings, and the
  * landing page is the entry route this project has spent three measured rounds
@@ -46,13 +52,12 @@ function writeStored(lang: Lang) {
   }
 }
 
-/** Stored choice wins; otherwise any Chinese browser locale gets Chinese. */
+/** The language a visitor gets before they have chosen one. */
+export const DEFAULT_LANG: Lang = "en";
+
+/** Stored choice wins; otherwise the default. */
 export function detectLang(): Lang {
-  const stored = readStored();
-  if (stored) return stored;
-  if (typeof navigator === "undefined") return "zh-TW";
-  const tags = navigator.languages?.length ? navigator.languages : [navigator.language];
-  return tags.some((t) => t?.toLowerCase().startsWith("zh")) ? "zh-TW" : "en";
+  return readStored() ?? DEFAULT_LANG;
 }
 
 interface LangContextValue {

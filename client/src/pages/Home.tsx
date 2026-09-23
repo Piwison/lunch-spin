@@ -129,7 +129,11 @@ export default function Home() {
       <section className="relative z-10 px-6 pt-5 pb-12">
         {/* The brand appeared nowhere on this page before — no mark, no wordmark,
             nothing a visitor could carry away and search for later. */}
-        <header className="max-w-5xl mx-auto flex items-center gap-2.5 mb-14">
+        {/* Spacing tightens on SHORT viewports, not narrow ones: the budget that
+            matters is whether the wheel and Spin share one screen, and a real
+            phone browser is shorter than its screen (iPhone Safari with its bars
+            is ~664px tall on an 844px device). */}
+        <header className="max-w-5xl mx-auto flex items-center gap-2.5 mb-14 [@media(max-height:700px)]:mb-8">
           <img src="/icon.svg" width={30} height={30} alt="" aria-hidden="true" />
           <span style={{ fontSize: 16, fontWeight: 700, color: "var(--ink-warm)", letterSpacing: "-0.01em" }}>
             Lunch Wheel
@@ -144,7 +148,7 @@ export default function Home() {
         </header>
 
         <div className="max-w-5xl mx-auto">
-          <div className="text-center lg:text-left mb-10">
+          <div className="text-center lg:text-left mb-10 [@media(max-height:700px)]:mb-6">
             <p
               className="type-eyebrow mb-5 reveal"
               style={{ color: "var(--ink-warm)", animationDelay: "40ms" }}
@@ -154,7 +158,10 @@ export default function Home() {
             <h1
               className="type-display reveal mb-5"
               style={{
-                fontSize: "clamp(2.75rem, 9vw, 5rem)",
+                // 2.5rem floor, not 2.75: "What's for lunch?" measures 334px at
+                // 44px and wraps on a 375 or 360 phone (327 / 312px of column),
+                // which cost a whole 46px line; at 40px it is 304px and one line.
+                fontSize: "clamp(2.5rem, 9vw, 5rem)",
                 color: "var(--ink-strong)",
                 animationDelay: "120ms",
               }}
@@ -173,13 +180,6 @@ export default function Home() {
               wheel now, whose glass panes need the darker ground behind them
               to read at all (failure mode 29 — see LandingWheel). */}
           <div className="reveal" style={{ animationDelay: "300ms" }}>
-            {/* Phone only. From lg the hint heads the place list beside the
-                wheel instead (LandingWheel), which is what it describes — and
-                above the disc it cost the 45px that pushed Spin under the fold
-                at 1280x800. */}
-            <p className="type-meta mb-6 text-center lg:hidden" style={{ color: "var(--body-warm)" }}>
-              {t("hero.tryHint")}
-            </p>
             <LandingWheel onSaveIntent={saveDemoAndSignIn} />
           </div>
         </div>

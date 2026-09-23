@@ -202,9 +202,10 @@ export default function LandingWheel({
 
       {/* ── Places ─────────────────────────────────────────────────────────── */}
       <div className="flex-1 w-full min-w-0" style={goneWhileZoomed}>
-        {/* Desktop's copy of Home's phone-only hint: beside the wheel it heads
-            the list it is about, rather than pushing the disc and Spin down. */}
-        <p className="hidden lg:block type-meta mb-4" style={{ color: "var(--body-warm)" }}>
+        {/* The try-hint heads the list it is about — beside the wheel from lg,
+            under Spin on a phone. It used to sit above the disc, where it cost
+            the 45-68px that kept Spin off the first screen. */}
+        <p className="type-meta mb-4" style={{ color: "var(--body-warm)" }}>
           {t("hero.tryHint")}
         </p>
         {/* Ink, not persimmon: 11px persimmon on paper is 3.48:1 (failure mode

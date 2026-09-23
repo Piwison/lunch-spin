@@ -10,7 +10,7 @@ export const zh = {
   // ── Hero ────────────────────────────────────────────────────────────────
   "hero.eyebrow": "免費 · 免安裝 · 不用登入就能先轉",
   "hero.title": "中午吃什麼？",
-  "hero.subtitle": "把選擇障礙交給轉盤。加幾家店，按一下，10 秒解決午餐。",
+  "hero.subtitle": "選擇障礙？交給轉盤，10 秒決定午餐。",
   "hero.tryHint": "改成你公司樓下的店，直接試轉",
   "hero.cta": "免費開始",
 
@@ -64,10 +64,9 @@ export const zh = {
 } as const satisfies Record<`hero.${string}` | `demo.${string}` | `steps.${string}` | `features.${string}` | `popular.${string}` | `final.${string}`, string>;
 
 export const en: Record<keyof typeof zh, string> = {
-  "hero.eyebrow": "Free · No install · Spin before you sign in",
+  "hero.eyebrow": "Free · Spin before you sign in",
   "hero.title": "What's for lunch?",
-  "hero.subtitle":
-    "Hand the decision to the wheel. Add a few places, tap once, lunch is settled.",
+  "hero.subtitle": "Can't decide? Let the wheel pick.",
   "hero.tryHint": "Swap in the places by your office and give it a spin",
   "hero.cta": "Start free",
 
