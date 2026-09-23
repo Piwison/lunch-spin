@@ -94,6 +94,9 @@ Vercel 約一分鐘後更新 staging。**用 staging 網址登入**，然後：
 6. **資料不是 UI**：店名、輪盤名稱、資料庫裡的 tag 值不翻。tag 要顯示中文用對照表，存的值不動。
 7. **英文複數**：`t()` 沒有複數規則，用 `.one` / `.other` 兩個 key 或改寫句子避開。
 8. **日期、時間**：用 `Intl.DateTimeFormat(lang === "zh-TW" ? "zh-TW" : "en", …)`，不要自己拼字串。
+9. **Google 店名的語言**：`places.searchNearby`、`places.searchPlaces`、`places.resolveLink` 都收 `language`，
+   沒傳就是 zh-TW。你負責的 `NearbyDialog`、`RestaurantTab` 呼叫它們時請傳 `language: lang`（`useLang()` 的 `lang`），
+   英文介面的人才會拿到英文店名。這是 client 端改動，不用碰 server。
 
 ## Codex prompt
 

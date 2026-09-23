@@ -13,7 +13,17 @@ describe("nearbySearchParams", () => {
       location: "25.0797,121.575",
       radius: String(DEFAULT_RADIUS_M),
       type: "restaurant",
+      language: "zh-TW",
     });
+  });
+
+  it("always asks for a language, Traditional Chinese unless told otherwise", () => {
+    // Without it Google answers a US-hosted server in English: the 2026-09-23
+    // test got "McDonald's - New Taipei 101 Store" and "Pepper Lunch Express",
+    // and English addresses the area parser cannot read, so the wheel was
+    // named "Lunch near me". Every caller that says nothing gets zh-TW.
+    expect(asMap(nearbySearchParams({ ...AT, rankBy: "distance" })).language).toBe("zh-TW");
+    expect(asMap(nearbySearchParams({ ...AT, language: "en" })).language).toBe("en");
   });
 
   it("passes an explicit radius through for prominence", () => {

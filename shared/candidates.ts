@@ -191,5 +191,5 @@ export function arrivalTicks(
   target: number = DEFAULT_PICK_COUNT,
 ): string[] {
   const room = Math.min(target, MAX_SEGMENTS) - currentOnWheel;
-  return room > 0 ? preselectPlaceIds(arrivals, room) : [];
+  return room > 0 ? preselectPlaceIds(arrivals, room, currentOnWheel) : [];
 }

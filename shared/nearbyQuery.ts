@@ -21,6 +21,17 @@ import { DEFAULT_RADIUS_M } from "./nearby";
 
 export type RankBy = "prominence" | "distance";
 
+/**
+ * The language Google should answer in: restaurant names, addresses. Always
+ * sent, because the default is not "the user's language" but whatever Google
+ * guesses for the REQUEST — and the request comes from a US-hosted server, so
+ * it guessed English: "Ruilin Meiermei Breakfast" for a 美而美, "McDonald's - New
+ * Taipei 101 Store" (2026-09-23 user test). Traditional Chinese unless the
+ * caller says otherwise; this product is for Taiwan first.
+ */
+export type PlacesLanguage = "zh-TW" | "en";
+export const DEFAULT_PLACES_LANGUAGE: PlacesLanguage = "zh-TW";
+
 export interface NearbyQuery {
   lat: number;
   lng: number;
@@ -30,6 +41,7 @@ export interface NearbyQuery {
   keyword?: string | null;
   /** `next_page_token` from a previous response. */
   pageToken?: string | null;
+  language?: PlacesLanguage | null;
 }
 
 export function nearbySearchParams(q: NearbyQuery): [string, string][] {
@@ -41,5 +53,6 @@ export function nearbySearchParams(q: NearbyQuery): [string, string][] {
   out.push(["type", "restaurant"]);
   const keyword = q.keyword?.trim();
   if (keyword) out.push(["keyword", keyword]);
+  out.push(["language", q.language ?? DEFAULT_PLACES_LANGUAGE]);
   return out;
 }

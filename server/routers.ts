@@ -20,6 +20,7 @@ import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { CANDIDATE_POOL, isCandidate } from "@shared/candidates";
+import { mergeExtraNames } from "@shared/demoDraft";
 import { addProviderRestaurants, copyWheelRestaurants } from "./db";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
@@ -412,8 +413,17 @@ export const appRouter = router({
         z.object({
           // Capped at the wheel's own segment ceiling — more than this can't be
           // rendered as a spinnable wheel anyway (shared/nearby).
-          places: z.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
+          // The 1..MAX_SEGMENTS bound applies to places + extraNames together
+          // (checked below): someone may keep only what they typed on the
+          // landing page and untick every nearby place.
+          places: z.array(nearbyPlaceSchema).max(MAX_SEGMENTS),
           name: z.string().min(1).max(128).optional(),
+          // Places the visitor typed into the landing-page demo before signing
+          // in (shared/demoDraft). Plain names: no placeId, no location.
+          extraNames: z.array(z.string().trim().min(1).max(64)).max(MAX_SEGMENTS).optional(),
+          // The first run's language, for the one string it names on the
+          // user's behalf. Absent = English, the name this always had.
+          language: z.enum(["zh-TW", "en"]).optional(),
           // The point the user searched from, when they picked a place (their
           // office) rather than using raw geolocation. Persisted as the wheel's
           // distance origin so walking times work immediately and the office is
@@ -430,9 +440,23 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
+        const extras = mergeExtraNames(
+          input.extraNames ?? [],
+          input.places.map((p) => p.name),
+        );
+        const total = input.places.length + extras.length;
+        if (total < 1 || total > MAX_SEGMENTS) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `A wheel needs 1 to ${MAX_SEGMENTS} places.`,
+          });
+        }
         const name =
           input.name?.trim() ||
-          wheelNameForArea(deriveAreaName(input.places.map((p) => p.address)));
+          wheelNameForArea(
+            deriveAreaName(input.places.map((p) => p.address)),
+            input.language,
+          );
         const id = await createWheel(ctx.user.id, name, false, false);
         // Origin first: addNearbyPlaces computes distances for the batch, and it
         // can only do that once the wheel actually has an origin to measure from.
@@ -445,7 +469,8 @@ export const appRouter = router({
           });
         }
         const { added, duplicates } = await addNearbyPlaces(id, ctx.user.id, input.places);
-        return { id, name, added, duplicates };
+        const addedExtra = await addRestaurants(id, ctx.user.id, extras);
+        return { id, name, added: added + addedExtra, duplicates };
       }),
 
     /**
@@ -903,6 +928,10 @@ export const appRouter = router({
           // `nextPageToken` from a previous response: the next 20 of the same
           // search, i.e. the next ring out when ranked by distance.
           pageToken: z.string().min(1).max(2048).optional(),
+          // Names and addresses in this language. Absent = zh-TW (see
+          // shared/nearbyQuery), which is also what the ADD NEARBY dialog and
+          // the name search get until they pass the UI language themselves.
+          language: z.enum(["zh-TW", "en"]).optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -928,6 +957,7 @@ export const appRouter = router({
             radius,
             keyword: input.keyword,
             pageToken: input.pageToken,
+            language: input.language,
           });
         } catch {
           throw new TRPCError({
@@ -1099,6 +1129,7 @@ export const appRouter = router({
           // Optional bias toward a known position, when we have one.
           lat: z.number().min(-90).max(90).nullable().optional(),
           lng: z.number().min(-180).max(180).nullable().optional(),
+          language: z.enum(["zh-TW", "en"]).optional(),
         }),
       )
       .mutation(async ({ input }) => {
@@ -1111,7 +1142,7 @@ export const appRouter = router({
         let res: Awaited<ReturnType<typeof searchPlacesByText>>;
         try {
           const bias = input.lat != null && input.lng != null ? { lat: input.lat, lng: input.lng } : null;
-          res = await searchPlacesByText(input.query, bias);
+          res = await searchPlacesByText(input.query, bias, input.language);
         } catch {
           throw new TRPCError({
             code: "BAD_GATEWAY",
@@ -1141,6 +1172,7 @@ export const appRouter = router({
           // wheel, the membership check is unchanged.
           wheelId: z.number().nullable().optional(),
           url: z.string().min(1).max(2048),
+          language: z.enum(["zh-TW", "en"]).optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -1156,7 +1188,7 @@ export const appRouter = router({
         }
         let place;
         try {
-          place = await resolvePlaceLink(input.url);
+          place = await resolvePlaceLink(input.url, input.language);
         } catch {
           throw new TRPCError({
             code: "BAD_GATEWAY",

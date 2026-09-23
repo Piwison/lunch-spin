@@ -59,16 +59,23 @@ export interface PreselectablePlace {
  * The design rule is that progress is the default and de-selecting is the
  * user's only job — a first-run screen that starts empty asks someone who has
  * never seen the product to do data entry. Results arrive walk-time sorted, so
- * "the first N" is already the right shortlist; the one adjustment is to prefer
- * places that are actually open, since the whole point is to spin right now.
- * Closed places top the list up rather than being discarded, so the wheel still
- * reaches a spinnable size in a quiet area (and they're fine tomorrow).
+ * "the first N" is already the right shortlist; the one adjustment is that a
+ * place reported CLOSED is not ticked.
+ *
+ * Closed places used to top the list up to N ("they're fine tomorrow"). The
+ * 2026-09-23 user test showed what that cost: the copy promised the nearest
+ * open places while 休息中 cards sat ticked, and the button said "these 8"
+ * while the wheel spun 6, because the server skips closed places at spin time.
+ * So a closed place is ticked only to reach MIN_SPINNABLE — counting whatever
+ * is already on the wheel — because a one-pane wheel is not a decision. The
+ * rest stay one tap away, unticked.
  *
  * Walk-time order is preserved within the result.
  */
 export function preselectPlaceIds(
   places: PreselectablePlace[],
   count = DEFAULT_PICK_COUNT,
+  alreadyOnWheel = 0,
 ): string[] {
   if (count <= 0) return [];
   // `open == null` means the provider didn't say — treat as open rather than
@@ -76,10 +83,8 @@ export function preselectPlaceIds(
   const openNow = places.filter((p) => p.open !== false);
   const closed = places.filter((p) => p.open === false);
   const chosen = new Set(openNow.slice(0, count).map((p) => p.placeId));
-  for (const p of closed) {
-    if (chosen.size >= count) break;
-    chosen.add(p.placeId);
-  }
+  const closedRoom = Math.min(count, MIN_SPINNABLE - alreadyOnWheel) - chosen.size;
+  for (const p of closed.slice(0, Math.max(0, closedRoom))) chosen.add(p.placeId);
   // Re-walk the original list so the caller gets walk-time order, not
   // open-then-closed order.
   return places.filter((p) => chosen.has(p.placeId)).map((p) => p.placeId);

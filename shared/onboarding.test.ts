@@ -73,9 +73,27 @@ describe("preselectPlaceIds (which nearby results arrive already ticked)", () =>
     expect(preselectPlaceIds(places, 2)).toEqual(["a", "c"]);
   });
 
-  it("tops up with closed places rather than under-filling the wheel", () => {
+  it("never ticks a closed place while enough open ones exist to spin", () => {
+    // 2026-09-23 user test: the copy said "the nearest OPEN places" while a
+    // 休息中 card sat ticked, and the button said 8 while the wheel spun 6 —
+    // the server skips closed places at spin time, so a closed tick is a
+    // promise the wheel does not keep today.
+    const places = [p("a", true), p("b", false), p("c", true), p("d", false)];
+    expect(preselectPlaceIds(places, 8)).toEqual(["a", "c"]);
+  });
+
+  it("uses closed places only to reach the minimum a wheel needs to spin", () => {
+    // Quiet hour: one open place. A one-pane wheel is not a decision, so the
+    // nearest closed place makes two — and no more than that.
     const places = [p("a", false), p("b", true), p("c", false)];
-    expect(preselectPlaceIds(places, 3)).toEqual(["a", "b", "c"]);
+    expect(preselectPlaceIds(places, 8)).toEqual(["a", "b"]);
+    expect(preselectPlaceIds([p("a", false), p("b", false), p("c", false)], 8)).toEqual(["a", "b"]);
+  });
+
+  it("counts places already on the wheel toward that minimum", () => {
+    // Arrivals from "look farther" join a wheel that may already spin.
+    expect(preselectPlaceIds([p("a", false)], 5, 2)).toEqual([]);
+    expect(preselectPlaceIds([p("a", false), p("b", false)], 5, 1)).toEqual(["a"]);
   });
 
   it("treats unknown open-state as open (the provider often omits it)", () => {

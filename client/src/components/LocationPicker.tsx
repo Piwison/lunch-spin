@@ -54,7 +54,7 @@ export default function LocationPicker({
    *  of "finding you" that happens before any request is made. */
   onLocatingChange?: (locating: boolean) => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [query, setQuery] = useState("");
   const [link, setLink] = useState("");
   const [locating, setLocating] = useState(false);
@@ -113,7 +113,7 @@ export default function LocationPicker({
     const q = query.trim();
     if (!q) return;
     setGeoError(null);
-    searchPlaces.mutate({ query: q });
+    searchPlaces.mutate({ query: q, language: lang });
   };
 
   const results = searchPlaces.data?.places ?? [];
@@ -294,7 +294,7 @@ export default function LocationPicker({
               />
               <Button
                 type="button"
-                onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim() }); }}
+                onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim(), language: lang }); }}
                 aria-label={t("loc.link.submit")}
                 disabled={!looksLikeMapLink(link) || busy}
                 className="flex-shrink-0"

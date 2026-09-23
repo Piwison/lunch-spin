@@ -78,8 +78,20 @@ export function deriveAreaName(addresses: (string | null | undefined)[]): string
   return bestCount / areas.length >= CONSENSUS ? best : null;
 }
 
-/** The wheel name shown after onboarding. Always safe to insert. */
-export function wheelNameForArea(area: string | null): string {
-  const name = area ? `Lunch near ${area}` : "Lunch near me";
+/**
+ * The wheel name shown after onboarding, in the language the first run was in.
+ * It is the one string from onboarding the user keeps looking at, and it is
+ * stored — so it is named once, at creation, in the language they chose then.
+ * Always safe to insert.
+ */
+export function wheelNameForArea(area: string | null, language: "zh-TW" | "en" = "en"): string {
+  const name =
+    language === "zh-TW"
+      ? area
+        ? `${area}的午餐`
+        : "附近的午餐"
+      : area
+        ? `Lunch near ${area}`
+        : "Lunch near me";
   return name.length > MAX_WHEEL_NAME ? name.slice(0, MAX_WHEEL_NAME) : name;
 }

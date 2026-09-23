@@ -12,7 +12,12 @@
 
 import { cuisineFromTypes, type ProviderPlace } from "@shared/placeMapping";
 import { parseMapLink } from "@shared/mapLink";
-import { nearbySearchParams, type NearbyQuery } from "@shared/nearbyQuery";
+import {
+  DEFAULT_PLACES_LANGUAGE,
+  nearbySearchParams,
+  type NearbyQuery,
+  type PlacesLanguage,
+} from "@shared/nearbyQuery";
 import type { MatrixElement } from "@shared/walkTime";
 
 const TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
@@ -83,6 +88,7 @@ export interface TextSearchResponse {
 export async function searchPlacesByText(
   query: string,
   bias?: { lat: number; lng: number } | null,
+  language: PlacesLanguage = DEFAULT_PLACES_LANGUAGE,
 ): Promise<TextSearchResponse> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
@@ -90,6 +96,7 @@ export async function searchPlacesByText(
   const url = new URL(TEXT_SEARCH_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("query", query);
+  url.searchParams.set("language", language);
   if (bias) url.searchParams.set("location", `${bias.lat},${bias.lng}`);
   if (bias) url.searchParams.set("radius", "50000");
 
@@ -262,10 +269,15 @@ async function expandShortLink(url: string): Promise<string | null> {
   }
 }
 
-async function placeDetails(placeId: string, apiKey: string): Promise<ResolvedPlace | null> {
+async function placeDetails(
+  placeId: string,
+  apiKey: string,
+  language: PlacesLanguage,
+): Promise<ResolvedPlace | null> {
   const url = new URL(PLACE_DETAILS_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("place_id", placeId);
+  url.searchParams.set("language", language);
   url.searchParams.set("fields", PLACE_FIELDS);
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`Place Details failed (${res.status})`);
@@ -316,10 +328,12 @@ async function findPlace(
   text: string,
   bias: { lat: number; lng: number } | null,
   apiKey: string,
+  language: PlacesLanguage,
 ): Promise<ResolvedPlace | null> {
   const url = new URL(FIND_PLACE_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("input", text);
+  url.searchParams.set("language", language);
   url.searchParams.set("inputtype", "textquery");
   url.searchParams.set("fields", PLACE_FIELDS);
   if (bias) url.searchParams.set("locationbias", `point:${bias.lat},${bias.lng}`);
@@ -336,7 +350,10 @@ async function findPlace(
  * to any coords in the link). Returns null when the link carries no usable
  * signal or Google can't resolve it. Needs Places API on GOOGLE_MAPS_API_KEY.
  */
-export async function resolvePlaceLink(rawUrl: string): Promise<ResolvedPlace | null> {
+export async function resolvePlaceLink(
+  rawUrl: string,
+  language: PlacesLanguage = DEFAULT_PLACES_LANGUAGE,
+): Promise<ResolvedPlace | null> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
 
@@ -349,18 +366,18 @@ export async function resolvePlaceLink(rawUrl: string): Promise<ResolvedPlace | 
   if (!parsed) return null;
 
   if (parsed.kind === "placeId") {
-    const byId = await placeDetails(parsed.placeId, apiKey);
+    const byId = await placeDetails(parsed.placeId, apiKey, language);
     if (byId) return byId;
     // Details can miss (stale id); fall back to the name if the link carried one.
     if (parsed.name) {
       const bias = parsed.lat != null && parsed.lng != null ? { lat: parsed.lat, lng: parsed.lng } : null;
-      return findPlace(parsed.name, bias, apiKey);
+      return findPlace(parsed.name, bias, apiKey, language);
     }
     return null;
   }
   if (parsed.kind === "text") {
     const bias = parsed.lat != null && parsed.lng != null ? { lat: parsed.lat, lng: parsed.lng } : null;
-    return findPlace(parsed.query, bias, apiKey);
+    return findPlace(parsed.query, bias, apiKey, language);
   }
   // coords-only (dropped pin): no name to search, nothing to add.
   return null;

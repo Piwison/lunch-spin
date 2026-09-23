@@ -47,6 +47,7 @@ import PaneWheel from "@/components/onboarding/PaneWheel";
 import PlaceCard, { placeMapUrl } from "@/components/onboarding/PlaceCard";
 import { MAX_SEGMENTS, MIN_SEGMENTS } from "@shared/nearby";
 import { MIN_SPINNABLE, canStartSpinning } from "@shared/onboarding";
+import { DEMO_DRAFT_KEY, parseDemoDraft } from "@shared/demoDraft";
 import {
   CANDIDATE_POOL,
   arrivalTicks,
@@ -61,6 +62,7 @@ import {
 import {
   AlertTriangle,
   ArrowRight,
+  Check,
   Loader2,
   MapPin,
   PenLine,
@@ -99,7 +101,7 @@ export default function OnboardingFlow({
   /** "I'll add places myself" — open the ordinary create dialog. */
   onManualCreate: () => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const reducedMotion = useReducedMotion();
 
   const [step, setStep] = useState<Step>("locate");
@@ -114,14 +116,28 @@ export default function OnboardingFlow({
   // Ticks per query key, like `pools`: "" is the plain nearby list.
   const [ticks, setTicks] = useState<Record<string, Set<string>>>({});
   const [initialTicks, setInitialTicks] = useState(0);
+  // How many of those arrival ticks are places reported closed. Non-zero only
+  // in a quiet hour (see preselectPlaceIds), and then the copy has to say so.
+  const [initialClosed, setInitialClosed] = useState(0);
   const [pending, setPending] = useState<null | "base" | "keyword" | "more">(
     null
   );
   const [locating, setLocating] = useState(false);
   const [revealDots, setRevealDots] = useState<RadarDot[] | null>(null);
   const [capAt, setCapAt] = useState<number | null>(null);
-  const [building, setBuilding] = useState<NearbyRow[]>([]);
+  const [building, setBuilding] = useState<{ key: string; name: string }[]>([]);
   const [growFrom, setGrowFrom] = useState<DOMRect | null>(null);
+  // What the visitor typed into the landing-page demo before signing in
+  // (shared/demoDraft). Read once; everything starts ticked, because they
+  // already chose these. localStorage can throw — then there is simply no draft.
+  const [typed] = useState<string[]>(() => {
+    try {
+      return parseDemoDraft(localStorage.getItem(DEMO_DRAFT_KEY), Date.now());
+    } catch {
+      return [];
+    }
+  });
+  const [typedOn, setTypedOn] = useState<Set<string>>(() => new Set(typed));
 
   const miniWheelRef = useRef<HTMLDivElement>(null);
   const revealTimer = useRef<number | null>(null);
@@ -160,7 +176,12 @@ export default function OnboardingFlow({
     [view.visible, selected]
   );
   const lifts = useMemo(() => relaxations(rows, filters), [rows, filters]);
-  const atCap = wheel.length >= MAX_SEGMENTS;
+  const typedOnWheel = typed.filter(n => typedOn.has(n));
+  // The wheel is the visible ticked nearby places PLUS the typed ones; every
+  // count on screen (button, mini wheel, cap) is this one number.
+  const total = wheel.length + typedOnWheel.length;
+  const atCap = total >= MAX_SEGMENTS;
+  const closedOnWheel = wheel.filter(p => p.open === false).length;
   const thin = view.visible.length < MIN_SEGMENTS;
 
   const baseInput = (at: PickedLocation) => ({
@@ -169,6 +190,7 @@ export default function OnboardingFlow({
     lng: at.lng,
     rankBy: "distance" as const,
     limit: CANDIDATE_POOL,
+    language: lang,
   });
 
   // ── Requests: only these three ever reach Google ─────────────────────────
@@ -181,7 +203,7 @@ export default function OnboardingFlow({
         const fresh = toPool(data);
         const preset = arrivalTicks(
           filterCandidates(fresh.rows, {}).visible,
-          0
+          typedOnWheel.length
         );
         setPools({ "": fresh });
         setQuery("");
@@ -189,6 +211,11 @@ export default function OnboardingFlow({
         setFilters({});
         setTicks({ "": new Set(preset) });
         setInitialTicks(preset.length);
+        const presetIds = new Set(preset);
+        setInitialClosed(
+          fresh.rows.filter(r => presetIds.has(r.placeId) && r.open === false)
+            .length
+        );
         const plotted = fresh.rows.filter(r => r.lat != null && r.lng != null);
         if (reducedMotion || plotted.length === 0) {
           setStep("pick");
@@ -221,10 +248,9 @@ export default function OnboardingFlow({
   ) => {
     const visibleArrivals = filterCandidates(arrivals, filters).visible;
     updateTicks(key, prev => {
-      const current = onWheel(
-        filterCandidates(held, filters).visible,
-        prev
-      ).length;
+      const current =
+        onWheel(filterCandidates(held, filters).visible, prev).length +
+        typedOnWheel.length;
       const add = arrivalTicks(visibleArrivals, current);
       if (add.length === 0) return prev;
       const next = new Set(prev);
@@ -316,9 +342,12 @@ export default function OnboardingFlow({
     );
 
   const build = () => {
-    if (!canStartSpinning(wheel.length) || wheel.length > MAX_SEGMENTS) return;
+    if (!canStartSpinning(total) || total > MAX_SEGMENTS) return;
     setGrowFrom(miniWheelRef.current?.getBoundingClientRect() ?? null);
-    setBuilding(wheel);
+    setBuilding([
+      ...typedOnWheel.map(name => ({ key: `typed:${name}`, name })),
+      ...wheel.map(p => ({ key: p.placeId, name: p.name })),
+    ]);
     setStep("building");
     createWheel.mutate(
       {
@@ -334,12 +363,23 @@ export default function OnboardingFlow({
         })),
         // Only a *named* pick becomes the wheel's office. A raw geolocation fix
         // is where the user happened to be standing, not their office.
+        extraNames: typedOnWheel,
+        language: lang,
         origin: origin?.label
           ? { lat: origin.lat, lng: origin.lng, label: origin.label }
           : null,
       },
       {
-        onSuccess: res => onCreated(res.id),
+        onSuccess: res => {
+          // Used: a later first run (another account on this browser) must
+          // not be offered these again.
+          try {
+            localStorage.removeItem(DEMO_DRAFT_KEY);
+          } catch {
+            /* nothing to clear */
+          }
+          onCreated(res.id);
+        },
         // Back to the list with every choice intact; the error shows there.
         onError: () => setStep("pick"),
       }
@@ -357,9 +397,9 @@ export default function OnboardingFlow({
     const bands = groupByBand(view.visible);
     let cardIndex = 0;
     const ctaState =
-      wheel.length > MAX_SEGMENTS
+      total > MAX_SEGMENTS
         ? "tooMany"
-        : canStartSpinning(wheel.length)
+        : canStartSpinning(total)
           ? "ready"
           : "needMore";
 
@@ -371,7 +411,7 @@ export default function OnboardingFlow({
             <div className="flex items-center justify-between gap-3">
               <p
                 className="type-eyebrow"
-                style={{ color: "var(--brand-text)", letterSpacing: "0.14em" }}
+                style={{ color: "var(--ink-warm)", letterSpacing: "0.14em" }}
               >
                 {t("onb.pick.count", { n: rows.length })}
               </p>
@@ -419,9 +459,14 @@ export default function OnboardingFlow({
                 A craving's list is explained by its own "results for" line. */}
             {!query && (
               <p className="type-meta" style={{ color: "var(--body-warm)" }}>
-                {initialTicks > 0
-                  ? t("onb.pick.desc", { n: initialTicks })
-                  : t("onb.pick.descNone")}
+                {initialClosed > 0
+                  ? t("onb.pick.descQuiet", {
+                      n: initialTicks,
+                      closed: initialClosed,
+                    })
+                  : initialTicks > 0
+                    ? t("onb.pick.desc", { n: initialTicks })
+                    : t("onb.pick.descNone")}
               </p>
             )}
           </header>
@@ -586,6 +631,61 @@ export default function OnboardingFlow({
             className="flex flex-col gap-5"
             aria-busy={pending === "keyword"}
           >
+            {typed.length > 0 && (
+              <section className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-3 px-1">
+                  <h2
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 650,
+                      color: "var(--ink-warm)",
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {t("onb.typed.section")}
+                  </h2>
+                  <span
+                    aria-hidden
+                    className="flex-1 h-px"
+                    style={{ background: "var(--border)" }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--muted-foreground)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {t("onb.band.count", { n: typed.length })}
+                  </span>
+                </div>
+                {typed.map((name, i) => {
+                  const on = typedOn.has(name);
+                  return (
+                    <TypedCard
+                      key={`typed:${name}`}
+                      name={name}
+                      on={on}
+                      dimmed={atCap && !on}
+                      index={i}
+                      onToggle={() => {
+                        if (!on && atCap) {
+                          setCapAt(Date.now());
+                          return;
+                        }
+                        setTypedOn(prev => {
+                          const next = new Set(prev);
+                          if (on) next.delete(name);
+                          else next.add(name);
+                          return next;
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </section>
+            )}
+
             {bands.map(({ band, places }) => (
               <section key={band ?? "far"} className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-3 px-1">
@@ -723,12 +823,12 @@ export default function OnboardingFlow({
             >
               <PaneWheel
                 ref={miniWheelRef}
-                count={Math.min(wheel.length, MAX_SEGMENTS)}
+                count={Math.min(total, MAX_SEGMENTS)}
                 size={46}
                 tone="accent"
               />
               <span
-                className="flex-1 text-left"
+                className="flex-1 text-left flex flex-col"
                 style={{
                   fontSize: 17,
                   fontWeight: 600,
@@ -736,16 +836,36 @@ export default function OnboardingFlow({
                 }}
               >
                 {ctaState === "ready" ? (
-                  <CountCopy
-                    text={t("onb.cta.spin", { n: "\u0000" })}
-                    count={wheel.length}
-                  />
+                  <>
+                    <span>
+                      <CountCopy
+                        text={t("onb.cta.spin", { n: "\u0000" })}
+                        count={total}
+                      />
+                    </span>
+                    {/* The server skips closed places when it spins, so a
+                        closed tick is on the wheel but not in play today.
+                        Saying so here is what stops "these 8" turning into
+                        "6 in play" one screen later. */}
+                    {closedOnWheel > 0 && (
+                      <span
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 500,
+                          letterSpacing: 0,
+                          opacity: 0.92,
+                        }}
+                      >
+                        {t("onb.cta.closedNote", { n: closedOnWheel })}
+                      </span>
+                    )}
+                  </>
                 ) : ctaState === "needMore" ? (
                   t("onb.cta.needMore", { n: MIN_SPINNABLE })
                 ) : (
                   t("onb.cta.tooMany", {
                     max: MAX_SEGMENTS,
-                    n: wheel.length - MAX_SEGMENTS,
+                    n: total - MAX_SEGMENTS,
                   })
                 )}
               </span>
@@ -791,6 +911,24 @@ export default function OnboardingFlow({
               ? t("onb.locate.searching")
               : t("onb.locate.desc")}
           </p>
+          {/* Continuity with the landing page: what they typed there is not
+              lost, and they can see that BEFORE choosing a location. */}
+          {typed.length > 0 && (
+            <p
+              className="type-meta mx-auto max-w-[19rem] inline-flex items-start gap-1.5 text-left"
+              style={{ color: "var(--ink-warm)" }}
+            >
+              <PenLine size={14} className="flex-none mt-[3px]" />
+              <span>
+                {typed.length === 1
+                  ? t("onb.typed.carryOne", { name: typed[0] })
+                  : t("onb.typed.carryMany", {
+                      name: typed[0],
+                      n: typed.length,
+                    })}
+              </span>
+            </p>
+          )}
         </div>
 
         {alert && (
@@ -1039,6 +1177,106 @@ function OutlineButton({
 }
 
 /**
+ * A place the visitor typed on the landing page. Same card and same tick as a
+ * nearby place, so it reads as one list — but the tile shows a pen instead of
+ * a walk time, because a typed name has no location to walk to.
+ */
+function TypedCard({
+  name,
+  on,
+  dimmed,
+  index,
+  onToggle,
+}: {
+  name: string;
+  on: boolean;
+  dimmed: boolean;
+  index: number;
+  onToggle: () => void;
+}) {
+  const { t } = useLang();
+  return (
+    <div
+      className="onb-arrive onb-card flex items-stretch"
+      style={{
+        ["--i" as string]: index,
+        borderRadius: "var(--radius-card)",
+        background: on
+          ? "oklch(from var(--brand) l c h / 0.07)"
+          : "var(--paper)",
+        border: `1px solid ${on ? "oklch(from var(--brand) l c h / 0.5)" : "var(--border)"}`,
+        opacity: dimmed ? 0.5 : 1,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={on}
+        className="flex-1 min-w-0 flex items-center gap-3.5 pl-2.5 pr-4 py-2.5 text-left active:scale-[var(--press-scale)] transition-transform"
+        style={{ borderRadius: "var(--radius-card)" }}
+      >
+        <span
+          aria-hidden
+          className="relative flex-none flex items-center justify-center"
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 18,
+            background: "var(--muted)",
+          }}
+        >
+          <span
+            className="onb-tile-fill absolute inset-0"
+            style={{ borderRadius: 18, background: "var(--brand-grad)" }}
+          />
+          <PenLine
+            size={20}
+            className="onb-tile-num relative"
+            style={{ color: on ? "var(--on-accent)" : "var(--ink-warm)" }}
+          />
+          <span
+            className="onb-check absolute flex items-center justify-center rounded-full"
+            style={{
+              top: -5,
+              right: -5,
+              width: 20,
+              height: 20,
+              background: "var(--paper)",
+              color: "var(--brand-text)",
+              boxShadow: "0 0 0 1.5px var(--brand-solid)",
+            }}
+          >
+            <Check size={12} strokeWidth={3.25} />
+          </span>
+        </span>
+        <span className="flex-1 min-w-0 flex flex-col gap-1">
+          <span
+            className="block truncate"
+            style={{
+              fontSize: 17,
+              lineHeight: 1.3,
+              fontWeight: 600,
+              color: "var(--ink-warm)",
+            }}
+          >
+            {name}
+          </span>
+          <span
+            style={{
+              fontSize: 13,
+              lineHeight: 1.35,
+              color: "var(--body-warm)",
+            }}
+          >
+            {t("onb.typed.meta")}
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/**
  * The commit bar's wheel, grown to the middle of the screen and turning while
  * the wheel is written. It starts exactly where the small one was: the rect was
  * measured when the button was pressed, and the offset is written into the
@@ -1048,7 +1286,7 @@ function BuildingStep({
   places,
   growFrom,
 }: {
-  places: NearbyRow[];
+  places: { key: string; name: string }[];
   growFrom: DOMRect | null;
 }) {
   const { t } = useLang();
@@ -1089,7 +1327,7 @@ function BuildingStep({
       <ul className="flex flex-wrap justify-center gap-2 max-w-md">
         {places.map((p, i) => (
           <li
-            key={p.placeId}
+            key={p.key}
             className="onb-arrive px-3 py-1.5"
             style={{
               ["--i" as string]: i,

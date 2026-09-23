@@ -9,6 +9,24 @@ import ThemeToggle from "@/components/ThemeToggle";
 import LangToggle from "@/components/LangToggle";
 import LandingWheel from "@/components/LandingWheel";
 import { useLang } from "@/i18n";
+import { DEMO_DRAFT_KEY, serializeDemoDraft } from "@shared/demoDraft";
+
+/**
+ * "Save this wheel" from the demo: keep what the visitor typed, then sign in.
+ * It used to be a bare redirect, so everything typed was gone on return
+ * (2026-09-23 user test). First run reads the draft back (shared/demoDraft).
+ * localStorage can throw (private window, blocked storage) — the sign-in must
+ * still happen, just without the carry-over.
+ */
+function saveDemoAndSignIn(typed: string[]) {
+  try {
+    if (typed.length > 0) localStorage.setItem(DEMO_DRAFT_KEY, serializeDemoDraft(typed, Date.now()));
+    else localStorage.removeItem(DEMO_DRAFT_KEY);
+  } catch {
+    /* sign in anyway */
+  }
+  window.location.href = getLoginUrl();
+}
 
 /**
  * The real front door. Typing the domain or opening a bookmark lands here, not
@@ -107,12 +125,6 @@ export default function Home() {
       className="relative min-h-screen overflow-x-hidden overflow-y-auto"
       style={{ background: "var(--ground)" }}
     >
-      {/* Floating chrome — the only glass on the page. */}
-      <div className="fixed top-3 right-3 z-30 flex items-center gap-2">
-        <LangToggle />
-        <ThemeToggle />
-      </div>
-
       {/* ── HERO ── */}
       <section className="relative z-10 px-6 pt-5 pb-12">
         {/* The brand appeared nowhere on this page before — no mark, no wordmark,
@@ -122,13 +134,20 @@ export default function Home() {
           <span style={{ fontSize: 16, fontWeight: 700, color: "var(--ink-warm)", letterSpacing: "-0.01em" }}>
             Lunch Wheel
           </span>
+          {/* In the header, in flow — not `fixed`. Floating, they sat over the
+              demo wheel the whole way down the page (2026-09-23 user test); the
+              choice is made once, at the top, and then gets out of the way. */}
+          <div className="ml-auto flex items-center gap-2">
+            <LangToggle />
+            <ThemeToggle />
+          </div>
         </header>
 
         <div className="max-w-5xl mx-auto">
           <div className="text-center lg:text-left mb-10">
             <p
               className="type-eyebrow mb-5 reveal"
-              style={{ color: "var(--brand-text)", animationDelay: "40ms" }}
+              style={{ color: "var(--ink-warm)", animationDelay: "40ms" }}
             >
               {t("hero.eyebrow")}
             </p>
@@ -162,7 +181,7 @@ export default function Home() {
             <p className="type-meta mb-6 text-center lg:text-left" style={{ color: "var(--body-warm)" }}>
               {t("hero.tryHint")}
             </p>
-            <LandingWheel onSaveIntent={() => { window.location.href = getLoginUrl(); }} />
+            <LandingWheel onSaveIntent={saveDemoAndSignIn} />
           </div>
         </div>
       </section>
@@ -170,7 +189,7 @@ export default function Home() {
       {/* ── THREE STEPS (what first run actually does) ── */}
       <section className="relative z-10 py-12 px-6">
         <div className="max-w-4xl mx-auto">
-          <p className="type-eyebrow text-center mb-10 reveal" style={{ color: "var(--brand-text)" }}>
+          <p className="type-eyebrow text-center mb-10 reveal" style={{ color: "var(--ink-warm)" }}>
             {t("steps.eyebrow")}
           </p>
           <ol className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -197,7 +216,7 @@ export default function Home() {
                     <Icon size={18} />
                   </div>
                   <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>
-                    <span className="type-eyebrow mr-2" style={{ color: "var(--brand-text)" }}>
+                    <span className="type-eyebrow mr-2" style={{ color: "var(--ink-warm)" }}>
                       {i + 1}
                     </span>
                     {title}
@@ -215,7 +234,7 @@ export default function Home() {
       {/* ── FEATURES ── */}
       <section className="relative z-10 py-12 px-6">
         <div className="max-w-4xl mx-auto">
-          <p className="type-eyebrow text-center mb-10 reveal" style={{ color: "var(--brand-text)" }}>
+          <p className="type-eyebrow text-center mb-10 reveal" style={{ color: "var(--ink-warm)" }}>
             {t("features.eyebrow")}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -260,7 +279,7 @@ export default function Home() {
       {popularWheels && popularWheels.length > 0 && (
         <section className="relative z-10 py-12 px-6">
           <div className="max-w-4xl mx-auto">
-            <p className="type-eyebrow text-center mb-3 reveal" style={{ color: "var(--brand-text)" }}>
+            <p className="type-eyebrow text-center mb-3 reveal" style={{ color: "var(--ink-warm)" }}>
               {t("popular.eyebrow")}
             </p>
             <h2 className="type-title text-center mb-10 reveal" style={{ color: "var(--ink-warm)" }}>
@@ -292,7 +311,7 @@ export default function Home() {
                     </div>
                     <span
                       className="type-eyebrow flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ color: "var(--brand-text)" }}
+                      style={{ color: "var(--ink-warm)" }}
                     >
                       {t("popular.spin")} <Play size={11} />
                     </span>

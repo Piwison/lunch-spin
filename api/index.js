@@ -1786,8 +1786,8 @@ function deriveAreaName(addresses) {
   });
   return bestCount / areas.length >= CONSENSUS ? best : null;
 }
-function wheelNameForArea(area) {
-  const name = area ? `Lunch near ${area}` : "Lunch near me";
+function wheelNameForArea(area, language = "en") {
+  const name = language === "zh-TW" ? area ? `${area}\u7684\u5348\u9910` : "\u9644\u8FD1\u7684\u5348\u9910" : area ? `Lunch near ${area}` : "Lunch near me";
   return name.length > MAX_WHEEL_NAME ? name.slice(0, MAX_WHEEL_NAME) : name;
 }
 
@@ -1914,6 +1914,27 @@ function activePresence(rows, nowMs, ttlMs) {
 var CANDIDATE_POOL = 20;
 function isCandidate(p) {
   return p.permanentlyClosed !== true;
+}
+
+// shared/demoDraft.ts
+var DEMO_DRAFT_TTL_MS = 24 * 60 * 60 * 1e3;
+function normalizePlaceName(name) {
+  return name.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+}
+function cleanNames(names, taken = []) {
+  const seen = new Set(taken.map(normalizePlaceName));
+  const out = [];
+  for (const raw of names) {
+    const name = raw.trim().replace(/\s+/g, " ");
+    const key = normalizePlaceName(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+function mergeExtraNames(extra, taken) {
+  return cleanNames(extra, taken);
 }
 
 // shared/placeMapping.ts
@@ -2128,6 +2149,7 @@ function parseMapLink(input) {
 }
 
 // shared/nearbyQuery.ts
+var DEFAULT_PLACES_LANGUAGE = "zh-TW";
 function nearbySearchParams(q) {
   if (q.pageToken) return [["pagetoken", q.pageToken]];
   const out = [["location", `${q.lat},${q.lng}`]];
@@ -2136,6 +2158,7 @@ function nearbySearchParams(q) {
   out.push(["type", "restaurant"]);
   const keyword = q.keyword?.trim();
   if (keyword) out.push(["keyword", keyword]);
+  out.push(["language", q.language ?? DEFAULT_PLACES_LANGUAGE]);
   return out;
 }
 
@@ -2149,12 +2172,13 @@ var PLACE_FIELDS = "place_id,name,geometry,formatted_address,types";
 function isPlacesConfigured() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
 }
-async function searchPlacesByText(query, bias) {
+async function searchPlacesByText(query, bias, language = DEFAULT_PLACES_LANGUAGE) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
   const url = new URL(TEXT_SEARCH_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("query", query);
+  url.searchParams.set("language", language);
   if (bias) url.searchParams.set("location", `${bias.lat},${bias.lng}`);
   if (bias) url.searchParams.set("radius", "50000");
   const ctl = new AbortController();
@@ -2257,10 +2281,11 @@ async function expandShortLink(url) {
     clearTimeout(timer);
   }
 }
-async function placeDetails(placeId, apiKey) {
+async function placeDetails(placeId, apiKey, language) {
   const url = new URL(PLACE_DETAILS_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("place_id", placeId);
+  url.searchParams.set("language", language);
   url.searchParams.set("fields", PLACE_FIELDS);
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`Place Details failed (${res.status})`);
@@ -2292,10 +2317,11 @@ async function fetchPlaceHours(placeId) {
     clearTimeout(timer);
   }
 }
-async function findPlace(text2, bias, apiKey) {
+async function findPlace(text2, bias, apiKey, language) {
   const url = new URL(FIND_PLACE_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("input", text2);
+  url.searchParams.set("language", language);
   url.searchParams.set("inputtype", "textquery");
   url.searchParams.set("fields", PLACE_FIELDS);
   if (bias) url.searchParams.set("locationbias", `point:${bias.lat},${bias.lng}`);
@@ -2305,7 +2331,7 @@ async function findPlace(text2, bias, apiKey) {
   if (data.status !== "OK" || !data.candidates?.length) return null;
   return mapGooglePlace(data.candidates[0]);
 }
-async function resolvePlaceLink(rawUrl) {
+async function resolvePlaceLink(rawUrl, language = DEFAULT_PLACES_LANGUAGE) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
   let parsed = parseMapLink(rawUrl);
@@ -2316,17 +2342,17 @@ async function resolvePlaceLink(rawUrl) {
   }
   if (!parsed) return null;
   if (parsed.kind === "placeId") {
-    const byId = await placeDetails(parsed.placeId, apiKey);
+    const byId = await placeDetails(parsed.placeId, apiKey, language);
     if (byId) return byId;
     if (parsed.name) {
       const bias = parsed.lat != null && parsed.lng != null ? { lat: parsed.lat, lng: parsed.lng } : null;
-      return findPlace(parsed.name, bias, apiKey);
+      return findPlace(parsed.name, bias, apiKey, language);
     }
     return null;
   }
   if (parsed.kind === "text") {
     const bias = parsed.lat != null && parsed.lng != null ? { lat: parsed.lat, lng: parsed.lng } : null;
-    return findPlace(parsed.query, bias, apiKey);
+    return findPlace(parsed.query, bias, apiKey, language);
   }
   return null;
 }
@@ -2744,8 +2770,17 @@ var appRouter = router({
       z2.object({
         // Capped at the wheel's own segment ceiling — more than this can't be
         // rendered as a spinnable wheel anyway (shared/nearby).
-        places: z2.array(nearbyPlaceSchema).min(1).max(MAX_SEGMENTS),
+        // The 1..MAX_SEGMENTS bound applies to places + extraNames together
+        // (checked below): someone may keep only what they typed on the
+        // landing page and untick every nearby place.
+        places: z2.array(nearbyPlaceSchema).max(MAX_SEGMENTS),
         name: z2.string().min(1).max(128).optional(),
+        // Places the visitor typed into the landing-page demo before signing
+        // in (shared/demoDraft). Plain names: no placeId, no location.
+        extraNames: z2.array(z2.string().trim().min(1).max(64)).max(MAX_SEGMENTS).optional(),
+        // The first run's language, for the one string it names on the
+        // user's behalf. Absent = English, the name this always had.
+        language: z2.enum(["zh-TW", "en"]).optional(),
         // The point the user searched from, when they picked a place (their
         // office) rather than using raw geolocation. Persisted as the wheel's
         // distance origin so walking times work immediately and the office is
@@ -2758,7 +2793,21 @@ var appRouter = router({
         }).nullable().optional()
       })
     ).mutation(async ({ ctx, input }) => {
-      const name = input.name?.trim() || wheelNameForArea(deriveAreaName(input.places.map((p) => p.address)));
+      const extras = mergeExtraNames(
+        input.extraNames ?? [],
+        input.places.map((p) => p.name)
+      );
+      const total = input.places.length + extras.length;
+      if (total < 1 || total > MAX_SEGMENTS) {
+        throw new TRPCError3({
+          code: "BAD_REQUEST",
+          message: `A wheel needs 1 to ${MAX_SEGMENTS} places.`
+        });
+      }
+      const name = input.name?.trim() || wheelNameForArea(
+        deriveAreaName(input.places.map((p) => p.address)),
+        input.language
+      );
       const id = await createWheel(ctx.user.id, name, false, false);
       if (input.origin) {
         await setWheelOrigin(id, {
@@ -2769,7 +2818,8 @@ var appRouter = router({
         });
       }
       const { added, duplicates } = await addNearbyPlaces(id, ctx.user.id, input.places);
-      return { id, name, added, duplicates };
+      const addedExtra = await addRestaurants(id, ctx.user.id, extras);
+      return { id, name, added: added + addedExtra, duplicates };
     }),
     /**
      * Duplicate a wheel — "same restaurants, different team".
@@ -3125,7 +3175,11 @@ var appRouter = router({
         limit: z2.number().int().min(1).max(CANDIDATE_POOL).optional(),
         // `nextPageToken` from a previous response: the next 20 of the same
         // search, i.e. the next ring out when ranked by distance.
-        pageToken: z2.string().min(1).max(2048).optional()
+        pageToken: z2.string().min(1).max(2048).optional(),
+        // Names and addresses in this language. Absent = zh-TW (see
+        // shared/nearbyQuery), which is also what the ADD NEARBY dialog and
+        // the name search get until they pass the UI language themselves.
+        language: z2.enum(["zh-TW", "en"]).optional()
       })
     ).mutation(async ({ ctx, input }) => {
       if (input.wheelId != null) {
@@ -3148,7 +3202,8 @@ var appRouter = router({
           rankBy,
           radius,
           keyword: input.keyword,
-          pageToken: input.pageToken
+          pageToken: input.pageToken,
+          language: input.language
         });
       } catch {
         throw new TRPCError3({
@@ -3285,7 +3340,8 @@ var appRouter = router({
         query: z2.string().min(1).max(200),
         // Optional bias toward a known position, when we have one.
         lat: z2.number().min(-90).max(90).nullable().optional(),
-        lng: z2.number().min(-180).max(180).nullable().optional()
+        lng: z2.number().min(-180).max(180).nullable().optional(),
+        language: z2.enum(["zh-TW", "en"]).optional()
       })
     ).mutation(async ({ input }) => {
       if (!isPlacesConfigured()) {
@@ -3297,7 +3353,7 @@ var appRouter = router({
       let res;
       try {
         const bias = input.lat != null && input.lng != null ? { lat: input.lat, lng: input.lng } : null;
-        res = await searchPlacesByText(input.query, bias);
+        res = await searchPlacesByText(input.query, bias, input.language);
       } catch {
         throw new TRPCError3({
           code: "BAD_GATEWAY",
@@ -3323,7 +3379,8 @@ var appRouter = router({
         // resolves links during first run, before any wheel exists. With a
         // wheel, the membership check is unchanged.
         wheelId: z2.number().nullable().optional(),
-        url: z2.string().min(1).max(2048)
+        url: z2.string().min(1).max(2048),
+        language: z2.enum(["zh-TW", "en"]).optional()
       })
     ).mutation(async ({ ctx, input }) => {
       if (input.wheelId != null) {
@@ -3338,7 +3395,7 @@ var appRouter = router({
       }
       let place;
       try {
-        place = await resolvePlaceLink(input.url);
+        place = await resolvePlaceLink(input.url, input.language);
       } catch {
         throw new TRPCError3({
           code: "BAD_GATEWAY",

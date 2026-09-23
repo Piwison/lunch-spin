@@ -267,6 +267,12 @@ describe("arrivalTicks", () => {
     expect(arrivalTicks(arrivals, 10, 8)).toEqual([]);
   });
 
+  it("does not tick a closed arrival onto a wheel that can already spin", () => {
+    const closed = [place("c1", { open: false }), place("c2", { open: false })];
+    expect(arrivalTicks(closed, 3, 8)).toEqual([]);
+    expect(arrivalTicks(closed, 1, 8)).toEqual(["c1"]);
+  });
+
   it("never pushes the wheel past its cap", () => {
     expect(arrivalTicks(arrivals, MAX_SEGMENTS - 1, 20)).toEqual(["x"]);
   });

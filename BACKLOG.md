@@ -369,6 +369,18 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 
 不算問題：自動化 Chrome 裡定位停在「定位中…」2.5 秒（沒有真機權限對話框）；staging 右側黑色圓鈕是 Vercel toolbar。
 
+**處理狀態（2026-09-23，業主決定：5c/5d/5f/5l 用建議方案）**
+
+- ✅ **5a** 所有 Places 請求都帶 `language`（預設 zh-TW，first run 和 LocationPicker 傳 UI 語言）；新輪盤名稱依 first run 的語言：`信義區的午餐`／`附近的午餐`
+- ✅ **5b** server 那一半（輪盤名、店名語言）。畫面翻譯 → Codex（`docs/i18n/codex-flow.md`）
+- ✅ **5c** 休息中的店不預設勾，只在營業中不到 2 家時補到 2 家；文案照實說；開轉按鈕第二行寫「其中 N 家現在休息中，今天轉不到」
+- ✅ **5d** 只帶「自己加的店」（`shared/demoDraft.ts`，24 小時有效）：首頁存 → 登入 → first run 定位頁先告知、清單最上面「你在首頁加的」預設勾 → `createFromNearby.extraNames` → 建立後清掉。
+  **沒做**：選「我想自己加店」（手動建立）的路線不會帶入 — 那個對話框在 WheelSelector（Codex 的檔案）
+- ✅ **5e/5h/5i/5j/5k** 去重＋提示、10/10 計數與上限說明、× 實際 44×44、語言/主題按鈕移進頁首、移除 `maximum-scale`（輸入框改 16px 避免 iOS 聚焦放大）
+- ✅ **5l** 自己檔案裡的 11px 柿子橘小標改墨色（`--ink-warm`，淺色 ≥ 10.7:1）。**剩下**：`SpinWheel` 中心的 `in play` 等 Codex 檔案裡的，等 Codex 合併後再改
+- ⏸ **5f、5g** 併入「landing demo 改用真正的 SpinWheel」提案，等業主決定
+- → **5m** Codex（WheelApp）｜**5n** 未驗證
+
 ## Changelog
 
 - 2026-09-22 — 建立。來源：marketing / landing page 那一輪（P0 已 ship）+ onboarding

@@ -87,5 +87,18 @@ describe("wheelNameForArea", () => {
     // varchar(128) — a pathological provider string must not blow the insert.
     const name = wheelNameForArea("x".repeat(400));
     expect(name.length).toBeLessThanOrEqual(128);
+    expect(wheelNameForArea("x".repeat(400), "zh-TW").length).toBeLessThanOrEqual(128);
+  });
+
+  it("names the wheel in Chinese for a Chinese first run", () => {
+    // 2026-09-23 user test: the whole first run was Chinese and the wheel it
+    // built was called "Lunch near me" — the one string the user keeps.
+    expect(wheelNameForArea("信義區", "zh-TW")).toBe("信義區的午餐");
+    expect(wheelNameForArea(null, "zh-TW")).toBe("附近的午餐");
+  });
+
+  it("keeps the English name when the language is English or unspecified", () => {
+    expect(wheelNameForArea("Brooklyn", "en")).toBe("Lunch near Brooklyn");
+    expect(wheelNameForArea("Brooklyn")).toBe("Lunch near Brooklyn");
   });
 });

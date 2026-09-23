@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pickWinner } from "@shared/pick";
+import { MAX_DEMO_NAME, isDuplicateName, userAddedNames } from "@shared/demoDraft";
+import { DEMO_PLACES } from "@/i18n/dict";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useLang } from "@/i18n";
 import { Plus, X } from "lucide-react";
@@ -28,8 +30,9 @@ import { Plus, X } from "lucide-react";
 
 const MIN_PLACES = 2;
 const MAX_PLACES = 10;
-/** Long enough to type a real place, short enough to stay a chip on a phone. */
-const MAX_NAME_LENGTH = 12;
+/** Every language's seed, so a visitor who switched language mid-demo still has
+ *  only what they TYPED counted as theirs. */
+const ALL_SEEDS = [...DEMO_PLACES["zh-TW"], ...DEMO_PLACES.en];
 
 const SPIN_MS = 3600;
 const REDUCED_MS = 400;
@@ -48,7 +51,12 @@ const TURNS = 5;
  */
 const EASE_SPIN = "cubic-bezier(0.25, 0.05, 0.35, 1)";
 
-export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => void }) {
+export default function LandingWheel({
+  onSaveIntent,
+}: {
+  /** Called with the places the visitor TYPED (never the seed) — see shared/demoDraft. */
+  onSaveIntent?: (typed: string[]) => void;
+}) {
   const { t, demoPlaces } = useLang();
   const reducedMotion = useReducedMotion();
 
@@ -98,9 +106,15 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
     );
   }, [places, rotation, spinning, step, reducedMotion]);
 
+  // A repeat would get a second wedge and silently double its odds (2026-09-23
+  // user test), so it is refused here, with the reason on screen.
+  const draftIsDuplicate = draft.trim() !== "" && isDuplicateName(draft, places);
+  const full = places.length >= MAX_PLACES;
+  const typed = userAddedNames(places, ALL_SEEDS);
+
   const addPlace = () => {
     const name = draft.trim();
-    if (!name || places.length >= MAX_PLACES) return;
+    if (!name || full || draftIsDuplicate) return;
     seededRef.current = false;
     setPlaces((prev) => [...prev, name]);
     setDraft("");
@@ -174,8 +188,13 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
 
       {/* ── Places + controls ────────────────────────────────────────────── */}
       <div className="flex-1 w-full min-w-0">
-        <p className="type-eyebrow mb-3" style={{ color: "var(--brand-text)" }}>
+        {/* Ink, not persimmon: 11px persimmon on paper is 3.48:1 (failure mode
+            20 keeps it for large type and fills; small labels owe 4.5:1). */}
+        <p className="type-eyebrow mb-3 flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
           {t("demo.listLabel")}
+          <span style={{ color: "var(--body-warm)", letterSpacing: "0.08em" }}>
+            {places.length}/{MAX_PLACES}
+          </span>
         </p>
 
         <ul className="flex flex-wrap gap-2 mb-4" aria-live="polite">
@@ -193,12 +212,15 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
                   }}
                 >
                   {name}
+                  {/* A real 44×44 box (the mobile target), pulled back into
+                      the chip by negative margins so the chip stays compact
+                      and only the × glyph is visible. */}
                   <button
                     type="button"
                     onClick={() => removePlace(i)}
                     aria-label={t("demo.removeOne", { name })}
                     className="flex items-center justify-center rounded-full transition-opacity hover:opacity-100 opacity-60"
-                    style={{ width: 22, height: 22, color: "inherit" }}
+                    style={{ width: 44, height: 44, margin: "-11px -8px -11px -11px", color: "inherit" }}
                   >
                     <X size={13} />
                   </button>
@@ -208,8 +230,10 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
           })}
         </ul>
 
-        {places.length < MAX_PLACES && (
-          <div className="flex gap-2 mb-5">
+        {/* Stays on screen at the limit, disabled, with the reason — a control
+            that silently vanishes at 10 reads as a layout failure. */}
+        <div className="mb-5">
+          <div className="flex gap-2">
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -219,22 +243,28 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
                   addPlace();
                 }
               }}
-              maxLength={MAX_NAME_LENGTH}
+              disabled={full}
+              maxLength={MAX_DEMO_NAME}
               placeholder={t("demo.addPlaceholder")}
               aria-label={t("demo.addPlaceholder")}
-              className="flex-1 min-w-0 px-3.5 type-meta outline-none focus-visible:ring-2"
+              aria-invalid={draftIsDuplicate || undefined}
+              aria-describedby="demo-add-note"
+              className="flex-1 min-w-0 px-3.5 outline-none focus-visible:ring-2 disabled:opacity-50"
               style={{
                 minHeight: 44,
+                // 16px, not the 15px meta size: iOS zooms the page into any
+                // focused input under 16px, and the page no longer blocks zoom.
+                fontSize: 16,
                 borderRadius: "var(--radius-control)",
                 background: "var(--paper)",
-                border: "1px solid var(--border)",
+                border: `1px solid ${draftIsDuplicate ? "var(--destructive)" : "var(--border)"}`,
                 color: "var(--ink-warm)",
               }}
             />
             <button
               type="button"
               onClick={addPlace}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || full || draftIsDuplicate}
               className="flex-none inline-flex items-center gap-1.5 px-4 type-meta disabled:opacity-40 transition-opacity"
               style={{
                 minHeight: 44,
@@ -249,7 +279,15 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
               {t("demo.add")}
             </button>
           </div>
-        )}
+          <p
+            id="demo-add-note"
+            role="status"
+            className="type-meta mt-2 min-h-[1.4em]"
+            style={{ color: draftIsDuplicate ? "var(--destructive)" : "var(--body-warm)" }}
+          >
+            {draftIsDuplicate ? t("demo.duplicate") : full ? t("demo.full", { max: MAX_PLACES }) : ""}
+          </p>
+        </div>
 
         <button
           type="button"
@@ -288,11 +326,14 @@ export default function LandingWheel({ onSaveIntent }: { onSaveIntent?: () => vo
             {onSaveIntent && (
               <button
                 type="button"
-                onClick={onSaveIntent}
+                onClick={() => onSaveIntent(typed)}
                 className="type-meta underline underline-offset-4"
                 style={{ color: "var(--body)", fontWeight: 600 }}
               >
-                {t("demo.saveCta")} →
+                {/* Says exactly what survives sign-in: the places they typed.
+                    The seeded examples do not, so the copy never promises to
+                    "save this wheel" when most of it is placeholder. */}
+                {typed.length > 0 ? t("demo.saveTyped", { n: typed.length }) : t("demo.saveCta")} →
               </button>
             )}
           </div>
