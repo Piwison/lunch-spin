@@ -283,7 +283,8 @@
 
 ## 附錄 B：測試資料與重現
 
-測試工具在 session 的 scratchpad，沒有進 repo：
+測試工具已經放進 repo：`scripts/replica/`（使用說明在它的 README）。這一份報告用的資料可以用
+`node scripts/replica/seed.mjs --reset` 原樣重建：同樣的 15 個工作天、每天轉到同一家店。
 
 - `fake-google.mjs`：假的 Places、Distance Matrix、Details API
 - `mariadb-json.mjs`：補上 JSON 欄位解析

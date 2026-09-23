@@ -118,3 +118,6 @@ client/public/__manus__/version.json
 # .design/gen.py + the design skill's seeder, so it stays out of the repo.
 .design/**/*.html
 !.design/**/*.dc.html
+
+# Replica harness state (logs, session tokens, screenshots)
+scripts/replica/.state/
