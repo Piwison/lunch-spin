@@ -92,6 +92,22 @@ B 線給 Codex 或另一個 Claude session。
 `api/index.js`：兩條線都會改 server，每個 PR 都要附自己重新 build 的 bundle。
 合併時如果 `api/index.js` 衝突，**不要手動解**：合完之後重跑 `pnpm build`，把結果 commit 上去。
 
+### 開工前：基準分支和設計系統
+
+- **從 `staging` 開分支**（`76a8e138` 或之後）。它除了這份計畫，也包含**設計系統分支**
+  （Button / Chip / Badge 元件層，`docs/design-system/README.md`）。那個分支還在 staging 等驗收，還沒進 `main`。
+  最乾淨的做法是設計系統先 merge 進 `main` 再開工；如果先開工，每個分支都會帶著它，
+  `main` 要等設計系統先合進去，才能合這些工作包。
+- **UI 一律用 `components/ui` 的元件**，不要在呼叫端寫新的 `style={{ minHeight / borderRadius / background }}`。
+  `pnpm test` 裡有棘輪測試，手寫的 `var(--brand-grad)` 只能變少，新增一個測試就會失敗。
+  下面幾個工作包直接對應到元件：
+  - B7 的「想吃／今天不要」：`Chip`，用 `pressed` 同時決定外觀和 `aria-pressed`
+  - A3 今日卡片的［Directions］：`Button variant="outline"`（在玻璃上）或 `secondary`（在地面上）
+  - A11 的［就去這家］：`Button variant="primary"`
+  - 44px 的按鈕：`size="md"`
+- UI 變更也要走設計系統 README 第 6 節的檢查清單：`/design-system` 切深淺色看過；360、390、1280 寬都看過；
+  `prefers-reduced-motion` 也要看。
+
 ### 順序
 
 ```mermaid
