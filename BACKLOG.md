@@ -345,6 +345,30 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 
 ---
 
+## 5. 2026-09-23 使用者測試（staging，390×844）
+
+來源：`lunch-ux-test-2026-09-23.zip`（7 個 issue + 第二輪 demo 稽核 + axe 報告）。
+每一項都回頭對過程式碼；「測試者的推測」和「實際原因」不同的地方有標出來。
+
+| # | 問題 | 證據等級 | 實際原因 | 誰 | 需要業主決定？ |
+|---|---|---|---|---|---|
+| 5a | **Google 店名、地址是英文**（McDonald's - New Taipei 101 Store、Ruilin Meiermei Breakfast） | 已確認 | 所有 Places 請求都**沒有送 `language`**，Google 對美國機房的請求回英文。英文地址又解析不出「信義區」，所以新輪盤叫 `Lunch near me`。1a 那兩份量測的店名也是這個原因 | Claude | 否 |
+| 5b | 建好輪盤後整個變英文 | 已確認 | **不是**測試者推測的「語系在 OAuth 後遺失」— `html[lang]` 還是 zh-Hant-TW，localStorage 也在。是 app 本來就還沒翻（3a），加上 5a 和 server 產生的英文輪盤名 | Codex（UI）＋ Claude（server） | 否 |
+| 5c | 文案說「營業中的 8 家」但勾了休息中的店；按鈕說 8 家、輪盤只轉 6 家 | 已確認 | 文案是寫死的；`preselectPlaceIds` 在營業中的不夠時會用休息中的補滿（刻意的規則），而 server 開轉時跳過休息中的店 | Claude | **是**：休息中的要不要預設勾 |
+| 5d | Demo 輪盤登入後不見 | 已確認 | `Home.tsx` 的「存起來」只是直接跳登入，什麼都沒保存 | Claude | **是**：帶過去的是「使用者自己加的店」還是整個 demo（預設 8 家是假店名，存成真輪盤會重犯「Pizza Place」的錯） |
+| 5e | Demo 可以重複加同一家，偷偷改變機率 | 已確認 | `LandingWheel` 的 `addPlace` 沒有去重 | Claude | 否 |
+| 5f | Demo 楔形沒有店名 | 已確認（刻意） | `LandingWheel` 註解：輪盤上的字是失敗模式 16/43/44/51 的雷區，landing 刻意不放 | Claude | **是**：編號楔形＋編號 chip、或轉動時高亮指針下的 chip、或維持現狀 |
+| 5g | 390×844 首屏看不到「開轉」 | 已確認（截圖） | 輪盤＋候選 chip 把按鈕推到首屏外 | Claude | 否 |
+| 5h | 到 10 家時輸入框直接消失、沒說明 | 已確認 | `LandingWheel` `places.length < MAX_PLACES &&` 整塊不渲染 | Claude | 否 |
+| 5i | Demo chip 的 × 只有 22×22px | 已確認 | 按鈕寫死 22px | Claude | 否 |
+| 5j | 語言／主題按鈕捲動時蓋住 demo | 已確認（截圖） | 兩顆是 fixed 浮動 | Claude | 否 |
+| 5k | 不能縮放 | 已確認 | `client/index.html` 的 `maximum-scale=1`。移除時要確認所有輸入框 ≥ 16px，否則 iOS 聚焦會自動放大 | Claude | 否 |
+| 5l | 柿子橘小字對比 3.48:1 | 已確認（已知取捨） | 失敗模式 20：業主看過加深版本後選擇維持。axe 會一直報 | — | **是**：維持，或只有 11px eyebrow 改用墨色 |
+| 5m | 輪盤頁沒有 `<main>`、沒有 h1 | 已確認（axe） | `WheelApp` 版面 | Codex（順手在 WheelApp） | 否 |
+| 5n | 帳號選單開啟時，背後 `aria-hidden` 的區塊還有可聚焦元素 | 假設 | axe 報告；Radix 選單的 modal 行為，需要實測 | — | 否 |
+
+不算問題：自動化 Chrome 裡定位停在「定位中…」2.5 秒（沒有真機權限對話框）；staging 右側黑色圓鈕是 Vercel toolbar。
+
 ## Changelog
 
 - 2026-09-22 — 建立。來源：marketing / landing page 那一輪（P0 已 ship）+ onboarding
@@ -364,3 +388,5 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 - 2026-09-22 — 1b/1c/1d 完成，1e 部分完成（按需要的下一頁）。訂正 1a：business_status
   早就有接（軟性），缺的是永久歇業的區分，已補。Onboarding 畫面同一輪重新設計
   （雷達 → 組裝 → 開轉），文案繁中優先、英文保留。
+- 2026-09-23 — 加入第 5 節：staging 使用者測試的分流。新發現 5a（Places 沒送 language）是這次最大的問題。
+  翻譯（3a）改由 Codex 在 `codex/i18n-app` 做，流程見 `docs/i18n/codex-flow.md`；字典已拆成 namespace 檔。
