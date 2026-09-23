@@ -19,6 +19,9 @@ import WheelApp from "./pages/WheelApp";
 const JoinWheel = lazy(() => import("./pages/JoinWheel"));
 const GuestWheel = lazy(() => import("./pages/GuestWheel"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+// The living design-system reference. Unlinked and internal; lazy so it costs
+// the entry bundle nothing (docs/design-system/README.md).
+const StyleGuide = lazy(() => import("./design-system/StyleGuide"));
 
 /** Route-chunk fallback — same brand loader as the auth/wheel-loading phases so
  *  the first-load sequence is one continuous spinner, not a series of swaps. */
@@ -35,6 +38,7 @@ function Router() {
         <Route path="/app/:wheelId" component={WheelApp} />
         <Route path="/w/:wheelId" component={GuestWheel} />
         <Route path="/join/:token" component={JoinWheel} />
+        <Route path="/design-system" component={StyleGuide} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

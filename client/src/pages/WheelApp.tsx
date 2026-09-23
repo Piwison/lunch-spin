@@ -31,6 +31,9 @@ import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLang } from "@/i18n";
 import { userError } from "@/lib/userError";
@@ -1169,22 +1172,13 @@ export default function WheelApp() {
               <span className="text-sm flex-1 min-w-0 truncate">
                 {t("app.shared.prompt", { name: sharedText })}{selectedWheelId ? "" : ` — ${t("app.shared.pickFirst")}`}
               </span>
-              <button
+              <Button
+                size="md"
                 onClick={() => selectedWheelId && addShared.mutate({ wheelId: selectedWheelId, text: sharedText })}
                 disabled={!selectedWheelId || addShared.isPending}
-                className="px-4 flex items-center transition-colors active:scale-[var(--press-scale)] disabled:opacity-40 flex-shrink-0"
-                style={{
-                  minHeight: 44,
-                  borderRadius: "var(--radius-chip)",
-                  background: "var(--brand-grad)",
-                  color: "var(--on-accent)",
-                  fontSize: 15,
-                  fontWeight: 500,
-                  letterSpacing: "0.05em",
-                }}
               >
                 {addShared.isPending ? t("app.shared.adding") : t("app.shared.add")}
-              </button>
+              </Button>
               <button onClick={() => setSharedText(null)} className="p-1 rounded text-muted-foreground hover:text-foreground flex-shrink-0">
                 <X size={14} />
               </button>
@@ -1379,21 +1373,9 @@ export default function WheelApp() {
                         {(restaurants?.length ?? 0) === 0 ? (
                           /* First run CTA */
                           <div className="flex flex-col items-center gap-3 text-center">
-                            <button
-                              onClick={() => setActiveTab("restaurants")}
-                              className="group flex items-center gap-2.5 px-8 transition-colors duration-200 active:scale-[var(--press-scale)]"
-                              style={{
-                                minHeight: 56,
-                                borderRadius: "var(--radius-control)",
-                                background: "var(--brand-grad)",
-                                color: "var(--on-accent)",
-                                fontSize: 16,
-                                fontWeight: 500,
-                                letterSpacing: "0.05em",
-                              }}
-                            >
+                            <Button onClick={() => setActiveTab("restaurants")} className="group gap-2.5 px-8">
                               <Plus size={17} /> {t("app.wheel.add")}
-                            </button>
+                            </Button>
                             <p className="type-meta text-muted-foreground">{t("app.wheel.addHelp")}</p>
                           </div>
                         ) : (
@@ -1422,23 +1404,15 @@ export default function WheelApp() {
                               </p>
                             )}
 
-                            <button
+                            {/* A spent or empty Spin goes grey, not pale persimmon —
+                                the same state override GuestWheel's Spin carries. */}
+                            <Button
                               onClick={handleSpin}
-                              disabled={isSpinning || createSpin.isPending || wheelSegments.length === 0}
-                              className="w-full flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40 disabled:cursor-not-allowed"
-                              style={{
-                                minHeight: 56,
-                                borderRadius: "var(--radius-control)",
-                                background: spinDisabled ? "var(--muted)" : "var(--brand-grad)",
-                                color: spinDisabled ? "var(--muted-foreground)" : "var(--on-accent)",
-                                fontSize: 16,
-                                fontWeight: 500,
-                                letterSpacing: "0.05em",
-                                transitionDuration: "var(--dur-tap)",
-                              }}
+                              disabled={spinDisabled}
+                              className={cn("w-full", spinDisabled && "bg-none bg-muted text-muted-foreground")}
                             >
                               {isSpinning || createSpin.isPending ? t("app.wheel.spinning") : t("app.wheel.spin")}
-                            </button>
+                            </Button>
 
                             {/* The muted line under the stack: how many are on the
                                 wheel, and why the count is lower than the list —
@@ -1465,20 +1439,9 @@ export default function WheelApp() {
                                   <span>{spinBlockMessage}</span>
                                 </span>
                                 {spinBlockAction && (
-                                  <button
-                                    onClick={spinBlockAction.run}
-                                    className="self-start px-4 transition-colors active:scale-[var(--press-scale)]"
-                                    style={{
-                                      minHeight: 44,
-                                      borderRadius: "var(--radius-control)",
-                                      background: "var(--brand-grad)",
-                                      color: "var(--on-accent)",
-                                      fontSize: 14,
-                                      fontWeight: 500,
-                                    }}
-                                  >
+                                  <Button size="md" onClick={spinBlockAction.run} className="self-start">
                                     {spinBlockAction.label}
-                                  </button>
+                                  </Button>
                                 )}
                               </div>
                             ) : (
@@ -1514,12 +1477,7 @@ export default function WheelApp() {
                             >
                               <div className="type-eyebrow flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
                                 <Clock size={12} /> {t("app.excluded.title")}
-                                <span
-                                  className="px-2 py-0.5 type-meta font-semibold"
-                                  style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
-                                >
-                                  {restaurants.filter((r) => r.isExcluded).length}
-                                </span>
+                                <Badge size="md">{restaurants.filter((r) => r.isExcluded).length}</Badge>
                               </div>
                               <ChevronDown
                                 size={14}
@@ -1547,25 +1505,19 @@ export default function WheelApp() {
                                       {/* 44px, not the row's own height: this is a
                                           real tap target on a phone, and the app's
                                           floor for one is 44 (failure mode 35). */}
-                                      <button
+                                      <Button
                                         onClick={() =>
                                           selectedWheelId &&
                                           reenableRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: r.id })
                                         }
                                         disabled={reenableRestaurant.isPending}
                                         aria-label={t("app.excluded.restoreAria", { name: r.name })}
-                                        className="flex items-center justify-center gap-1.5 px-3 transition-colors active:scale-[var(--press-scale)] disabled:opacity-50"
-                                        style={{
-                                          minHeight: 44,
-                                          borderRadius: "var(--radius-chip)",
-                                          background: "oklch(from var(--ok) l c h / 0.15)",
-                                          border: "1px solid oklch(from var(--ok) l c h / 0.4)",
-                                          color: "var(--ok)",
-                                          fontWeight: 500,
-                                        }}
+                                        variant="positive"
+                                        size="md"
+                                        className="gap-1.5 px-3"
                                       >
                                         <RefreshCw size={11} /> {t("app.excluded.now")}
-                                      </button>
+                                      </Button>
                                     </span>
                                   </li>
                                 ))}

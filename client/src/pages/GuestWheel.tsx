@@ -12,6 +12,8 @@ import { ArrowRight, CopyPlus, Sparkles, Utensils } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "wouter";
 import { useLang } from "@/i18n";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
  * Guest (no sign-in) wheel view at /w/:wheelId.
@@ -163,23 +165,15 @@ export default function GuestWheel() {
               receded={showResult}
             />
 
-            <button
+            <Button
               onClick={handleSpin}
               disabled={isSpinning || segments.length === 0}
-              className="px-12 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                minWidth: 180,
-                borderRadius: "var(--radius-control)",
-                background: isSpinning ? "var(--muted)" : "var(--brand-grad)",
-                color: isSpinning ? "var(--body-warm)" : "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
+              // While the wheel turns the action is spent, not merely unavailable:
+              // it goes grey rather than pale persimmon.
+              className={cn("px-12 min-w-45", isSpinning && "bg-none bg-muted text-body-warm")}
             >
               {isSpinning ? t("app.guest.spinning") : t("app.guest.spin")}
-            </button>
+            </Button>
 
             <p className="type-meta text-muted-foreground">
               {t(segments.length === 1 ? "app.guest.count.one" : "app.guest.count.other", { n: segments.length })}
@@ -256,21 +250,11 @@ function Shell({ children }: { children: React.ReactNode }) {
 function CopyWheelCta({ wheelId }: { wheelId: number }) {
   const { t } = useLang();
   return (
-    <a
-      href={copyIntentUrl(wheelId)}
-      className="flex items-center justify-center gap-2 w-full px-5 transition-colors active:scale-[var(--press-scale)]"
-      style={{
-        minHeight: 56,
-        borderRadius: "var(--radius-control)",
-        background: "var(--paper)",
-        border: "1px solid var(--border)",
-        color: "var(--ink-warm)",
-        fontSize: 15,
-        fontWeight: 500,
-      }}
-    >
-      <CopyPlus size={15} style={{ color: "var(--brand-text)" }} /> {t("app.guest.copy")}
-    </a>
+    <Button asChild variant="secondary" className="w-full px-5">
+      <a href={copyIntentUrl(wheelId)}>
+        <CopyPlus size={15} className="text-brand-text" /> {t("app.guest.copy")}
+      </a>
+    </Button>
   );
 }
 
@@ -279,40 +263,20 @@ function SignInCta({ subtle = false }: { subtle?: boolean }) {
   const { t } = useLang();
   if (subtle) {
     return (
-      <a
-        href={getLoginUrl()}
-        className="flex items-center justify-center gap-2 w-full px-5 transition-colors active:scale-[var(--press-scale)]"
-        style={{
-          minHeight: 56,
-          borderRadius: "var(--radius-control)",
-          background: "var(--paper)",
-          border: "1px solid var(--border)",
-          color: "var(--ink-warm)",
-          fontSize: 15,
-          fontWeight: 500,
-        }}
-      >
-        <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
-        {t("app.guest.create")}
-        <ArrowRight size={14} />
-      </a>
+      <Button asChild variant="secondary" className="w-full px-5">
+        <a href={getLoginUrl()}>
+          <Sparkles size={15} className="text-brand-text" />
+          {t("app.guest.create")}
+          <ArrowRight size={14} />
+        </a>
+      </Button>
     );
   }
   return (
-    <a
-      href={getLoginUrl()}
-      className="mt-2 inline-flex items-center gap-2 px-7 transition-colors active:scale-[var(--press-scale)]"
-      style={{
-        minHeight: 56,
-        borderRadius: "var(--radius-control)",
-        background: "var(--brand-grad)",
-        color: "var(--on-accent)",
-        fontSize: 16,
-        fontWeight: 500,
-        letterSpacing: "0.05em",
-      }}
-    >
-      {t("app.guest.create")} <ArrowRight size={16} />
-    </a>
+    <Button asChild className="mt-2 px-7">
+      <a href={getLoginUrl()}>
+        {t("app.guest.create")} <ArrowRight size={16} />
+      </a>
+    </Button>
   );
 }

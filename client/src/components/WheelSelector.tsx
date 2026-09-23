@@ -742,16 +742,7 @@ export default function WheelSelector({
             <Button
               onClick={() => { setCreateError(null); newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines }); }}
               disabled={!newName.trim() || createWheel.isPending}
-              className="relative overflow-hidden transition-colors duration-200 active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
+              className="overflow-hidden"
             >
               {createWheel.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{t("settings.create.creating")}</span>
@@ -848,12 +839,12 @@ export default function WheelSelector({
                             readOnly
                             value={inviteLinkFor(token)}
                             onFocus={(e) => e.currentTarget.select()}
-                            className="h-9 bg-background/60 border-border/50 type-meta font-mono"
+                            className="bg-background/60 border-border/50 type-meta font-mono"
                           />
-                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.invite.copyTitle")} onClick={() => copyLink(inviteLinkFor(token), t("settings.copy.invite"))}>
+                          <Button size="icon" variant="outline" title={t("settings.invite.copyTitle")} onClick={() => copyLink(inviteLinkFor(token), t("settings.copy.invite"))}>
                             <Copy size={14} />
                           </Button>
-                          <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.invite.shareTitle")} onClick={() => shareInviteLink(token, editWheel.name)}>
+                          <Button size="icon" variant="outline" title={t("settings.invite.shareTitle")} onClick={() => shareInviteLink(token, editWheel.name)}>
                             <Share2 size={14} />
                           </Button>
                         </div>
@@ -869,7 +860,7 @@ export default function WheelSelector({
                       </>
                     ) : canEdit ? (
                       <>
-                        <Button type="button" variant="outline" size="sm" className="self-start gap-2" onClick={regenerate}>
+                        <Button type="button" variant="outline" size="md" className="self-start" onClick={regenerate}>
                           <Share2 size={14} /> {t("settings.invite.generate")}
                         </Button>
                         <p className="type-meta text-muted-foreground">{t("settings.invite.anyone")}</p>
@@ -896,12 +887,12 @@ export default function WheelSelector({
                         readOnly
                         value={publicUrl}
                         onFocus={(e) => e.currentTarget.select()}
-                        className="h-9 bg-background/60 border-border/50 type-meta font-mono"
+                        className="bg-background/60 border-border/50 type-meta font-mono"
                       />
-                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.public.copyTitle")} onClick={() => copyPublicLink(editWheel.id)}>
+                      <Button size="icon" variant="outline" title={t("settings.public.copyTitle")} onClick={() => copyPublicLink(editWheel.id)}>
                         <Copy size={14} />
                       </Button>
-                      <Button size="icon" variant="outline" className="h-11 w-11 flex-shrink-0" title={t("settings.public.shareTitle")} onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
+                      <Button size="icon" variant="outline" title={t("settings.public.shareTitle")} onClick={() => sharePublicLink(editWheel.id, editWheel.name)}>
                         <Share2 size={14} />
                       </Button>
                     </div>
@@ -1071,16 +1062,7 @@ export default function WheelSelector({
                 <Button
                   onClick={saveWheelSettings}
                   disabled={!editWheel.name.trim() || savingWheelSettings}
-                  className="w-full transition-colors duration-200 active:scale-[var(--press-scale)]"
-                  style={{
-                    minHeight: 56,
-                    borderRadius: "var(--radius-control)",
-                    background: "var(--brand-grad)",
-                    color: "var(--on-accent)",
-                    fontSize: 16,
-                    fontWeight: 500,
-                    letterSpacing: "0.05em",
-                  }}
+                  className="w-full"
                 >
                   {savingWheelSettings ? (
                     <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{t("settings.save.saving")}</span>

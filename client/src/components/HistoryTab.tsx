@@ -7,6 +7,7 @@ import { StarRating, RatingChip } from "@/components/StarRating";
 import { useLang } from "@/i18n";
 import { userError } from "@/lib/userError";
 import { timeLeftLabel } from "@/lib/timeLabels";
+import { Button } from "@/components/ui/button";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -146,21 +147,9 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
               <p className="text-sm text-muted-foreground">{t("history.empty.body")}</p>
             </div>
             {onGoToWheel && (
-              <button
-                onClick={onGoToWheel}
-                className="flex items-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
-                style={{
-                  minHeight: 56,
-                  borderRadius: "var(--radius-control)",
-                  background: "var(--brand-grad)",
-                  color: "var(--on-accent)",
-                  fontSize: 16,
-                  fontWeight: 500,
-                  letterSpacing: "0.05em",
-                }}
-              >
+              <Button onClick={onGoToWheel}>
                 <Clock size={15} /> {t("history.empty.action")}
-              </button>
+              </Button>
             )}
           </div>
         ) : (
@@ -262,7 +251,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
 
                   {/* Re-enable button */}
                   {showReenableBtn && (
-                    <button
+                    <Button
                       onClick={() =>
                         reenable.mutate({
                           wheelId,
@@ -270,22 +259,15 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                         })
                       }
                       disabled={reenable.isPending}
-                      className="flex items-center gap-1.5 px-4 transition-colors active:scale-[var(--press-scale)] flex-shrink-0 disabled:opacity-50"
-                      style={{
-                        minHeight: 44,
-                        borderRadius: "var(--radius-chip)",
-                        background: "oklch(from var(--ok) l c h / 0.15)",
-                        border: "1px solid oklch(from var(--ok) l c h / 0.4)",
-                        color: "var(--ok)",
-                        fontSize: 15,
-                        fontWeight: 500,
-                      }}
+                      variant="positive"
+                      size="md"
+                      className="gap-1.5"
                     >
                       {reenable.isPending
                         ? <span className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
                         : <RefreshCw size={11} />}
                       {reenable.isPending ? t("history.enabling") : t("history.reenable")}
-                    </button>
+                    </Button>
                   )}
                 </div>
               );

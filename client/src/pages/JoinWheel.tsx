@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useLang } from "@/i18n";
+import { Button } from "@/components/ui/button";
 
 /** Full-height centered shell. Uses grid (not flex) so the global
  *  `.flex { min-height: 0 }` reset in index.css can't collapse min-h-dvh and
@@ -72,21 +73,9 @@ export default function JoinWheel() {
           </h1>
           <p className="text-muted-foreground">{t("app.join.signInBody")}</p>
         </div>
-        <a
-          href={getLoginUrl(`/join/${params.token}`)}
-          className="w-full max-w-xs inline-flex items-center justify-center px-8 transition-colors active:scale-[var(--press-scale)]"
-          style={{
-            minHeight: 56,
-            borderRadius: "var(--radius-control)",
-            background: "var(--brand-grad)",
-            color: "var(--on-accent)",
-            fontSize: 16,
-            fontWeight: 500,
-            letterSpacing: "0.05em",
-          }}
-        >
-          {t("app.join.signIn")}
-        </a>
+        <Button asChild className="w-full max-w-xs px-8">
+          <a href={getLoginUrl(`/join/${params.token}`)}>{t("app.join.signIn")}</a>
+        </Button>
       </Centered>
     );
   }
@@ -118,21 +107,9 @@ export default function JoinWheel() {
           <h1 className="type-title mb-2" style={{ color: "var(--ink-warm)" }}>{t("app.join.invalid")}</h1>
           <p className="text-muted-foreground">{t("app.join.invalidBody")}</p>
         </div>
-        <button
-          onClick={() => navigate("/app")}
-          className="px-6 transition-colors active:scale-[var(--press-scale)]"
-          style={{
-            minHeight: 56,
-            borderRadius: "var(--radius-control)",
-            background: "var(--paper)",
-            border: "1px solid var(--border)",
-            color: "var(--ink-warm)",
-            fontSize: 15,
-            fontWeight: 500,
-          }}
-        >
+        <Button variant="secondary" onClick={() => navigate("/app")}>
           {t("app.join.goApp")}
-        </button>
+        </Button>
       </Centered>
     );
   }

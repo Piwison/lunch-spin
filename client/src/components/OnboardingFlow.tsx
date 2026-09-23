@@ -44,6 +44,8 @@ import LocateRadar, {
   type RadarDot,
 } from "@/components/onboarding/LocateRadar";
 import PaneWheel from "@/components/onboarding/PaneWheel";
+import { Button } from "@/components/ui/button";
+import { Chip as UiChip } from "@/components/ui/chip";
 import PlaceCard, { placeMapUrl } from "@/components/onboarding/PlaceCard";
 import { MAX_SEGMENTS, MIN_SEGMENTS } from "@shared/nearby";
 import { MIN_SPINNABLE, canStartSpinning } from "@shared/onboarding";
@@ -1002,6 +1004,8 @@ function CountCopy({ text, count }: { text: string; count: number }) {
   );
 }
 
+/** A chip in the scrolling filter row — the design-system Chip, kept from
+ *  shrinking or wrapping so the row scrolls instead. */
 function Chip({
   on,
   onClick,
@@ -1012,31 +1016,9 @@ function Chip({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      className="flex-none px-4 whitespace-nowrap transition-colors active:scale-[var(--press-scale)]"
-      style={{
-        minHeight: 44,
-        borderRadius: "var(--radius-chip)",
-        fontSize: 15,
-        fontWeight: 500,
-        ...(on
-          ? {
-              background: "var(--brand-grad)",
-              color: "var(--on-accent)",
-              border: "1px solid transparent",
-            }
-          : {
-              background: "transparent",
-              color: "var(--body-warm)",
-              border: "1px solid var(--border)",
-            }),
-      }}
-    >
+    <UiChip pressed={on} onClick={onClick} className="flex-none whitespace-nowrap">
       {children}
-    </button>
+    </UiChip>
   );
 }
 
@@ -1157,22 +1139,18 @@ function OutlineButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
+    <Button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-1.5 px-4 transition-opacity active:scale-[var(--press-scale)] disabled:opacity-50"
-      style={{
-        minHeight: 44,
-        borderRadius: "var(--radius-chip)",
-        border: `1px solid ${accent ? "var(--brand-solid)" : "var(--border)"}`,
-        color: accent ? "var(--brand-text)" : "var(--ink-warm)",
-        fontSize: 14,
-        fontWeight: 600,
-      }}
+      variant={accent ? "brand-outline" : "outline"}
+      size="md"
+      // 14px semibold: these sit three or four to a wrapping row at the end of
+      // the list, one rung under the md label so the row stays one line longer.
+      className="gap-1.5 text-sm font-semibold"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 

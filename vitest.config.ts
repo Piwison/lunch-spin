@@ -14,6 +14,14 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["server/**/*.test.ts", "server/**/*.spec.ts", "shared/**/*.test.ts", "shared/**/*.spec.ts"],
+    include: [
+      "server/**/*.test.ts",
+      "server/**/*.spec.ts",
+      "shared/**/*.test.ts",
+      "shared/**/*.spec.ts",
+      // The design system's own guards (tokens, contrast, recipe ratchet). They
+      // read index.css and the client sources as text; nothing renders.
+      "client/src/design-system/**/*.test.ts",
+    ],
   },
 });

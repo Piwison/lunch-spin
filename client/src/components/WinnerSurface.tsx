@@ -2,6 +2,7 @@ import { Check, Clock3, MapPin, RotateCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { DISPLAY_MAX_LINES, fitDisplayName } from "@shared/displayFit";
 import { useLang } from "@/i18n";
+import { Button } from "@/components/ui/button";
 
 interface WinnerSurfaceProps {
   /** The winning restaurant's name. Set full bleed, with no card around it. */
@@ -264,21 +265,15 @@ export default function WinnerSurface({
         {children}
 
         <div className="flex flex-col gap-2.5 w-full">
-          <button
+          {/* The one action the whole app exists for, set a rung above every
+              other primary: 17px semibold on the body rung, no tracking. */}
+          <Button
             autoFocus
             onClick={onAccept}
-            className="w-full flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)]"
-            style={{
-              minHeight: 56,
-              borderRadius: "var(--radius-control)",
-              background: "var(--brand-grad)",
-              color: "var(--on-accent)",
-              fontSize: 17,
-              transitionDuration: "var(--dur-tap)",
-            }}
+            className="w-full text-[1.0625rem] font-semibold tracking-normal"
           >
             <Check size={18} /> {acceptLabel ?? t("wheel.result.accept")}
-          </button>
+          </Button>
           <div className="flex gap-2.5">
             <button
               onClick={onRespin}

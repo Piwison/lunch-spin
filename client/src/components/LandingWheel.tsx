@@ -8,6 +8,7 @@ import WinnerSurface from "@/components/WinnerSurface";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useLang } from "@/i18n";
 import { Plus, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 /**
  * The landing page's playable wheel — the app's own SpinWheel, not a copy of it.
@@ -174,23 +175,10 @@ export default function LandingWheel({
         />
 
         <div className="w-full flex flex-col items-center gap-3" style={{ maxWidth: 390, ...goneWhileZoomed }}>
-          <button
-            type="button"
-            onClick={spin}
-            disabled={!canSpin || isSpinning}
-            className="w-full inline-flex items-center justify-center px-9 transition-opacity active:scale-[var(--press-scale)] disabled:opacity-50"
-            style={{
-              minHeight: 56,
-              borderRadius: "var(--radius-control)",
-              background: "var(--brand-grad)",
-              color: "var(--on-accent)",
-              fontSize: 16,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-            }}
-          >
+          {/* font-semibold: see the landing page's final call to action. */}
+          <Button type="button" onClick={spin} disabled={!canSpin || isSpinning} className="w-full px-9 font-semibold">
             {isSpinning ? t("demo.spinning") : result ? t("demo.again") : t("demo.spin")}
-          </button>
+          </Button>
 
           {!canSpin && (
             <p className="type-meta text-center" style={{ color: "var(--body-warm)" }}>
@@ -278,23 +266,17 @@ export default function LandingWheel({
               color: "var(--ink-warm)",
             }}
           />
-          <button
+          <Button
             type="button"
+            variant="brand-outline"
+            size="md"
             onClick={addPlace}
             disabled={!draft.trim() || full || draftIsDuplicate || isSpinning}
-            className="flex-none inline-flex items-center gap-1.5 px-4 type-meta disabled:opacity-40 transition-opacity"
-            style={{
-              minHeight: 44,
-              borderRadius: "var(--radius-control)",
-              background: "transparent",
-              border: "1px solid var(--brand-solid)",
-              color: "var(--brand-text)",
-              fontWeight: 600,
-            }}
+            className="flex-none gap-1.5"
           >
             <Plus size={15} />
             {t("demo.add")}
-          </button>
+          </Button>
         </div>
         <p
           id="demo-add-note"

@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* `dark:` follows the APP's theme, not the OS's. Tailwind 4's default dark
+   variant is `@media (prefers-color-scheme: dark)`, while the theme toggle
+   (ThemeContext) puts `.dark` on <html> — so the handful of `dark:` utilities
+   in the shadcn primitives (field fills, switch track, menu focus) tracked the
+   operating system: someone on a dark OS who chose light in the app got dark
+   field tints on light paper, and the reverse. One theme switch, one source. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ─── Ember — light + dark ────────────────────────────────────────────────────
    "Liquid Glass at full strength on a warm paper ground." Tokens resolve through
    intermediate vars so the SAME utility (bg-card, text-muted-foreground, …)
@@ -48,11 +56,18 @@
   --color-faint: var(--faint);
   --color-accent-ink: var(--accent-ink);
   --color-on-accent: var(--on-accent);
-  --color-chart-1: var(--brand);
-  --color-chart-2: var(--brand-2);
-  --color-chart-3: oklch(0.70 0.20 160);
-  --color-chart-4: oklch(0.75 0.18 60);
-  --color-chart-5: oklch(0.68 0.22 340);
+  /* Every semantic colour gets a utility, so a call site can say
+     `text-ink-warm` instead of `style={{ color: "var(--ink-warm)" }}` — the
+     inline form is untyped, invisible to Tailwind, and was written ~450 times.
+     (The five shadcn --color-chart-* entries that stood here are gone: nothing
+     drew a chart with them, and three were saturated hues in an app whose rule
+     is that persimmon is the only saturated colour.) */
+  --color-ink-warm: var(--ink-warm);
+  --color-body-warm: var(--body-warm);
+  --color-brand-text: var(--brand-text);
+  --color-brand-solid: var(--brand-solid);
+  --color-ok: var(--ok);
+  --color-info: var(--info);
   --radius: 0.75rem;
   /* One Latin typeface, one CJK fallback chain. Bricolage Grotesque carries
      display and body alike; the old Fredoka/Poppins pair is gone, so
@@ -129,8 +144,13 @@
   --accent-ink: #c04f18;         /* winner display type: 34px+, clears the 3:1 large-text bar */
   /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
      --foreground is right for Latin display type but reads hard against the
-     ground under the denser strokes of a Chinese character. Scoped to the wheel
-     labels and the readout's secondary line — not the whole app. */
+     ground under the denser strokes of a Chinese character.
+     It was introduced scoped to the wheel labels and the readout's secondary
+     line. It is no longer scoped: the Ember-drawn screens (Home, first run,
+     Places, the wheel page, History) set their text in it ~100 times, while
+     the shadcn primitives and the un-redrawn dialogs still use --foreground.
+     So the app has TWO primary inks, 7% apart in lightness. Which one is THE
+     text colour is an open decision — docs/design-system/README.md. */
   --ink-warm: #2e2a27;
   /* #78716C measured 4.50:1 on --paper but only 3.95:1 on --background, and
      this token carries meta text on both. Darkened until the worse of the two
@@ -148,7 +168,6 @@
      lit rather than printed. Every persimmon BACKGROUND uses this; --brand-solid
      stays the flat colour for borders and SVG. */
   --brand-grad: linear-gradient(135deg, var(--brand), var(--brand-2));
-  --brand-glow: 0.2;             /* glow opacity multiplier (calmer in light) */
 
   /* Semantic. Deliberately desaturated so nothing competes with persimmon. */
   --destructive: #b3261e;
@@ -235,7 +254,6 @@
      sheets. It was `bg-black/50` hardcoded in four separate primitives, which is
      both a flat 50% black over a warm paper app and four places to forget. */
   --scrim: rgb(20 22 28 / 0.38);
-  --glass-highlight: rgb(255 255 255 / 0.55);
   --glass-opaque: #fbf7f2;
 
   /* ── Liquid Glass ──
@@ -338,7 +356,6 @@
   --on-accent: #16120f;
   --brand-2: #f79463;
   --brand-grad: linear-gradient(135deg, var(--brand), var(--brand-2));
-  --brand-glow: 0.45;
 
   --destructive: #e5654f;
   --destructive-foreground: #16120f;
@@ -372,7 +389,6 @@
   --glass-bar-sat: 1.15;
 
   --scrim: rgb(0 0 0 / 0.58);
-  --glass-highlight: rgb(255 255 255 / 0.08);
   --glass-opaque: #1e2127;
 
   /* On charcoal the specular is the ONLY thing separating a glass surface from
@@ -483,11 +499,15 @@
   --dur-sheet-in: 320ms;
   --dur-sheet-out: 240ms;
 
-  /* Four curves, no more (spec §3). */
+  /* Four curves, no more (spec §3). The fourth, the spin's deceleration, is
+     NOT a token: the spin is driven from rAF, and the curve it actually moves
+     along is EASE_DECAY in shared/wheelGeometry.ts. A `--ease-decay` sat here
+     unread and still holding the (0.08, 0.82, 0.17, 1) that failure mode 45
+     replaced — a second source of truth that disagreed with the first
+     (BACKLOG 4a). */
   --ease-standard: cubic-bezier(0.2, 0.9, 0.1, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-settle: cubic-bezier(0.34, 1.26, 0.64, 1); /* overshoot: settle only, nothing else bounces */
-  --ease-decay: cubic-bezier(0.08, 0.82, 0.17, 1);
 
   --move-enter: 18px;
   --press-scale: 0.97;
@@ -506,6 +526,40 @@
      for the push into the wheel, distinct from the four-curve UI language. */
   --dur-zoom: 420ms;
   --ease-zoom: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ─── Component tokens ────────────────────────────────────────────────────────
+   The third tier (docs/design-system/README.md §2). The raw values inside the
+   theme blocks are the palette; the names on them (--brand, --ink-warm) say
+   what a colour is FOR; these say what a COMPONENT is made of. Button, Chip
+   and Badge in components/ui read their sizes and label type from here, which
+   is the whole point: before this block, `minHeight: 56` was typed out 38
+   times across 20 files, with three different label sizes and three different
+   trackings riding along, and a re-skin meant finding all of them.
+
+   Two heights, not three. 56 is the spec's minimum for an action (§1), 44 is
+   the tap-target floor everything compact has to clear — chips, the controls
+   beside a text field, a row's secondary action. Nothing interactive goes
+   under 44; the stock shadcn sizes (32 and 36) are gone for that reason. */
+:root {
+  --control-lg: 56px;
+  --control-md: 44px;
+
+  /* Label type. The persimmon action speaks one rung above everything else
+     beside it: 16 against the 15 meta rung. Tracking is the primary action's
+     voice only — it was on 18 of the 22 persimmon buttons and almost none of
+     the rest. */
+  --control-label-lg: 1rem;          /* 16 */
+  --control-label-md: 0.9375rem;     /* 15 */
+  --control-tracking: 0.05em;
+
+  /* One disabled treatment. The app had 0.4, 0.5 and 0.55; 0.4 is what the
+     Spin button — the most-seen disabled control in the product — uses. */
+  --control-disabled-opacity: 0.4;
+
+  /* A count on a control or a section header: the 11px eyebrow rung. */
+  --badge-height: 18px;
+  --badge-label: 0.6875rem;          /* 11 */
 }
 
 /* ─── Bricolage Grotesque — self-hosted ───────────────────────────────────────
