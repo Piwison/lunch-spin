@@ -187,14 +187,13 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") (coords ? runSearch(coords, radius) : locateAndSearch()); }}
-                className="bg-secondary/50 border-border/50 pl-9"
+                className="bg-secondary/50 pl-9"
               />
             </div>
             <Button
               onClick={() => (coords ? runSearch(coords, radius) : locateAndSearch())}
               disabled={locating || search.isPending}
-              className="flex-shrink-0 transition-colors active:scale-[var(--press-scale)]"
-              style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
+              size="icon"
             >
               {locating || search.isPending ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -339,7 +338,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                           ? { background: "oklch(from var(--ok) l c h / 0.2)", color: "var(--ok)" }
                           : on
                             ? { background: "var(--brand-grad)", color: "var(--on-accent)" }
-                            : { border: "1.5px solid var(--border)" }
+                            : { border: "1.5px solid var(--input)" }
                       }
                     >
                       {(isAdded || on) && <Check size={13} strokeWidth={3} />}
@@ -376,16 +375,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             <Button
               onClick={handleAddSelected}
               disabled={selected.size === 0 || addNearby.isPending}
-              className="w-full transition-colors active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
+              className="w-full"
             >
               {addNearby.isPending ? (
                 <span className="flex items-center gap-2">

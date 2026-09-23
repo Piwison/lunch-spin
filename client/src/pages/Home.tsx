@@ -10,6 +10,7 @@ import LangToggle from "@/components/LangToggle";
 import LandingWheel from "@/components/LandingWheel";
 import { useLang } from "@/i18n";
 import { DEMO_DRAFT_KEY, serializeDemoDraft } from "@shared/demoDraft";
+import { Button } from "@/components/ui/button";
 
 /**
  * "Save this wheel" from the demo: keep what the visitor typed, then sign in.
@@ -109,16 +110,6 @@ export default function Home() {
     { icon: Users, title: t("features.3.title"), desc: t("features.3.desc") },
     { icon: Ban, title: t("features.4.title"), desc: t("features.4.desc") },
   ];
-
-  const ctaStyle = {
-    minHeight: 56,
-    borderRadius: "var(--radius-control)",
-    background: "var(--brand-grad)",
-    color: "var(--on-accent)",
-    fontSize: 16,
-    fontWeight: 600,
-    letterSpacing: "0.04em",
-  } as const;
 
   return (
     <div
@@ -349,14 +340,15 @@ export default function Home() {
             {t("final.desc")}
           </p>
           {!loading && (
-            <a
-              href={getLoginUrl()}
-              className="group inline-flex items-center gap-2 px-8 transition-colors duration-200 active:scale-[var(--press-scale)]"
-              style={ctaStyle}
-            >
-              {t("final.cta")}
-              <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
-            </a>
+            // font-semibold: the landing page's two persimmon actions (this and the
+            // demo's Spin) speak one weight above the in-app primary. A marketing
+            // emphasis, listed as an open decision in docs/design-system.
+            <Button asChild className="group px-8 font-semibold">
+              <a href={getLoginUrl()}>
+                {t("final.cta")}
+                <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
+              </a>
+            </Button>
           )}
         </div>
       </section>

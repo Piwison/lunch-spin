@@ -86,7 +86,7 @@ export default function ConfirmDangerDialog({
               autoCorrect="off"
               spellCheck={false}
               aria-label={t("app.dialog.type", { word: confirmWord })}
-              className="bg-secondary/50 border-border/50 font-mono"
+              className="bg-secondary/50 font-mono"
             />
           </div>
         )}
@@ -94,6 +94,7 @@ export default function ConfirmDangerDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{t("app.dialog.cancel")}</AlertDialogCancel>
           <AlertDialogAction
+            variant="destructive"
             disabled={!armed || pending}
             onClick={(e) => {
               // Radix closes the dialog on action by default; keep it open while
@@ -101,7 +102,6 @@ export default function ConfirmDangerDialog({
               e.preventDefault();
               onConfirm();
             }}
-            style={{ background: "var(--destructive)", color: "var(--destructive-foreground)", minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 16, fontWeight: 500 }}
           >
             {pending ? t("app.dialog.deleting") : confirmLabel}
           </AlertDialogAction>

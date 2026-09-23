@@ -4,6 +4,8 @@ import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useLang } from "@/i18n";
 import { tagLabel } from "@/lib/tagLabel";
+import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 
 interface FilterTag {
   id: number;
@@ -92,23 +94,7 @@ export const FilterTrigger = forwardRef<
           out of sight, this badge is the only thing telling you the wheel is
           filtered. */}
       {activeCount > 0 && (
-        <span
-          className="absolute flex items-center justify-center tabular-nums"
-          style={{
-            top: 8,
-            right: 8,
-            minWidth: 18,
-            height: 18,
-            paddingInline: 5,
-            borderRadius: 9,
-            background: "var(--brand-grad)",
-            color: "var(--on-accent)",
-            fontSize: 11,
-            fontWeight: 600,
-          }}
-        >
-          {activeCount}
-        </span>
+        <Badge className="absolute top-2 right-2">{activeCount}</Badge>
       )}
     </button>
   );
@@ -150,26 +136,9 @@ export default function FilterBar({
                   {items.map((tag) => {
                     const isActive = selectedTagIds.includes(tag.id);
                     return (
-                      <button
-                        key={tag.id}
-                        onClick={() => onToggleTag(tag.id)}
-                        className="px-4 flex items-center rounded-full type-meta font-medium transition-all duration-150 active:scale-95"
-                        style={{
-                          // OUTLINED, not filled. These chips sit on a glass
-                          // sheet, and a translucent white fill on translucent
-                          // white glass has nothing behind it to refract — it
-                          // reads as a second flat panel with an invisible
-                          // border. The sheet is the material; controls on it
-                          // are drawn with a line.
-                          minHeight: 44,
-                          background: isActive ? "var(--brand-grad)" : "transparent",
-                          border: `1px solid ${isActive ? "var(--brand-solid)" : "var(--border)"}`,
-                          color: isActive ? "var(--on-accent)" : "var(--body-warm)",
-                          borderRadius: "var(--radius-chip)",
-                        }}
-                      >
+                      <Chip key={tag.id} pressed={isActive} onClick={() => onToggleTag(tag.id)}>
                         {tagLabel(tag.name, t, tag.category)}
-                      </button>
+                      </Chip>
                     );
                   })}
                 </div>
@@ -294,18 +263,7 @@ export default function FilterBar({
             {t("wheel.filter.label")}
           </span>
           {activeCount > 0 && (
-            <span
-              className="px-2 py-0.5 tabular-nums"
-              style={{
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                borderRadius: "var(--radius-chip)",
-                fontSize: 11,
-                fontWeight: 600,
-              }}
-            >
-              {activeCount}
-            </span>
+            <Badge className="px-2 py-0.5">{activeCount}</Badge>
           )}
         </div>
         <div className="flex items-center gap-3">

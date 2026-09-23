@@ -1,6 +1,7 @@
 import { AlertCircle, Home } from "lucide-react";
 import { useLocation } from "wouter";
 import { useLang } from "@/i18n";
+import { Button } from "@/components/ui/button";
 
 /**
  * 404. Was the stock template screen — slate gradient, white card, blue button,
@@ -36,22 +37,10 @@ export default function NotFound() {
           {t("app.notFound.body")}
         </p>
 
-        <button
-          onClick={() => setLocation("/")}
-          className="inline-flex items-center justify-center gap-2 px-8 transition-colors active:scale-[var(--press-scale)]"
-          style={{
-            minHeight: 56,
-            borderRadius: "var(--radius-control)",
-            background: "var(--brand-grad)",
-            color: "var(--on-accent)",
-            fontSize: 16,
-            fontWeight: 500,
-            letterSpacing: "0.05em",
-          }}
-        >
+        <Button onClick={() => setLocation("/")} className="px-8">
           <Home className="w-4 h-4" />
           {t("app.notFound.home")}
-        </button>
+        </Button>
       </div>
     </div>
   );

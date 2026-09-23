@@ -128,16 +128,7 @@ export default function LocationPicker({
             type="button"
             onClick={useMyLocation}
             disabled={busy}
-            className="w-full gap-2 transition-colors active:scale-[var(--press-scale)]"
-            style={{
-              minHeight: 56,
-              borderRadius: "var(--radius-control)",
-              background: "var(--brand-grad)",
-              color: "var(--on-accent)",
-              fontSize: 16,
-              fontWeight: 500,
-              letterSpacing: "0.05em",
-            }}
+            className="w-full"
           >
             {locating ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
             {locating ? t("loc.finding") : (primaryLabel ?? t("loc.useMine"))}
@@ -216,7 +207,7 @@ export default function LocationPicker({
                       runSearch();
                     }
                   }}
-                  className="bg-secondary/50 border-border/50 pl-9"
+                  className="bg-secondary/50 pl-9"
                 />
               </div>
               {/* With geolocation unavailable this is the screen's primary
@@ -227,22 +218,8 @@ export default function LocationPicker({
                 onClick={runSearch}
                 aria-label={t("loc.search.submit")}
                 disabled={!query.trim() || busy}
-                className="flex-shrink-0"
-                style={
-                  mode === "manual-first"
-                    ? {
-                        background: "var(--brand-grad)",
-                        border: 0,
-                        color: "var(--on-accent)",
-                        borderRadius: "var(--radius-chip)",
-                      }
-                    : {
-                        background: "var(--muted)",
-                        border: "1px solid var(--border)",
-                        color: "var(--foreground)",
-                        borderRadius: "var(--radius-chip)",
-                      }
-                }
+                variant={mode === "manual-first" ? "primary" : "outline"}
+                size="icon"
               >
                 {searchPlaces.isPending ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
               </Button>
@@ -290,15 +267,15 @@ export default function LocationPicker({
                 placeholder="https://maps.app.goo.gl/…"
                 value={link}
                 onChange={(e) => setLink(e.target.value)}
-                className="bg-secondary/50 border-border/50 flex-1"
+                className="bg-secondary/50 flex-1"
               />
               <Button
                 type="button"
                 onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim(), language: lang }); }}
                 aria-label={t("loc.link.submit")}
                 disabled={!looksLikeMapLink(link) || busy}
-                className="flex-shrink-0"
-                style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)", borderRadius: "var(--radius-chip)" }}
+                variant="outline"
+                size="icon"
               >
                 {resolveLink.isPending
                   ? <Loader2 size={15} className="animate-spin" />

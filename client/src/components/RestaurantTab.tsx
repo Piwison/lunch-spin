@@ -15,6 +15,7 @@ import { StarRating, RatingChip } from "@/components/StarRating";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { providerAlert } from "@/lib/placesError";
@@ -413,44 +414,26 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               time, while typing a restaurant's name by hand is the rare case.
               The label stays visible on mobile — an unlabelled 40px icon is
               what kept the best thing in the app hidden. */}
-          <button
+          {/* The meta-rung label: it shares a header row with Add on a 360px phone. */}
+          <Button
             onClick={() => setShowNearby(true)}
             title={t("places.nearby.title")}
-            className="flex items-center justify-center gap-2 px-5 transition-colors duration-150 active:scale-[var(--press-scale)]"
-            style={{
-              minHeight: 56,
-              borderRadius: "var(--radius-control)",
-              background: "var(--brand-grad)",
-              color: "var(--on-accent)",
-              fontSize: 15,
-              fontWeight: 500,
-              letterSpacing: "0.05em",
-            }}
+            className="px-5 text-(length:--control-label-md)"
           >
             <Navigation size={16} /> {t("places.nearby.action")}
-          </button>
+          </Button>
           {/* IMPORT (paste a list of names) was removed: ADD NEARBY and the
               name search in the add form cover the same ground with real place
               data attached. The server's restaurants.addBulk stays — the
               starter pack still uses it. */}
-          <button
+          <Button
+            variant="secondary"
             onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
             title={t("places.add.title")}
-            className="flex items-center justify-center gap-2 px-4 transition-colors duration-150 active:scale-[var(--press-scale)] hover:bg-white/5"
-            style={{
-              minHeight: 56,
-              minWidth: 56,
-              borderRadius: "var(--radius-control)",
-              background: "var(--paper)",
-              border: "1px solid var(--border)",
-              color: "var(--body-warm)",
-              fontSize: 15,
-              fontWeight: 500,
-              letterSpacing: "0.05em",
-            }}
+            className="min-w-(--control-lg) px-4 text-body-warm"
           >
             <Plus size={16} /> <span className="hidden sm:inline">{t("places.add.action")}</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -624,37 +607,12 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             </p>
           </div>
           <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
-            <button
-              onClick={() => setShowNearby(true)}
-              className="flex items-center justify-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
-            >
+            <Button onClick={() => setShowNearby(true)}>
               <Navigation size={16} /> {t("places.empty.nearby")}
-            </button>
-            <button
-              onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}
-              className="flex items-center justify-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)] hover:bg-white/5"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--paper)",
-                border: "1px solid var(--border)",
-                color: "var(--ink-warm)",
-                fontSize: 15,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => { setForm(EMPTY_FORM); setShowAdd(true); }}>
               <Plus size={15} /> {t("places.empty.manual")}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -848,15 +806,16 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
 
                 <div className="mt-7 pt-4 flex gap-2.5" style={{ borderTop: "1px solid var(--border)" }}>
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={() => { const target = r; setDetailId(null); openEdit(target); }}
-                    className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
-                    style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "var(--border)", color: "var(--ink-warm)", fontSize: 15, fontWeight: 500 }}
+                    className="flex-1"
                   >
                     <Pencil size={16} /> {t("places.detail.edit")}
-                  </button>
+                  </Button>
                   {isOwner && (
-                    <button
+                    <Button
+                      variant="destructive-outline"
                       /* The app's own dialog, not window.confirm. This was the
                          last native confirm left, and it sat in the worst place
                          for one: it blocks the main thread from inside the click
@@ -867,11 +826,10 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                          in-app browsers), and a suppressed one returns false, so
                          Delete would silently do nothing. */
                       onClick={() => { setPendingDelete({ id: r.id, name: r.name }); setDetailId(null); }}
-                      className="flex-1 flex items-center justify-center gap-2 border transition-colors active:scale-[var(--press-scale)]"
-                      style={{ minHeight: 56, borderRadius: "var(--radius-control)", borderColor: "color-mix(in oklch, var(--destructive) 32%, transparent)", color: "var(--destructive)", fontSize: 15, fontWeight: 500 }}
+                      className="flex-1"
                     >
                       <Trash2 size={16} /> {t("places.detail.delete")}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {!isOwner && <p className="type-meta text-muted-foreground text-center mt-2">{t("places.detail.ownerDelete")}</p>}
@@ -907,15 +865,15 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       searchByName();
                     }
                   }}
-                  className="bg-secondary/50 border-border/50 flex-1"
+                  className="bg-secondary/50 flex-1"
                 />
                 <Button
                   type="button"
+                  variant="outline"
+                  size="icon"
                   onClick={searchByName}
                   disabled={!form.name.trim() || nameSearchBusy}
                   title={t("places.form.searchTitle")}
-                  className="flex-shrink-0"
-                  style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
                 >
                   {nameSearchBusy
                     ? <Loader2 size={15} className="animate-spin" />
@@ -970,7 +928,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               placeholder={t("places.form.notes")}
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              className="bg-secondary/50 border-border/50 resize-none"
+              className="bg-secondary/50 resize-none"
               rows={2}
             />
             <div className="flex flex-col gap-1.5">
@@ -983,16 +941,16 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     placeholder={t("places.form.mapLink")}
                     value={form.mapUrl}
                     onChange={(e) => setForm((f) => ({ ...f, mapUrl: e.target.value }))}
-                    className="bg-secondary/50 border-border/50 pl-9"
+                    className="bg-secondary/50 pl-9"
                   />
                 </div>
                 <Button
                   type="button"
+                  variant="outline"
+                  size="md"
                   onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim(), language: lang }); }}
                   disabled={!looksLikeMapLink(form.mapUrl) || resolveLink.isPending}
                   title={t("places.form.lookupTitle")}
-                  className="flex-shrink-0"
-                  style={{ background: "var(--muted)", border: "1px solid var(--border)", color: "var(--foreground)" }}
                 >
                   {resolveLink.isPending
                     ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
@@ -1008,16 +966,6 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             <Button
               onClick={() => { setFormError(null); submitForm(); }}
               disabled={!form.name.trim() || addRestaurant.isPending || updateRestaurant.isPending}
-              className="transition-colors duration-200 active:scale-[var(--press-scale)]"
-              style={{
-                minHeight: 56,
-                borderRadius: "var(--radius-control)",
-                background: "var(--brand-grad)",
-                color: "var(--on-accent)",
-                fontSize: 16,
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-              }}
             >
               {addRestaurant.isPending || updateRestaurant.isPending ? (
                 <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />{editId !== null ? t("places.form.saving") : t("places.form.adding")}</span>
@@ -1044,22 +992,14 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           <div className="flex flex-col gap-3 pt-2">
             <div className="flex gap-1.5">
               {TAG_CATEGORY_OPTIONS.map((value) => (
-                <button
+                <Chip
                   key={value}
-                  type="button"
+                  pressed={newTagCategory === value}
                   onClick={() => setNewTagCategory(value)}
-                  className="flex-1 px-3 transition-colors duration-150"
-                  style={{
-                    minHeight: 44,
-                    borderRadius: "var(--radius-chip)",
-                    background: newTagCategory === value ? "var(--brand-grad)" : "var(--muted)",
-                    color: newTagCategory === value ? "var(--on-accent)" : "var(--body-warm)",
-                    fontSize: 15,
-                    fontWeight: 500,
-                  }}
+                  className="flex-1 px-3"
                 >
                   {t(value === "cuisine" ? "places.tag.cuisine" : value === "food_type" ? "places.tag.foodType" : "places.tag.custom")}
-                </button>
+                </Chip>
               ))}
             </div>
             <div className="flex gap-2">
@@ -1068,15 +1008,13 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 value={newTagName}
                 onChange={(e) => { setNewTagName(e.target.value); setTagError(null); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { setTagError(null); createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); } }}
-                className="bg-secondary/50 border-border/50"
+                className="bg-secondary/50"
                 autoFocus
               />
               <Button
                 onClick={() => { setTagError(null); newTagName.trim() && createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); }}
                 disabled={!newTagName.trim() || createTag.isPending}
                 size="icon"
-                className="transition-colors duration-200 active:scale-[var(--press-scale)] flex-shrink-0"
-                style={{ background: "var(--brand-grad)", color: "var(--on-accent)", borderRadius: "var(--radius-chip)" }}
               >
                 {createTag.isPending ? <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Check size={16} />}
               </Button>
