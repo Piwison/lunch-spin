@@ -117,7 +117,7 @@ export default function LocationPicker({
   };
 
   const results = searchPlaces.data?.places ?? [];
-  const alert = providerAlert(searchPlaces.error ?? resolveLink.error);
+  const alert = providerAlert(searchPlaces.error) ?? providerAlert(resolveLink.error, "link");
   const busy = locating || searchPlaces.isPending || resolveLink.isPending;
 
   return (
@@ -183,7 +183,7 @@ export default function LocationPicker({
           }}
         >
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-          <span className="leading-relaxed">{alert.message}</span>
+          <span className="leading-relaxed">{t(alert.messageKey)}</span>
         </div>
       )}
 

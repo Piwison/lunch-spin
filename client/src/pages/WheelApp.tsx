@@ -22,7 +22,6 @@ import RoundPanel from "@/components/RoundPanel";
 import { toast } from "sonner";
 import { X, AlertTriangle, MapPin, Clock, Clock3, RefreshCw, Plus, Utensils, History, ChevronDown, LogOut, Star, Sun, Moon, Footprints, Settings, Bell, Trash2, Languages } from "lucide-react";
 import { filterRestaurantsByDistance, filterRestaurantsByTags } from "@shared/filter";
-import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { applyDietary, EMPTY_SESSION, excludedDietaryTagIds, vetoedIds, type SessionState } from "@shared/session";
 import { isFirstRun } from "@shared/onboarding";
 import { nextWheelToOpen } from "@shared/bootstrap";
@@ -30,12 +29,13 @@ import { diagnoseSpinBlock } from "@shared/spinBlock";
 import { copyIntentUrl, readCopyIntent } from "@shared/copyIntent";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
-import { formatWalk } from "@shared/nearby";
 import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLang } from "@/i18n";
 import { userError } from "@/lib/userError";
+import { timeLeftLabel, walkLabel } from "@/lib/timeLabels";
+import { originLabelText } from "@/lib/tagLabel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -785,10 +785,13 @@ export default function WheelApp() {
       });
       setSpinId(id);
       setTargetId(restaurantId);
-    } catch {
+    } catch (e) {
       setIsSpinning(false);
       setTargetId(null);
-      setSpinError(t("app.spin.failed"));
+      // BAD_REQUEST is spins.create finding nothing it may pick right now (every
+      // place closed, resting or vetoed) — "try again" would not help, so say so.
+      const code = (e as { data?: { code?: string } | null } | null)?.data?.code;
+      setSpinError(t(code === "BAD_REQUEST" ? "app.block.default" : "app.spin.failed"));
     }
   };
 
@@ -1307,7 +1310,7 @@ export default function WheelApp() {
                       <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <RoundPanel
                           restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
-                          tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+                          tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color, category: t.category }))}
                           session={session}
                           currentUserId={user.id}
                           onVote={(id) => selectedWheelId && voteMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
@@ -1338,7 +1341,7 @@ export default function WheelApp() {
                     ) : restaurantsError && !accessDeniedCode ? (
                       <div className="flex flex-col items-center gap-4 py-12 text-center">
                         <AlertTriangle size={32} className="text-amber-500/60" />
-                        <p className="text-sm text-muted-foreground">{t("app.loadRestaurants", { message: restaurantsError.message })}</p>
+                        <p className="text-sm text-muted-foreground">{t("app.loadRestaurants", { message: userError(restaurantsError, t) })}</p>
                         <button
                           onClick={() => refetchRestaurants()}
                           className="glass-chip flex items-center gap-2 px-6 transition-colors active:scale-[var(--press-scale)]"
@@ -1534,7 +1537,7 @@ export default function WheelApp() {
                                             color: "var(--brand-text)",
                                           }}
                                         >
-                                          {t("app.excluded.backIn", { time: formatExclusionTimeLeft(new Date(r.excludedUntil)) })}
+                                          {t("app.excluded.backIn", { time: timeLeftLabel(t, new Date(r.excludedUntil)) ?? t("common.left.none") })}
                                         </span>
                                       )}
                                       {/* 44px, not the row's own height: this is a
@@ -1639,7 +1642,7 @@ export default function WheelApp() {
               walkSeconds != null ? (
                 <span className="flex items-center gap-1.5">
                   <Footprints size={14} className="flex-shrink-0" />
-                  {formatWalk(walkSeconds / 60)}・{t("app.result.from", { name: wheelData?.originLabel || "Office" })}
+                  {walkLabel(t, walkSeconds / 60)}・{t("app.result.from", { name: originLabelText(wheelData?.originLabel, t) })}
                 </span>
               ) : null
             }

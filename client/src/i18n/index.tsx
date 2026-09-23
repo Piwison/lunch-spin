@@ -65,6 +65,9 @@ interface LangContextValue {
   demoPlaces: readonly string[];
 }
 
+/** The `t` every component gets from `useLang()` — for helpers that format with it. */
+export type Translate = LangContextValue["t"];
+
 const LangContext = createContext<LangContextValue | undefined>(undefined);
 
 export function LangProvider({ children }: { children: React.ReactNode }) {
@@ -99,6 +102,18 @@ export function LangProvider({ children }: { children: React.ReactNode }) {
   }, [lang]);
 
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>;
+}
+
+/**
+ * `t` without the provider, for the one component that has to render after the
+ * tree below it — LangProvider included — has crashed: the ErrorBoundary
+ * fallback. It sits OUTSIDE LangProvider, so `useLang()` there throws inside the
+ * fallback itself and React unmounts everything: a blank page instead of the
+ * error screen. No placeholders, no live switching; it only has to say what
+ * happened in the language the visitor chose.
+ */
+export function translateWithoutProvider(key: MessageKey): string {
+  return DICTS[detectLang()][key];
 }
 
 export function useLang(): LangContextValue {

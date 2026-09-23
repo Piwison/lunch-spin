@@ -315,6 +315,17 @@ migration 0017 也還沒套用。`/wheels/內湖` 這類頁面是唯一能長期
 
 對「台灣用戶為主」的產品，這是每天每次使用都會碰到的斷裂：landing 中文、一登入變英文。
 
+**處理狀態（2026-09-23）：✅ 完成。** Codex 翻了登入後的 app（PR #38 → staging），Claude 接著補完
+（同一條分支，staging 實測 390px 中英各走一輪：中文畫面沒有殘留英文、英文畫面沒有殘留中文）：
+- 系統標籤（Japanese、Noodles…，資料庫存英文）只翻顯示：`places.tagName.*` + `lib/tagLabel.ts`，
+  清單由 `shared/cuisineTag.test.ts` 對 0009 migration 釘住
+- 步行時間、跳過剩餘時間改走字典（`lib/timeLabels.ts`，數字仍由 shared 算）；`StarRating`、sheet/dialog 的「關閉」
+- 預設出發點 `Office`（存進資料庫的預設值）顯示為「公司」
+- 地圖搜尋錯誤全部改用 key（`providerAlert().messageKey`），壞掉的地圖連結有專屬訊息；`NearbyDialog`、新增店家也送 `language`
+- **修掉一個翻譯帶進來的 bug**：`ErrorBoundary` 的畫面改用 `useLang()`，但它包在 `LangProvider` 外面 → 任何渲染錯誤都變整頁空白。
+  改用不需要 provider 的 `translateWithoutProvider`，實測中英文都回到錯誤畫面
+- 用詞對齊術語表（可轉、這一輪、休息中／快打烊、收回否決、忌口、頁首 Lunch Wheel），並把 Codex 新增的「抽選／抽到」補進術語表
+
 ### 3b. CJK 字型 fallback
 
 **證據等級：已確認**
@@ -372,14 +383,14 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 **處理狀態（2026-09-23，業主決定：5c/5d/5f/5l 用建議方案）**
 
 - ✅ **5a** 所有 Places 請求都帶 `language`（預設 zh-TW，first run 和 LocationPicker 傳 UI 語言）；新輪盤名稱依 first run 的語言：`信義區的午餐`／`附近的午餐`
-- ✅ **5b** server 那一半（輪盤名、店名語言）。畫面翻譯 → Codex（`docs/i18n/codex-flow.md`）
+- ✅ **5b** server 那一半（輪盤名、店名語言）＋畫面翻譯（Codex 翻、Claude 補完，見 3a）
 - ✅ **5c** 休息中的店不預設勾，只在營業中不到 2 家時補到 2 家；文案照實說；開轉按鈕第二行寫「其中 N 家現在休息中，今天轉不到」
 - ✅ **5d** 只帶「自己加的店」（`shared/demoDraft.ts`，24 小時有效）：首頁存 → 登入 → first run 定位頁先告知、清單最上面「你在首頁加的」預設勾 → `createFromNearby.extraNames` → 建立後清掉。
   **沒做**：選「我想自己加店」（手動建立）的路線不會帶入 — 那個對話框在 WheelSelector（Codex 的檔案）
 - ✅ **5e/5h/5i/5j/5k** 去重＋提示、10/10 計數與上限說明、× 實際 44×44、語言/主題按鈕移進頁首、移除 `maximum-scale`（輸入框改 16px 避免 iOS 聚焦放大）
-- ✅ **5l** 自己檔案裡的 11px 柿子橘小標改墨色（`--ink-warm`，淺色 ≥ 10.7:1）。**剩下**：`SpinWheel` 中心的 `in play` 等 Codex 檔案裡的，等 Codex 合併後再改
+- ✅ **5l** 自己檔案裡的 11px 柿子橘小標改墨色（`--ink-warm`，淺色 ≥ 10.7:1）。**剩下**：`SpinWheel` 中心的「可轉」、輪盤頁的「團隊成員」「這一輪」等 app 內的小標 — Codex 已合併，檔案不再分邊，可以做了
 - ⏸ **5f、5g** 併入「landing demo 改用真正的 SpinWheel」提案，等業主決定
-- → **5m** Codex（WheelApp）｜**5n** 未驗證
+- → **5m** 還沒做（Codex 沒處理到）｜**5n** 未驗證
 
 ## Changelog
 
@@ -402,3 +413,5 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
   （雷達 → 組裝 → 開轉），文案繁中優先、英文保留。
 - 2026-09-23 — 加入第 5 節：staging 使用者測試的分流。新發現 5a（Places 沒送 language）是這次最大的問題。
   翻譯（3a）改由 Codex 在 `codex/i18n-app` 做，流程見 `docs/i18n/codex-flow.md`；字典已拆成 namespace 檔。
+- 2026-09-23 — 3a 完成：Codex 的翻譯（PR #38）快轉進 Claude 分支後補完 — 系統標籤、步行／剩餘時間、評分、
+  地圖錯誤訊息、`language` 參數、術語對齊；並修掉翻譯帶進來的「任何渲染錯誤 → 整頁空白」（ErrorBoundary 在 LangProvider 外）。

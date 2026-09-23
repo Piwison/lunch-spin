@@ -4,6 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StarRating, RatingChip } from "@/components/StarRating";
 import { Star, TrendingUp, TrendingDown } from "lucide-react";
 import { useLang } from "@/i18n";
+import { tagLabel } from "@/lib/tagLabel";
 
 /** History-tab card that turns the wheel's star ratings into a team taste read:
  *  overall mood, crowd-favourite places, and cuisines the team leans / cools on.
@@ -90,7 +91,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {data.leans.map((c) => (
-                  <CuisineChip key={c.cuisine} cuisine={c.cuisine} average={c.average} tone="up" />
+                  <CuisineChip key={c.cuisine} cuisine={tagLabel(c.cuisine, t)} average={c.average} tone="up" />
                 ))}
               </div>
             </div>
@@ -102,7 +103,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {data.cools.map((c) => (
-                  <CuisineChip key={c.cuisine} cuisine={c.cuisine} average={c.average} tone="down" />
+                  <CuisineChip key={c.cuisine} cuisine={tagLabel(c.cuisine, t)} average={c.average} tone="down" />
                 ))}
               </div>
             </div>

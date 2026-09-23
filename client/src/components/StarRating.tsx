@@ -1,5 +1,6 @@
 import { Star } from "lucide-react";
 import { useState } from "react";
+import { useLang } from "@/i18n";
 
 type StarRatingProps = {
   /** Current rating; may be fractional for a read-only average. Null = unrated. */
@@ -16,12 +17,13 @@ type StarRatingProps = {
  * Stars use the warm --star token so they read in light and dark.
  */
 export function StarRating({ value, onChange, size = 24, disabled = false }: StarRatingProps) {
+  const { t } = useLang();
   const [hover, setHover] = useState<number | null>(null);
   const readOnly = !onChange || disabled;
   const shown = hover ?? Math.round(value ?? 0);
 
   return (
-    <div className="inline-flex items-center gap-1" role={readOnly ? undefined : "radiogroup"} aria-label={readOnly ? undefined : "Your rating"}>
+    <div className="inline-flex items-center gap-1" role={readOnly ? undefined : "radiogroup"} aria-label={readOnly ? undefined : t("common.rating.label")}>
       {[1, 2, 3, 4, 5].map((n) => {
         const on = n <= shown;
         const glyph = (
@@ -39,7 +41,7 @@ export function StarRating({ value, onChange, size = 24, disabled = false }: Sta
             type="button"
             role="radio"
             aria-checked={value === n}
-            aria-label={`${n} star${n > 1 ? "s" : ""}`}
+            aria-label={t(n === 1 ? "common.rating.star.one" : "common.rating.star.other", { n })}
             onClick={() => onChange!(n)}
             onMouseEnter={() => setHover(n)}
             onMouseLeave={() => setHover(null)}
@@ -58,13 +60,14 @@ export function StarRating({ value, onChange, size = 24, disabled = false }: Sta
 /** Compact glanceable chip for a list row: a filled star + the average, or a
  *  dashed "New" when nothing has been rated yet. */
 export function RatingChip({ average }: { average: number | null }) {
+  const { t } = useLang();
   if (average == null) {
     return (
       <span
         className="inline-flex items-center gap-1 type-meta font-medium px-2 py-0.5 rounded-full flex-shrink-0"
         style={{ border: "1px dashed var(--border)", color: "var(--muted-foreground)" }}
       >
-        <Star size={11} style={{ fill: "none", color: "var(--muted-foreground)" }} /> New
+        <Star size={11} style={{ fill: "none", color: "var(--muted-foreground)" }} /> {t("common.rating.none")}
       </span>
     );
   }

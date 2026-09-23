@@ -1981,6 +1981,7 @@ var TYPE_CUISINE = {
   coffee_shop: "Cafe",
   bakery: "Bakery"
 };
+var PROVIDER_CUISINE_LABELS = Array.from(new Set(Object.values(TYPE_CUISINE)));
 function cuisineFromTypes(types) {
   if (!types) return null;
   for (const t2 of types) {
@@ -2031,6 +2032,40 @@ function mapProviderResults(rows, origin) {
 }
 
 // shared/cuisineTag.ts
+var SYSTEM_TAG_NAMES = [
+  "Japanese",
+  "Chinese",
+  "Korean",
+  "Thai",
+  "Vietnamese",
+  "Indian",
+  "Italian",
+  "Mexican",
+  "American",
+  "French",
+  "Mediterranean",
+  "Greek",
+  "Spanish",
+  "Turkish",
+  "Middle Eastern",
+  "Pizza",
+  "Burgers",
+  "BBQ",
+  "Seafood",
+  "Steakhouse",
+  "Sandwiches",
+  "Fast Food",
+  "Breakfast",
+  "Brunch",
+  "Vegetarian",
+  "Vegan",
+  "Noodles",
+  "Salad",
+  "Dessert",
+  "Cafe",
+  "Bakery"
+];
+var SYSTEM_TAGS = new Set(SYSTEM_TAG_NAMES);
 var SYNONYMS = {
   barbecue: "bbq",
   burger: "burgers",

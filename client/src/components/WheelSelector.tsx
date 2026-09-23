@@ -24,6 +24,7 @@ import LocationPicker from "@/components/LocationPicker";
 import { STARTER_RESTAURANTS } from "@shared/starter";
 import { useLang } from "@/i18n";
 import { userError } from "@/lib/userError";
+import { DEFAULT_ORIGIN_LABEL, originLabelText } from "@/lib/tagLabel";
 
 interface WheelSelectorProps {
   selectedWheelId: number | null;
@@ -290,7 +291,7 @@ export default function WheelSelector({
       fairnessMode: wheel.fairnessMode,
       rotateCuisines: wheel.rotateCuisines,
       distanceEnabled: wheel.distanceEnabled,
-      originLabel: wheel.originLabel ?? "Office",
+      originLabel: wheel.originLabel === DEFAULT_ORIGIN_LABEL ? "" : (wheel.originLabel ?? ""),
       originLat: wheel.originLat == null ? null : Number(wheel.originLat),
       originLng: wheel.originLng == null ? null : Number(wheel.originLng),
     });
@@ -424,7 +425,7 @@ export default function WheelSelector({
           enabled: editWheel.distanceEnabled,
           originLat: editWheel.originLat,
           originLng: editWheel.originLng,
-          originLabel: editWheel.originLabel.trim() || "Office",
+          originLabel: editWheel.originLabel.trim() || DEFAULT_ORIGIN_LABEL,
         }),
       ]);
       utils.wheels.list.invalidate();
@@ -1008,7 +1009,7 @@ export default function WheelSelector({
                         >
                           <MapPin size={14} className="flex-shrink-0" style={{ color: "var(--ok)" }} />
                           <div className="flex flex-col min-w-0 flex-1">
-                            <span className="text-sm truncate">{editWheel.originLabel.trim() || "Office"}</span>
+                            <span className="text-sm truncate">{originLabelText(editWheel.originLabel, t)}</span>
                             <span className="type-meta flex items-center gap-1.5" style={{ color: isPersisted ? "var(--muted-foreground)" : "var(--brand-text)" }}>
                               {isPersisted ? t("settings.distance.saved") : t("settings.distance.pending")}
                               <a href={mapHref} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">

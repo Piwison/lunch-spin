@@ -12,6 +12,32 @@
  * owning a cuisine name would silently recolor provider adds.
  */
 
+/**
+ * The tag catalog the 0009 migration seeds (wheelId and createdBy NULL), in seed
+ * order. Stored in English on purpose — `matchCuisineTag` keys provider labels on
+ * these names — so a Chinese UI translates them for DISPLAY only
+ * (client/src/lib/tagLabel.ts) and never renames the stored value.
+ */
+export const SYSTEM_TAG_NAMES = [
+  "Japanese", "Chinese", "Korean", "Thai", "Vietnamese", "Indian", "Italian", "Mexican",
+  "American", "French", "Mediterranean", "Greek", "Spanish", "Turkish", "Middle Eastern",
+  "Pizza", "Burgers", "BBQ", "Seafood", "Steakhouse", "Sandwiches", "Fast Food", "Breakfast",
+  "Brunch", "Vegetarian", "Vegan", "Noodles", "Salad", "Dessert", "Cafe", "Bakery",
+] as const;
+
+export type SystemTagName = (typeof SYSTEM_TAG_NAMES)[number];
+
+const SYSTEM_TAGS: ReadonlySet<string> = new Set(SYSTEM_TAG_NAMES);
+
+/**
+ * The seeded tag a label is, or null. Exact match only: a seeded name is a fixed
+ * string, and a custom tag is the user's own words even when it reuses one.
+ */
+export function systemTagName(name: string, category?: string | null): SystemTagName | null {
+  if (category === "custom") return null;
+  return SYSTEM_TAGS.has(name) ? (name as SystemTagName) : null;
+}
+
 export interface MatchableTag {
   id: number;
   name: string;

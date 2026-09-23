@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeExcludedIds, computeExclusions, formatExclusionTimeLeft, type SpinRecord } from "./exclusion";
+import { computeExcludedIds, computeExclusions, exclusionTimeLeft, formatExclusionTimeLeft, type SpinRecord } from "./exclusion";
 
 // Noon in Taipei (UTC+8) on 2026-06-10 — a realistic "deciding lunch" moment.
 // The Taipei calendar day 2026-06-10 spans UTC [2026-06-09T16:00Z, 2026-06-10T16:00Z).
@@ -94,5 +94,20 @@ describe("formatExclusionTimeLeft", () => {
 
   it("returns expired for past timestamps", () => {
     expect(formatExclusionTimeLeft(new Date(now.getTime() - 1000), now)).toBe("expired");
+  });
+});
+
+describe("exclusionTimeLeft", () => {
+  const at = (ms: number) => new Date(now.getTime() + ms);
+  it("splits into days + hours, hours, or minutes — the same units formatExclusionTimeLeft prints", () => {
+    expect(exclusionTimeLeft(at(50 * 3600_000), now)).toEqual({ unit: "dh", days: 2, hours: 2 });
+    expect(exclusionTimeLeft(at(5 * 3600_000), now)).toEqual({ unit: "h", hours: 5 });
+    expect(exclusionTimeLeft(at(12 * 60_000), now)).toEqual({ unit: "m", minutes: 12 });
+    expect(exclusionTimeLeft(at(10_000), now)).toEqual({ unit: "m", minutes: 1 });
+  });
+
+  it("is null once the exclusion has run out", () => {
+    expect(exclusionTimeLeft(at(-1000), now)).toBeNull();
+    expect(exclusionTimeLeft(now, now)).toBeNull();
   });
 });

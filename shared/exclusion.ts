@@ -92,19 +92,33 @@ export function computeExcludedIds(
   return computeExclusions(spins, opts).map((e) => e.restaurantId);
 }
 
-/**
- * Human-readable "time left" for an exclusion, e.g. "2d 3h", "5h", "12m".
- * Returns "expired" if `excludedUntil` is in the past.
- */
-export function formatExclusionTimeLeft(excludedUntil: Date, now: Date = new Date()): string {
+/** Time left on an exclusion, in the units the UI prints: days + hours, whole
+ *  hours, or minutes (at least 1). Null once it has run out. */
+export type ExclusionTimeLeft =
+  | { unit: "dh"; days: number; hours: number }
+  | { unit: "h"; hours: number }
+  | { unit: "m"; minutes: number };
+
+export function exclusionTimeLeft(excludedUntil: Date, now: Date = new Date()): ExclusionTimeLeft | null {
   const remaining = excludedUntil.getTime() - now.getTime();
-  if (remaining <= 0) return "expired";
+  if (remaining <= 0) return null;
 
   const days = Math.floor(remaining / 86400000);
   const hours = Math.floor(remaining / 3600000);
-  if (days > 0) return `${days}d ${hours % 24}h`;
-  if (hours > 0) return `${hours}h`;
+  if (days > 0) return { unit: "dh", days, hours: hours % 24 };
+  if (hours > 0) return { unit: "h", hours };
+  return { unit: "m", minutes: Math.max(1, Math.floor(remaining / 60000)) };
+}
 
-  const mins = Math.max(1, Math.floor(remaining / 60000));
-  return `${mins}m`;
+/**
+ * Human-readable "time left" for an exclusion, e.g. "2d 3h", "5h", "12m".
+ * Returns "expired" if `excludedUntil` is in the past. English; the app renders
+ * `exclusionTimeLeft` through its dictionary instead.
+ */
+export function formatExclusionTimeLeft(excludedUntil: Date, now: Date = new Date()): string {
+  const left = exclusionTimeLeft(excludedUntil, now);
+  if (!left) return "expired";
+  if (left.unit === "dh") return `${left.days}d ${left.hours}h`;
+  if (left.unit === "h") return `${left.hours}h`;
+  return `${left.minutes}m`;
 }

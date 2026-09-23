@@ -3,6 +3,16 @@
 目標：把登入後的 app（BACKLOG.md 3a）翻成繁中優先、英文保留，並在 app 裡加上語言切換。
 同一時間 Claude 在另一條分支修 2026-09-23 使用者測試的問題。兩邊要能**同時進行、不互相踩到**。
 
+> **狀態（2026-09-23）：第一輪已完成。** Codex 的五個 commit 經 PR #38 進了 `staging`，
+> Claude 分支已快轉到那裡並補完（見 BACKLOG 3a）。所以 Claude 的分支現在**包含** Codex 的翻譯，
+> 合進 `main` 只要合這一條；PR #38 那條 fork 分支不用再另外合。下一輪若再分工，
+> 從 Claude 分支的最新 head 開分支，並注意下面兩個這輪踩到的坑。
+>
+> - **沒列在表上的檔案等於沒人負責**：`StarRating.tsx`、`components/ui/*` 都不在表上，第一輪就一直是英文。
+>   表外的檔案一律算 Claude 的，要翻就先來說。
+> - **分支開出去之後才改的文件，對方看不到**：坑 9（`language: lang`）是 Codex 開分支後才加的，它讀到的版本沒有。
+>   開始前寫完，或開始後改了就直接告訴對方。
+
 ## 整體流程
 
 ```mermaid
@@ -32,6 +42,7 @@ flowchart TD
 | `client/src/lib/placesError.ts` | `client/src/i18n/index.tsx`、`client/src/i18n/dict.ts` |
 | `client/src/i18n/messages/` 的 `app` `wheel` `places` `history` `settings` `err` | `client/src/i18n/messages/` 的 `landing` `onboarding` `common` |
 | | `server/**`、`shared/**`、`api/index.js`、`drizzle/**`、`client/index.html`、`client/src/index.css` |
+| | **表上沒列的其他檔案**（例如 `StarRating`、`components/ui/*`、`lib/tagLabel.ts`、`lib/timeLabels.ts`） |
 
 需要動到 server 的翻譯（例如新輪盤預設名稱 `Lunch near me` 是 server 產生的、Google 店名要改成中文要在 server 送 `language`）**由 Claude 做**，
 因為 server 改動要重建並一起 commit `api/index.js`，這個規則只放在一邊比較安全。

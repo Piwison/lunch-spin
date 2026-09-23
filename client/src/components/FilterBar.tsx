@@ -3,11 +3,13 @@ import { AlertTriangle, ChevronDown, Footprints, SlidersHorizontal, X } from "lu
 import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useLang } from "@/i18n";
+import { tagLabel } from "@/lib/tagLabel";
 
 interface FilterTag {
   id: number;
   name: string;
   color: string;
+  category?: string | null;
 }
 
 interface TagGroup {
@@ -166,7 +168,7 @@ export default function FilterBar({
                           borderRadius: "var(--radius-chip)",
                         }}
                       >
-                        {tag.name}
+                        {tagLabel(tag.name, t, tag.category)}
                       </button>
                     );
                   })}

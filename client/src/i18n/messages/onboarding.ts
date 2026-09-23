@@ -71,6 +71,7 @@ export const zh = {
   "onb.cta.spin": "用這 {n} 家開轉",
   "onb.cta.needMore": "至少挑 {n} 家",
   "onb.cta.closedNote": "其中 {n} 家現在休息中，今天轉不到",
+  "onb.err.create": "輪盤沒有建成，請再按一次。",
   "onb.cta.tooMany": "最多 {max} 家，請先取消 {n} 家",
   "onb.cap": "輪盤最多 {n} 家，先取消一家再加",
 
@@ -160,6 +161,7 @@ export const en: Record<keyof typeof zh, string> = {
   "onb.cta.spin": "Spin these {n}",
   "onb.cta.needMore": "Pick at least {n}",
   "onb.cta.closedNote": "{n} closed now, so they won't come up today",
+  "onb.err.create": "Couldn't build the wheel. Try again.",
   "onb.cta.tooMany": "{max} at most — untick {n}",
   "onb.cap": "A wheel holds {n} at most — untick one first",
   "onb.building.title": "Building your wheel",

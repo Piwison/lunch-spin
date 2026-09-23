@@ -105,6 +105,9 @@ const TYPE_CUISINE: Record<string, string> = {
   bakery: "Bakery",
 };
 
+/** Every label `cuisineFromTypes` can return — each one is a seeded tag name. */
+export const PROVIDER_CUISINE_LABELS: readonly string[] = Array.from(new Set(Object.values(TYPE_CUISINE)));
+
 /** First recognised cuisine among a place's types, else null. */
 export function cuisineFromTypes(types: string[] | null | undefined): string | null {
   if (!types) return null;

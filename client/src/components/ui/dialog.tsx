@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useLang } from "@/i18n";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import * as React from "react";
@@ -98,6 +99,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  const { t } = useLang();
   const { isComposing } = useDialogComposition();
 
   const handleEscapeKeyDown = React.useCallback(
@@ -145,7 +147,7 @@ function DialogContent({
             style={{ borderRadius: "var(--radius-control)", color: "var(--body-warm)" }}
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("common.close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>

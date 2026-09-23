@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Component, ReactNode } from "react";
-import { useLang } from "@/i18n";
+import { translateWithoutProvider as t } from "@/i18n";
 
 interface Props {
   children: ReactNode;
@@ -12,8 +12,9 @@ interface State {
   error: Error | null;
 }
 
+// Not useLang(): this boundary wraps LangProvider (App.tsx), so the fallback
+// renders with no provider above it — see translateWithoutProvider.
 function ErrorFallback({ error }: { error: Error | null }) {
-  const { t } = useLang();
   return (
     <div className="flex items-center justify-center min-h-screen p-8 bg-background">
       <div className="flex flex-col items-center w-full max-w-2xl p-8">

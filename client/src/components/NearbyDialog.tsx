@@ -3,12 +3,14 @@ import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { formatWalk, DEFAULT_RADIUS_M } from "@shared/nearby";
+import { DEFAULT_RADIUS_M } from "@shared/nearby";
 import { Navigation, Footprints, Loader2, Check, Plus, AlertTriangle, MapPin, Search } from "lucide-react";
 import { toast } from "sonner";
 import { providerAlert } from "@/lib/placesError";
 import { GeoError, cachedCoords, requestCoords, type Coords } from "@/lib/geo";
 import { useLang } from "@/i18n";
+import { tagLabel } from "@/lib/tagLabel";
+import { walkLabel } from "@/lib/timeLabels";
 import { userError } from "@/lib/userError";
 
 interface NearbyDialogProps {
@@ -42,7 +44,7 @@ function placeMapUrl(placeId: string, name: string): string {
 }
 
 export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: NearbyDialogProps) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [coords, setCoords] = useState<Coords | null>(cachedCoords());
   const [geoError, setGeoError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -56,7 +58,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
 
   const runSearch = (at: Coords, r: number) => {
     search.mutate(
-      { wheelId, lat: at.lat, lng: at.lng, radius: r, keyword: keyword.trim() || undefined },
+      { wheelId, lat: at.lat, lng: at.lng, radius: r, keyword: keyword.trim() || undefined, language: lang },
       { onError: (e) => toast.error(userError(e, t)) },
     );
   };
@@ -234,13 +236,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
             >
               <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
               <span className="leading-relaxed">
-                {alert.quota
-                  ? t("places.provider.quota")
-                  : alert.config
-                    ? t("places.provider.config")
-                    : alert.retryable
-                      ? t("places.provider.transient")
-                      : t("places.provider.request")}
+                {t(alert.messageKey)}
                 {alert.config && <> {t("places.nearby.manualFallback")}</>}
               </span>
             </div>
@@ -355,10 +351,10 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                           className="flex items-center gap-1"
                           title={p.walkSource === "route" ? t("places.nearby.route") : t("places.nearby.estimate")}
                         >
-                          <Footprints size={11} /> {formatWalk(p.walkMinutes, p.walkSource !== "route")}
+                          <Footprints size={11} /> {walkLabel(t, p.walkMinutes, p.walkSource !== "route")}
                         </span>
                         {p.priceLevel != null && <span style={{ color: "var(--brand-text)" }}>{"$".repeat(p.priceLevel)}</span>}
-                        {p.cuisine && <span>{p.cuisine}</span>}
+                        {p.cuisine && <span>{tagLabel(p.cuisine, t)}</span>}
                         {p.open === true && <span style={{ color: "var(--ok)" }}>{t("places.nearby.open")}</span>}
                         {p.open === false && <span className="opacity-70">{t("places.nearby.closed")}</span>}
                         {isAdded && <span style={{ color: "var(--ok)" }}>{t("places.nearby.onWheel")}</span>}

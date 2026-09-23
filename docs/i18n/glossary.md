@@ -52,6 +52,11 @@ here, pick one, use it everywhere, and add it here in the same commit.
 | rotate cuisines | 輪流換口味 | |
 | settings | 設定 | |
 | account | 帳號 | |
+| a spin (the record) / spins | 抽選 / 次抽選 | `抽選紀錄`、`3 次抽選`、`總抽選次數`。按鈕仍是「開轉」 |
+| picked (by the wheel) | 抽到、抽中 | `最常抽到`、`昨天抽到`、`{name} 抽到「台記」` |
+| seeded tags (Japanese, Noodles…) | 日式、麵食… | 只翻顯示，存的值維持英文：`places.tagName.*` + `client/src/lib/tagLabel.ts` |
+| Office (default walk origin) | 公司 | 同上，是存進資料庫的預設值，只翻顯示 |
+| Google Maps | Google 地圖 | 產品名在中文句子裡寫「Google 地圖」 |
 
 ## 動作 · Actions
 

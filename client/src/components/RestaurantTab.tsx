@@ -17,7 +17,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
-import { formatWalk } from "@shared/nearby";
 import { providerAlert } from "@/lib/placesError";
 import { GeoError, requestCoords } from "@/lib/geo";
 import { matchCuisineTag } from "@shared/cuisineTag";
@@ -27,6 +26,8 @@ import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
 import NearbyDialog from "@/components/NearbyDialog";
 import { useLang } from "@/i18n";
+import { originLabelText, tagLabel } from "@/lib/tagLabel";
+import { walkLabel } from "@/lib/timeLabels";
 import { userError } from "@/lib/userError";
 
 /** Loose check: does this string look like a Google Maps link worth resolving? */
@@ -88,7 +89,7 @@ function placeSearchMapUrl(placeId: string, name: string): string {
 }
 
 export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, distanceEnabled, originLabel }: RestaurantTabProps) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<RestaurantForm>(EMPTY_FORM);
@@ -206,7 +207,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       // Reuses this session's fix (lib/geo) — no second permission prompt if
       // ADD NEARBY or first-run already asked.
       const at = await requestCoords();
-      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword });
+      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword, language: lang });
     } catch (err) {
       const kind = err instanceof GeoError ? err.kind : "failed";
       setNameGeoError(
@@ -251,7 +252,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       setFormError(null);
       toast.success(t("places.found", { name: place.name }));
     },
-    onError: (e) => setFormError(userError(e, t)),
+    onError: (e) => setFormError(t(providerAlert(e, "link")?.messageKey ?? "err.generic")),
   });
 
   // Full catalog — for the add/edit form, where you can assign any tag.
@@ -327,7 +328,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
     }
   };
 
-  const TagChip = ({ tag }: { tag: { id: number; name: string; color: string } }) => {
+  const TagChip = ({ tag }: { tag: { id: number; name: string; color: string; category?: string | null } }) => {
     const isActive = form.tagIds.includes(tag.id);
     return (
       <button
@@ -343,7 +344,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
           fontWeight: 500,
         }}
       >
-        {tag.name}
+        {tagLabel(tag.name, t, tag.category)}
       </button>
     );
   };
@@ -486,7 +487,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
             {distanceEnabled && (
               <span className="flex items-center gap-1">
                 <Footprints size={12} className="flex-shrink-0" />
-                {t("places.meta.from", { name: originLabel || "Office" })}
+                {t("places.meta.from", { name: originLabelText(originLabel, t) })}
               </span>
             )}
             {/* Only surface hours when they say something actionable. */}
@@ -679,7 +680,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               {/* Color swatch — matches wheel segment */}
               <div
                 className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 transition-all duration-200"
-                title={primary?.name ? t("places.row.tagged", { name: primary.name }) : t("places.row.color")}
+                title={primary?.name ? t("places.row.tagged", { name: tagLabel(primary.name, t, primary.category) }) : t("places.row.color")}
                 style={{ background: dotColor }}
               />
 
@@ -701,7 +702,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   {distanceEnabled && (
                     <span className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium text-muted-foreground" style={{ background: "var(--muted)" }}>
                       <Footprints size={10} className="flex-shrink-0" />
-                      {r.walkSeconds != null ? formatWalk(r.walkSeconds / 60) : t("places.row.noLocation")}
+                      {r.walkSeconds != null ? walkLabel(t, r.walkSeconds / 60) : t("places.row.noLocation")}
                     </span>
                   )}
                   {/* Opening hours. "unknown" shows nothing — those places stay on
@@ -733,17 +734,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 {r.notes && <p className="type-meta text-muted-foreground mt-0.5 line-clamp-1">{r.notes}</p>}
                 {r.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
-                    {r.tags.map((t) => (
+                    {r.tags.map((tag) => (
                       <span
-                        key={t.id}
+                        key={tag.id}
                         className="type-meta px-2 py-0.5 rounded-full font-medium"
                         style={{
-                          background: t.color + "18",
-                          color: t.color,
-                          border: `1px solid ${t.color}35`,
+                          background: tag.color + "18",
+                          color: tag.color,
+                          border: `1px solid ${tag.color}35`,
                         }}
                       >
-                        {t.name}
+                        {tagLabel(tag.name, t, tag.category)}
                       </span>
                     ))}
                   </div>
@@ -785,15 +786,15 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     20px display face set Chinese names far heavier than Latin. */}
                 <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  {r.tags.map((t) => (
-                    <span key={t.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: t.color + "18", color: t.color, border: `1px solid ${t.color}35`, fontSize: 15, fontWeight: 500 }}>{t.name}</span>
+                  {r.tags.map((tag) => (
+                    <span key={tag.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: tag.color + "18", color: tag.color, border: `1px solid ${tag.color}35`, fontSize: 15, fontWeight: 500 }}>{tagLabel(tag.name, t, tag.category)}</span>
                   ))}
                   {distanceEnabled && r.walkSeconds != null && (
                     <span
                       className="flex items-center gap-1.5 px-2.5 py-1"
                       style={{ borderRadius: "var(--radius-chip)", background: "var(--muted)", color: "var(--body-warm)", fontSize: 15, fontWeight: 400 }}
                     >
-                      <Footprints size={12} />{formatWalk(r.walkSeconds / 60)}
+                      <Footprints size={12} />{walkLabel(t, r.walkSeconds / 60)}
                     </span>
                   )}
                   {r.mapUrl && (
@@ -930,13 +931,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   className="type-meta px-1 leading-relaxed"
                   style={{ color: nameAlert.quota ? "var(--brand-text)" : "var(--destructive)" }}
                 >
-                  {nameAlert.quota
-                    ? t("places.provider.quota")
-                    : nameAlert.config
-                      ? t("places.provider.config")
-                      : nameAlert.retryable
-                        ? t("places.provider.transient")
-                        : t("places.provider.request")}
+                  {t(nameAlert.messageKey)}
                 </p>
               )}
               {nameSearch.data && nameResults.length === 0 && !nameSearchBusy && (
@@ -961,8 +956,8 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       <span className="flex-1 min-w-0">
                         <span className="block type-meta font-semibold truncate">{p.name}</span>
                         <span className="block type-meta text-muted-foreground truncate">
-                          {formatWalk(p.walkMinutes, p.walkSource !== "route")}
-                          {p.cuisine ? ` · ${p.cuisine}` : ""}
+                          {walkLabel(t, p.walkMinutes, p.walkSource !== "route")}
+                          {p.cuisine ? ` · ${tagLabel(p.cuisine, t)}` : ""}
                           {p.address ? ` · ${p.address}` : ""}
                         </span>
                       </span>
@@ -993,7 +988,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 </div>
                 <Button
                   type="button"
-                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim() }); }}
+                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim(), language: lang }); }}
                   disabled={!looksLikeMapLink(form.mapUrl) || resolveLink.isPending}
                   title={t("places.form.lookupTitle")}
                   className="flex-shrink-0"

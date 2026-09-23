@@ -11,11 +11,15 @@
  * "try again" button there just burns another call to be told the same thing.
  */
 
+import type { MessageKey } from "@/i18n/dict";
+
 /** A tRPC error as the client sees it — only the bits we branch on. */
-type ClientError = { message?: string; data?: { code?: string } | null } | null | undefined;
+type ClientError = { data?: { code?: string } | null } | null | undefined;
 
 export interface ProviderAlert {
-  message: string;
+  /** What to show, in the active language: `t(alert.messageKey)`. The server's
+   *  own message is English, so it is never shown directly. */
+  messageKey: MessageKey;
   /** Usage limit reached: no retry affordance, calmer wording. */
   quota: boolean;
   /** A server/key misconfiguration rather than anything the user did. */
@@ -24,19 +28,25 @@ export interface ProviderAlert {
   retryable: boolean;
 }
 
-/** Null when there's no error to show. */
-export function providerAlert(error: ClientError): ProviderAlert | null {
+/**
+ * Null when there's no error to show. `source: "link"` is for resolveLink, whose
+ * NOT_FOUND means "no place in that link" — on a search the same code can only
+ * mean the wheel itself is gone, which the wheel's own access handling covers.
+ */
+export function providerAlert(error: ClientError, source: "search" | "link" = "search"): ProviderAlert | null {
   if (!error) return null;
   const code = error.data?.code;
-  const message = error.message || "Map search failed.";
   if (code === "TOO_MANY_REQUESTS") {
-    return { message, quota: true, config: false, retryable: false };
+    return { messageKey: "places.provider.quota", quota: true, config: false, retryable: false };
   }
   if (code === "PRECONDITION_FAILED") {
-    return { message, quota: false, config: true, retryable: false };
+    return { messageKey: "places.provider.config", quota: false, config: true, retryable: false };
+  }
+  if (code === "NOT_FOUND" && source === "link") {
+    return { messageKey: "places.provider.linkNotFound", quota: false, config: false, retryable: false };
   }
   if (code === "BAD_REQUEST") {
-    return { message, quota: false, config: false, retryable: false };
+    return { messageKey: "places.provider.request", quota: false, config: false, retryable: false };
   }
-  return { message, quota: false, config: false, retryable: true };
+  return { messageKey: "places.provider.transient", quota: false, config: false, retryable: true };
 }

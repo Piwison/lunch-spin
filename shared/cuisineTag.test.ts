@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { matchCuisineTag, type MatchableTag } from "./cuisineTag";
+import { matchCuisineTag, SYSTEM_TAG_NAMES, systemTagName, type MatchableTag } from "./cuisineTag";
+import { PROVIDER_CUISINE_LABELS } from "./placeMapping";
 
 const TAGS: MatchableTag[] = [
   { id: 1, name: "Japanese", category: "cuisine" },
@@ -49,5 +51,39 @@ describe("matchCuisineTag", () => {
       { id: 11, name: "BBQ", category: "cuisine" },
     ];
     expect(matchCuisineTag("BBQ", dup)?.id).toBe(11);
+  });
+});
+
+describe("SYSTEM_TAG_NAMES", () => {
+  // The display translation (client/src/lib/tagLabel.ts) is keyed on this list,
+  // so it must be exactly what the migration put in the database.
+  it("is exactly the set of tags the 0009 migration seeds", () => {
+    const sql = readFileSync(new URL("../drizzle/0009_seed_predefined_tags.sql", import.meta.url), "utf8");
+    const seeded = [...sql.matchAll(/SELECT '([^']+)', '(?:cuisine|food_type)'/g)].map((m) => m[1]);
+    expect(seeded.length).toBeGreaterThan(0);
+    expect([...SYSTEM_TAG_NAMES].sort()).toEqual([...seeded].sort());
+  });
+
+  it("covers every cuisine label the provider mapping can emit", () => {
+    for (const label of PROVIDER_CUISINE_LABELS) {
+      expect(SYSTEM_TAG_NAMES).toContain(label);
+    }
+  });
+});
+
+describe("systemTagName", () => {
+  it("recognises a seeded tag by its stored English name", () => {
+    expect(systemTagName("Japanese", "cuisine")).toBe("Japanese");
+    expect(systemTagName("Middle Eastern")).toBe("Middle Eastern");
+  });
+
+  it("leaves a user's own tag alone, even when it reuses a seeded name", () => {
+    expect(systemTagName("Japanese", "custom")).toBeNull();
+    expect(systemTagName("辣", "custom")).toBeNull();
+  });
+
+  it("does not guess at names that were never seeded", () => {
+    expect(systemTagName("Taiwanese", "cuisine")).toBeNull();
+    expect(systemTagName("japanese", "cuisine")).toBeNull();
   });
 });

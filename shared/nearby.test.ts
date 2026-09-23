@@ -8,6 +8,7 @@ import {
   estimateWalkMinutes,
   filterWeight,
   formatWalk,
+  walkDisplayMinutes,
   isLowDensity,
   type NearbyPlace,
   rankNearby,
@@ -34,6 +35,12 @@ describe("estimateWalkMinutes / formatWalk", () => {
     expect(formatWalk(6)).toBe("6 min walk");
     expect(formatWalk(0)).toBe("1 min walk");
     expect(formatWalk(6, true)).toBe("~6 min walk");
+  });
+  it("gives the whole minutes a label shows, in any language", () => {
+    expect(walkDisplayMinutes(5.6)).toBe(6);
+    expect(walkDisplayMinutes(0.2)).toBe(1);
+    expect(walkDisplayMinutes(0)).toBe(1);
+    expect(formatWalk(5.6)).toBe(`${walkDisplayMinutes(5.6)} min walk`);
   });
 });
 

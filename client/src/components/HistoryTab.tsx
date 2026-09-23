@@ -4,9 +4,9 @@ import { toast } from "sonner";
 import { RestaurantStats } from "./RestaurantStats";
 import { TasteProfile } from "./TasteProfile";
 import { StarRating, RatingChip } from "@/components/StarRating";
-import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { useLang } from "@/i18n";
 import { userError } from "@/lib/userError";
+import { timeLeftLabel } from "@/lib/timeLabels";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -176,7 +176,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                 !entry.manuallyReenabled;
               const spunAtDate = new Date(entry.spunAt);
               const timeLeft = excludedUntil
-                ? formatExclusionTimeLeft(excludedUntil)
+                ? timeLeftLabel(t, excludedUntil)
                 : null;
 
               return (
@@ -205,15 +205,18 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                         {entry.restaurantName}
                       </span>
                       {isCurrentlyExcluded && isLatestForRestaurant && (
+                        // max-w-full, not flex-shrink-0: this column shares the
+                        // row with the re-enable button, and at 360px the chip
+                        // ran 26px under it (English; 41px in Chinese).
                         <span
-                          className="type-meta px-2 py-0.5 rounded-full flex-shrink-0"
+                          className="type-meta px-2 py-0.5 rounded-full max-w-full text-balance"
                           style={{
                             background: "oklch(from var(--destructive) l c h / 0.15)",
                             color: "var(--brand-text)",
                             border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
                           }}
                         >
-                          {timeLeft === "expired" ? t("history.expired") : t("history.excluded", { time: timeLeft ?? "" })}
+                          {timeLeft === null ? t("history.expired") : t("history.excluded", { time: timeLeft })}
                         </span>
                       )}
                       {entry.manuallyReenabled && (
@@ -229,7 +232,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                         </span>
                       )}
                     </div>
-                    <p className="type-meta text-muted-foreground mt-0.5">
+                    <p className="type-meta text-muted-foreground mt-0.5 text-pretty">
                       {timeAgo(spunAtDate)} · {t("history.by", { name: entry.spunByName ?? t("history.unknown") })}
                     </p>
 

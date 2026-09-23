@@ -2,6 +2,7 @@ import { ThumbsUp, Ban, RotateCcw, Salad, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { excludedDietaryTagIds, voteCounts, type SessionState } from "@shared/session";
 import { useLang } from "@/i18n";
+import { tagLabel } from "@/lib/tagLabel";
 
 interface RoundRestaurant {
   id: number;
@@ -12,6 +13,7 @@ interface RoundTag {
   id: number;
   name: string;
   color: string;
+  category?: string | null;
 }
 
 interface RoundPanelProps {
@@ -108,7 +110,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
                   textDecoration: avoided ? "line-through" : "none",
                 }}
               >
-                {tag.name}
+                {tagLabel(tag.name, t, tag.category)}
               </button>
             );
           })}

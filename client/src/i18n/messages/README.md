@@ -4,7 +4,7 @@ One file per area of the product. `../dict.ts` only combines them.
 
 | File | Prefixes | Area |
 |---|---|---|
-| `common.ts` | `lang.` | the language switch (anything rendered by more than one area) |
+| `common.ts` | `lang.` `common.` | the language switch, and labels more than one area renders (walk time, time left, star rating, close) |
 | `landing.ts` | `hero.` `demo.` `steps.` `features.` `popular.` `final.` | the landing page `/` |
 | `onboarding.ts` | `onb.` `loc.` | first run + the shared `LocationPicker` |
 | `app.ts` | `app.` | signed-in shell: header, profile menu, dock, cross-tab toasts |

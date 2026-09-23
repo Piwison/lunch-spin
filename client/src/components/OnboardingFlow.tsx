@@ -619,11 +619,11 @@ export default function OnboardingFlow({
 
           {alert && (
             <ErrorNote tone={alert.quota ? "warn" : "error"}>
-              {alert.message}
+              {t(alert.messageKey)}
             </ErrorNote>
           )}
           {createWheel.isError && (
-            <ErrorNote>{createWheel.error.message}</ErrorNote>
+            <ErrorNote>{t("onb.err.create")}</ErrorNote>
           )}
 
           {/* The list, sectioned by walk band. */}
@@ -935,7 +935,7 @@ export default function OnboardingFlow({
           // A spent map quota is a limit, not a crash: calmer styling and a
           // nudge to the path that still works.
           <ErrorNote tone={alert.quota ? "warn" : "error"}>
-            {alert.message}
+            {t(alert.messageKey)}
           </ErrorNote>
         )}
 
