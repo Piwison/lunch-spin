@@ -253,7 +253,10 @@ export default function FilterBar({
             borderBottomRightRadius: 0,
           }}
         >
-          <SheetHeader className="flex-row items-center gap-2.5 pl-2 pr-12 pb-1">
+          {/* pl-4 matches the panel's own px-4, so the header lines up with the
+              chip groups under it (it used to start 8px from the sheet's rim);
+              pr-4 puts the close 16px in, where the wheel switcher has it. */}
+          <SheetHeader className="pl-4 pr-4">
             <SlidersHorizontal size={17} style={{ color: "var(--brand-text)" }} />
             <SheetTitle className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
               {t("wheel.filter.label")}

@@ -842,10 +842,18 @@ export default function SpinWheel({
                   // wedge clip could ever bisect a glyph. Never rely on the clip
                   // to end a line.
                   [ray.flipped ? "right" : "left"]: metrics.bandStartPx,
-                  top: -tier.bandHeightPx * labelScale * 0.5,
+                  // Centred on the TEXT, not on the band. The box used to be
+                  // the band's full height with the lines set from its top, so
+                  // on the two-line tier (≤ 8 places) every one-line name sat
+                  // in the upper half: measured 7.9px off its pane's centre
+                  // line, on every label, in both languages. The box is now the
+                  // lines themselves (capped at the band), and it is the box
+                  // that is centred on the ray — one line or two.
+                  top: 0,
+                  transform: "translateY(-50%)",
                   width: bandWidth,
                   maxWidth: bandWidth,
-                  height: tier.bandHeightPx * labelScale,
+                  maxHeight: tier.bandHeightPx * labelScale,
                   textAlign: tier.indexOnly && !active ? "center" : ray.flipped ? "right" : "left",
                   fontSize: tier.fontPx * labelScale,
                   lineHeight: `${tier.lineHeightPx * labelScale}px`,
@@ -866,7 +874,7 @@ export default function SpinWheel({
                   // label would re-lay-out in one frame while everything around
                   // it interpolated — a cut inside a move.
                   transition:
-                    "width var(--dur-zoom) var(--ease-zoom), opacity var(--dur-zoom) var(--ease-zoom), font-size var(--dur-zoom) var(--ease-zoom), height var(--dur-zoom) var(--ease-zoom), line-height var(--dur-zoom) var(--ease-zoom)",
+                    "width var(--dur-zoom) var(--ease-zoom), opacity var(--dur-zoom) var(--ease-zoom), font-size var(--dur-zoom) var(--ease-zoom), max-height var(--dur-zoom) var(--ease-zoom), line-height var(--dur-zoom) var(--ease-zoom)",
                   // Wrap first, truncate last: two lines where the wedge affords
                   // them, one where it does not.
                   //

@@ -7,6 +7,34 @@ import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/i18n";
 
+type SheetSide = "top" | "right" | "bottom" | "left";
+
+/** Which edge the open sheet came from, for SheetHeader (see there). */
+const SheetSideContext = React.createContext<SheetSide>("right");
+
+/** The close control: a 44px target with a 20px glyph, in the body-warm ink. */
+function SheetCloseButton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  const { t } = useLang();
+  return (
+    <SheetPrimitive.Close
+      className={cn(
+        "flex flex-shrink-0 items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none",
+        className
+      )}
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: "var(--radius-control)",
+        color: "var(--body-warm)",
+        ...style,
+      }}
+    >
+      <XIcon className="size-5" />
+      <span className="sr-only">{t("common.close")}</span>
+    </SheetPrimitive.Close>
+  );
+}
+
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
@@ -51,9 +79,8 @@ function SheetContent({
   side = "right",
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
-  side?: "top" | "right" | "bottom" | "left";
+  side?: SheetSide;
 }) {
-  const { t } = useLang();
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -97,31 +124,46 @@ function SheetContent({
             />
           </div>
         )}
-        {children}
-        <SheetPrimitive.Close
-          className="absolute top-4 right-4 flex items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none"
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: "var(--radius-control)",
-            color: "var(--body-warm)",
-          }}
-        >
-          <XIcon className="size-5" />
-          <span className="sr-only">{t("common.close")}</span>
-        </SheetPrimitive.Close>
+        <SheetSideContext.Provider value={side}>{children}</SheetSideContext.Provider>
+        {/* A bottom sheet's close sits IN its header row (SheetHeader). Pinned
+            absolutely at top-4/right-4 it was 14px above a header whose row is
+            56px tall — the wheel switcher's "+ New" — so title, action and X
+            read as three things at three heights. */}
+        {side !== "bottom" && <SheetCloseButton className="absolute top-4 right-4" />}
       </SheetPrimitive.Content>
     </SheetPortal>
   );
 }
 
-function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
+/**
+ * On a bottom sheet the header is ONE row — title, the caller's actions, then
+ * the close — all centred on the same line. Actions that belong at the right
+ * take `ml-auto` inside the row; the close always ends it. The caller owns the
+ * horizontal padding, and should set it so the title starts where the sheet's
+ * own content starts (the row icons, the chip groups), not at the sheet's rim.
+ */
+function SheetHeader({ className, children, ...props }: React.ComponentProps<"div">) {
+  const side = React.useContext(SheetSideContext);
+  if (side === "bottom") {
+    return (
+      <div
+        data-slot="sheet-header"
+        className={cn("flex flex-row items-center gap-2 pt-3 pb-1", className)}
+        {...props}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">{children}</div>
+        <SheetCloseButton />
+      </div>
+    );
+  }
   return (
     <div
       data-slot="sheet-header"
       className={cn("flex flex-col gap-1.5 p-4", className)}
       {...props}
-    />
+    >
+      {children}
+    </div>
   );
 }
 

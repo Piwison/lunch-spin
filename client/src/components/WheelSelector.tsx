@@ -644,13 +644,16 @@ export default function WheelSelector({
               borderBottomRightRadius: 0,
             }}
           >
-            <SheetHeader className="flex-row items-center justify-between pl-2 pr-12 pb-1">
+            {/* On top of the sheet's px-3: pl-3 starts the title at 24px, where
+                every row's wheel icon starts (it was 4px outside them), and pr-1
+                puts the close over the rows' ⋮ column instead of 5px outside it. */}
+            <SheetHeader className="pl-3 pr-1">
               <SheetTitle className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
                 {t("settings.myWheels")}
               </SheetTitle>
               <button
                 onClick={() => { setShowSwitcher(false); setShowCreate(true); }}
-                className="flex items-center gap-1.5 px-4 hover:bg-white/10 transition-colors"
+                className="ml-auto flex items-center gap-1.5 px-4 hover:bg-white/10 transition-colors"
                 style={{ minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 15, fontWeight: 500, color: "var(--ink-warm)" }}
               >
                 <Plus size={16} /> {t("settings.new")}
