@@ -1,5 +1,6 @@
 import { AlertCircle, Home } from "lucide-react";
 import { useLocation } from "wouter";
+import { useLang } from "@/i18n";
 
 /**
  * 404. Was the stock template screen — slate gradient, white card, blue button,
@@ -7,6 +8,7 @@ import { useLocation } from "wouter";
  * entirely and rendered a bright white card in dark mode.
  */
 export default function NotFound() {
+  const { t } = useLang();
   const [, setLocation] = useLocation();
 
   return (
@@ -29,9 +31,9 @@ export default function NotFound() {
         </div>
 
         <p className="type-eyebrow mb-2" style={{ color: "var(--brand-text)" }}>404</p>
-        <h1 className="type-title mb-4" style={{ color: "var(--ink-warm)" }}>Page not found</h1>
+        <h1 className="type-title mb-4" style={{ color: "var(--ink-warm)" }}>{t("app.notFound.title")}</h1>
         <p className="type-body mb-8" style={{ color: "var(--body)" }}>
-          Sorry, the page you are looking for doesn&apos;t exist. It may have been moved or deleted.
+          {t("app.notFound.body")}
         </p>
 
         <button
@@ -48,7 +50,7 @@ export default function NotFound() {
           }}
         >
           <Home className="w-4 h-4" />
-          Go home
+          {t("app.notFound.home")}
         </button>
       </div>
     </div>

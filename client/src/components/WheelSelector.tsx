@@ -23,6 +23,7 @@ import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import LocationPicker from "@/components/LocationPicker";
 import { STARTER_RESTAURANTS } from "@shared/starter";
 import { useLang } from "@/i18n";
+import { userError } from "@/lib/userError";
 
 interface WheelSelectorProps {
   selectedWheelId: number | null;
@@ -251,7 +252,7 @@ export default function WheelSelector({
       setShowSwitcher(false);
       toast.success(t("settings.toast.copiedWheel", { name: data.name }));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
 
   // Default the starter pack on for a user's very first wheel only. Skip while the
@@ -323,7 +324,7 @@ export default function WheelSelector({
       }
       toast.success(t("settings.toast.created"));
     },
-    onError: (e) => { setCreateError(e.message); },
+    onError: (e) => { setCreateError(userError(e, t)); },
   });
   const deleteWheel = trpc.wheels.delete.useMutation({
     onSuccess: (_data, vars) => {
@@ -348,7 +349,7 @@ export default function WheelSelector({
       setEditWheel(null);
       toast.success(t("settings.toast.deleted"));
     },
-    onError: (e) => toast.error(t("settings.error.delete", { message: e.message })),
+    onError: (e) => toast.error(t("settings.error.delete", { message: userError(e, t) })),
   });
   const leaveWheel = trpc.wheels.leave.useMutation({
     onSuccess: (_data, vars) => {
@@ -364,11 +365,11 @@ export default function WheelSelector({
       setConfirmLeave(null);
       toast.success(t("settings.toast.left"));
     },
-    onError: (e) => toast.error(t("settings.error.leave", { message: e.message })),
+    onError: (e) => toast.error(t("settings.error.leave", { message: userError(e, t) })),
   });
   const setDefaultWheel = trpc.wheels.setDefault.useMutation({
     onSuccess: () => { utils.auth.me.invalidate(); },
-    onError: (e) => toast.error(t("settings.error.default", { message: e.message })),
+    onError: (e) => toast.error(t("settings.error.default", { message: userError(e, t) })),
   });
   const regenInvite = trpc.wheels.regenerateInvite.useMutation({
     onSuccess: (data, vars) => {
@@ -378,7 +379,7 @@ export default function WheelSelector({
       utils.wheels.list.invalidate();
       setShowInvite({ wheelId: vars.id, token: data.inviteToken, name: w?.name ?? "" });
     },
-    onError: (e) => toast.error(t("settings.error.invite", { message: e.message })),
+    onError: (e) => toast.error(t("settings.error.invite", { message: userError(e, t) })),
   });
   // Settings + distance mode used to be two independent save buttons in one
   // dialog. That was a trap: "Save Settings" (the first, more prominent
@@ -387,10 +388,10 @@ export default function WheelSelector({
   // state, so it silently vanished the next time settings were reopened.
   // Fixed by unifying into one save action (below) that submits both.
   const updateWheel = trpc.wheels.update.useMutation({
-    onError: (e) => { setUpdateError(e.message); },
+    onError: (e) => { setUpdateError(userError(e, t)); },
   });
   const setDistanceOrigin = trpc.wheels.setDistanceOrigin.useMutation({
-    onError: (e) => setOriginError(e.message),
+    onError: (e) => setOriginError(userError(e, t)),
   });
   const savingWheelSettings = updateWheel.isPending || setDistanceOrigin.isPending;
 

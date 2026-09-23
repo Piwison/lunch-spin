@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, Info, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLang } from "@/i18n";
 
 type ChipVariant = "error" | "success" | "info" | "loading";
 
@@ -47,6 +48,7 @@ const CHIP_ICONS: Record<ChipVariant, React.FC<{ size: number; className?: strin
 };
 
 export function StatusChip({ variant, message, autoDismiss = 0, onDismiss, className }: StatusChipProps) {
+  const { t } = useLang();
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
   const styles = CHIP_STYLES[variant];
@@ -92,7 +94,7 @@ export function StatusChip({ variant, message, autoDismiss = 0, onDismiss, class
         <button
           onClick={dismiss}
           className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity ml-1 mt-0.5"
-          aria-label="Dismiss"
+          aria-label={t("app.dismiss")}
         >
           <X size={11} />
         </button>
@@ -108,6 +110,7 @@ export function ErrorChip({ error, onDismiss }: { error: string | null | undefin
 }
 
 /** Inline loading chip */
-export function LoadingChip({ message = "Loading..." }: { message?: string }) {
-  return <StatusChip variant="loading" message={message} />;
+export function LoadingChip({ message }: { message?: string }) {
+  const { t } = useLang();
+  return <StatusChip variant="loading" message={message ?? t("app.loading")} />;
 }

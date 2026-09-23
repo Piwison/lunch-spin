@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { providerAlert } from "@/lib/placesError";
 import { GeoError, cachedCoords, requestCoords, type Coords } from "@/lib/geo";
 import { useLang } from "@/i18n";
+import { userError } from "@/lib/userError";
 
 interface NearbyDialogProps {
   wheelId: number;
@@ -56,7 +57,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
   const runSearch = (at: Coords, r: number) => {
     search.mutate(
       { wheelId, lat: at.lat, lng: at.lng, radius: r, keyword: keyword.trim() || undefined },
-      { onError: (e) => toast.error(e.message) },
+      { onError: (e) => toast.error(userError(e, t)) },
     );
   };
 
@@ -136,7 +137,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                 : t(res.added === 1 ? "places.nearby.added.one" : "places.nearby.added.other", { n: res.added }),
           );
         },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => toast.error(userError(e, t)),
       },
     );
   };

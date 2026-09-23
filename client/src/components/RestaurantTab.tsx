@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { ErrorChip } from "@/components/StatusChip";
 import NearbyDialog from "@/components/NearbyDialog";
 import { useLang } from "@/i18n";
+import { userError } from "@/lib/userError";
 
 /** Loose check: does this string look like a Google Maps link worth resolving? */
 const looksLikeMapLink = (s: string) =>
@@ -128,11 +129,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
 
   const addRestaurant = trpc.restaurants.add.useMutation({
     onSuccess: () => { invalidate(); setShowAdd(false); setForm(EMPTY_FORM); setFormError(null); toast.success(t("places.added")); },
-    onError: (e) => setFormError(e.message),
+    onError: (e) => setFormError(userError(e, t)),
   });
   const updateRestaurant = trpc.restaurants.update.useMutation({
     onSuccess: () => { invalidate(); setEditId(null); setForm(EMPTY_FORM); setFormError(null); toast.success(t("places.updated")); },
-    onError: (e) => setFormError(e.message),
+    onError: (e) => setFormError(userError(e, t)),
   });
   // Pull weekly opening hours for provider-sourced places. Reports the
   // misconfigured-key case explicitly instead of a silent success (the trap that
@@ -150,7 +151,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         toast.success(t(res.updated === 1 ? "places.hours.updated.one" : "places.hours.updated.other", { n: res.updated }));
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
   const rateRestaurant = trpc.restaurants.rate.useMutation({
     onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
@@ -158,11 +159,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   });
   const deleteRestaurant = trpc.restaurants.delete.useMutation({
     onSuccess: () => { invalidate(); toast.success(t("places.removed")); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
   const createTag = trpc.tags.createCustom.useMutation({
     onSuccess: () => { utils.tags.list.invalidate({ wheelId }); setNewTagName(""); setNewTagCategory("custom"); setShowTagCreate(false); setTagError(null); toast.success(t("places.tagCreated")); },
-    onError: (e) => setTagError(e.message),
+    onError: (e) => setTagError(userError(e, t)),
   });
   const recomputeDistances = trpc.wheels.recomputeDistances.useMutation({
     onSuccess: (res) => {
@@ -180,7 +181,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         ? t("places.distance.updatedSkipped", { computed: res.computed, skipped: res.unlocatable })
         : t("places.distance.updated", { computed: res.computed }));
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(userError(e, t)),
   });
 
   // Paste a Google Maps link → look the place up → prefill the name (and a
@@ -250,7 +251,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       setFormError(null);
       toast.success(t("places.found", { name: place.name }));
     },
-    onError: (e) => setFormError(e.message),
+    onError: (e) => setFormError(userError(e, t)),
   });
 
   // Full catalog — for the add/edit form, where you can assign any tag.

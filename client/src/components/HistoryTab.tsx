@@ -6,6 +6,7 @@ import { TasteProfile } from "./TasteProfile";
 import { StarRating, RatingChip } from "@/components/StarRating";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
 import { useLang } from "@/i18n";
+import { userError } from "@/lib/userError";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -48,7 +49,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
       onReenabled();
       toast.success(t("history.reenabled"));
     },
-    onError: e => toast.error(e.message),
+    onError: e => toast.error(userError(e, t)),
   });
 
   const rateRestaurant = trpc.restaurants.rate.useMutation({
