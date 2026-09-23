@@ -1,6 +1,7 @@
 import { ThumbsUp, Ban, RotateCcw, Salad, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { excludedDietaryTagIds, voteCounts, type SessionState } from "@shared/session";
+import { useLang } from "@/i18n";
 
 interface RoundRestaurant {
   id: number;
@@ -29,6 +30,7 @@ interface RoundPanelProps {
 }
 
 export default function RoundPanel({ restaurants, tags, session, currentUserId, onVote, onVeto, onDietary, onClear, collapsible = false }: RoundPanelProps) {
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
   if (restaurants.length === 0) return null;
 
@@ -60,11 +62,11 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           className={`flex items-center gap-1.5 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         >
           <span className="type-eyebrow" style={{ color: "var(--brand-text)" }}>
-            This round
+            {t("wheel.round.title")}
           </span>
           <span className="type-meta font-normal text-muted-foreground/70">· {restaurants.length}</span>
           {hasMarks && (
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "oklch(0.70 0.18 150)" }} title="Votes or vetoes in this round" />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "oklch(0.70 0.18 150)" }} title={t("wheel.round.marks")} />
           )}
           {collapsible && (
             <ChevronDown
@@ -79,7 +81,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
             onClick={onClear}
             className="type-meta text-muted-foreground hover:text-foreground flex items-center gap-1"
           >
-            <RotateCcw size={12} /> Clear round
+            <RotateCcw size={12} /> {t("wheel.round.clear")}
           </button>
         )}
       </div>
@@ -88,7 +90,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
       {showBody && tags.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="type-meta text-muted-foreground flex items-center gap-1">
-            <Salad size={12} /> Avoid today:
+            <Salad size={12} /> {t("wheel.round.avoid")}
           </span>
           {tags.map((tag) => {
             const avoided = avoidedTags.has(tag.id);
@@ -97,7 +99,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
               <button
                 key={tag.id}
                 onClick={() => onDietary(tag.id)}
-                title={mine ? "You're avoiding this — tap to allow" : "Avoid this today"}
+                title={mine ? t("wheel.round.allow") : t("wheel.round.avoidTitle")}
                 className="px-2.5 py-0.5 rounded-full type-meta font-medium transition-all active:scale-95"
                 style={{
                   background: avoided ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
@@ -138,7 +140,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
               <button
                 onClick={() => onVote(r.id)}
                 disabled={isVetoed}
-                title={iVoted ? "Remove your vote" : "Vote for this"}
+                title={iVoted ? t("wheel.round.removeVote") : t("wheel.round.vote")}
                 className="flex items-center gap-1 px-2 py-1 rounded-full type-meta font-medium transition-all active:scale-95 disabled:opacity-40"
                 style={{
                   background: iVoted ? "oklch(0.70 0.18 150 / 0.2)" : "var(--muted)",
@@ -153,7 +155,7 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
               {/* Veto */}
               <button
                 onClick={() => onVeto(r.id)}
-                title={iVetoed ? "Take back your veto" : "Veto — not today"}
+                title={iVetoed ? t("wheel.round.undoVeto") : t("wheel.round.veto")}
                 className="flex items-center gap-1 px-2 py-1 rounded-full type-meta font-medium transition-all active:scale-95"
                 style={{
                   background: iVetoed ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",

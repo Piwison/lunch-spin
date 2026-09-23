@@ -1,5 +1,6 @@
 import { Crown, Users, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { useLang } from "@/i18n";
 
 interface Member {
   userId: number;
@@ -37,6 +38,7 @@ function initials(name: string | null, email: string | null): string {
  * who is here right now, and who owns the wheel.
  */
 export default function WheelMembers({ ownerId, owner, members, currentUserId, presentUserIds = [], collapsible = false }: WheelMembersProps) {
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
   const present = new Set(presentUserIds);
   // Owner first, then members, de-duped by userId.
@@ -62,9 +64,9 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
         style={collapsible ? { minHeight: 56 } : undefined}
       >
         <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
-          <Users size={12} /> Team
+          <Users size={12} /> {t("wheel.members.team")}
           <span style={{ color: "var(--body-warm)" }}>· {roster.length}</span>
-          {present.size > 0 && <span style={{ color: "var(--ok)" }}>· {present.size} here now</span>}
+          {present.size > 0 && <span style={{ color: "var(--ok)" }}>· {t("wheel.members.here", { n: present.size })}</span>}
         </span>
         {collapsible && (
           <ChevronDown
@@ -77,7 +79,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
       {(!collapsible || open) && (
       <div className="flex items-center gap-1.5 flex-wrap">
         {roster.map((m) => {
-          const label = m.name?.trim() || m.email?.split("@")[0] || "Member";
+          const label = m.name?.trim() || m.email?.split("@")[0] || t("wheel.members.member");
           const isHere = present.has(m.userId);
           return (
             <div
@@ -87,7 +89,13 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
                 borderColor: isHere ? "oklch(from var(--brand) l c h / 0.45)" : undefined,
                 opacity: isHere || present.size === 0 ? 1 : 0.5,
               }}
-              title={`${m.isOwner ? `${label} · creator` : label}${isHere ? " · here now" : ""}`}
+              title={m.isOwner
+                ? isHere
+                  ? t("wheel.members.creatorPresent", { name: label })
+                  : t("wheel.members.creator", { name: label })
+                : isHere
+                  ? t("wheel.members.present", { name: label })
+                  : label}
             >
               <span
                 /* A monogram is a graphic label, not body copy — it takes the
@@ -106,7 +114,7 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
                 {initials(m.name, m.email)}
               </span>
               <span style={{ fontSize: 15, fontWeight: 500, color: "var(--ink-warm)" }}>
-                {m.userId === currentUserId ? "You" : label}
+                {m.userId === currentUserId ? t("wheel.members.you") : label}
               </span>
               {m.isOwner && <Crown size={12} style={{ color: "var(--brand-text)" }} />}
             </div>
