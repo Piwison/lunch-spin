@@ -9,7 +9,7 @@
 // guest (signed out). The browser is set up as a Taiwanese iPhone at the office:
 // 390x844, touch, Asia/Taipei, zh-TW Accept-Language, geolocation granted at the
 // fixture's office, and a Date shim so the page's clock matches the DB's
-// (failure mode 70 — three clocks must agree).
+// (failure mode 71 — three clocks must agree).
 //
 // Why not Playwright: the Playwright MCP looks for /opt/google/chrome/chrome and
 // fails in the web container (failure mode 68); this talks CDP to headless_shell

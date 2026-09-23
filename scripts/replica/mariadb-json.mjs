@@ -2,7 +2,7 @@
 // Drizzle a string where TiDB (staging and production) hands it a parsed object,
 // and Drizzle's json() column has no mapFromDriverValue of its own. Without this,
 // every stored opening-hours list parses to null and every place reads "need
-// hours" — a replica artifact (AGENTS.md failure mode 70), never an app bug.
+// hours" — a replica artifact (AGENTS.md failure mode 71), never an app bug.
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

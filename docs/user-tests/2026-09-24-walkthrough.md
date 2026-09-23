@@ -291,5 +291,5 @@
 - `drv.mjs` / `b.mjs`：CDP 驅動，一個瀏覽器 context 對應一個人物
 - `seed.mjs`：三週的歷史資料
 
-如果要重跑，重點是 AGENTS.md 失敗模式 70：本機複本和 staging 的三個差異
+如果要重跑，重點是 AGENTS.md 失敗模式 71：本機複本和 staging 的三個差異
 （JSON 欄位、http 的 cookie、時鐘），每一個都會製造一個看起來很真的 bug。

@@ -454,7 +454,7 @@ flowchart LR
 - **R2 團隊的一天**建立在 R3 的資料上：Amy（擁有者）和 Ben（成員）都已登入，時鐘 12:05（`REPLICA_TIME` 可改）
 
 多人流程在 staging 上需要兩個 Google 帳號，本機複本比較方便。
-但本機複本和 staging 有已知的差異（失敗模式 70），**最後仍以 staging 為準**。
+但本機複本和 staging 有已知的差異（失敗模式 71），**最後仍以 staging 為準**。
 
 ## 6. 這一輪不做
 

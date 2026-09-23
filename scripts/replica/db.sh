@@ -5,7 +5,7 @@
 # The clock matters. MariaDB stamps spunAt with its own NOW(), the server decides
 # "today" and "open now" with its own Date, and the browser formats "2m ago" with
 # its own — three clocks. They must agree, or History shows "picked -1d ago"
-# (failure mode 70). The DB is the one source: server.sh and drv.mjs both read
+# (failure mode 71). The DB is the one source: server.sh and drv.mjs both read
 # their offset from it.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
