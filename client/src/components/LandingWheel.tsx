@@ -170,7 +170,12 @@ export default function LandingWheel({
           targetId={targetId}
           zoomed={isSpinning || showResult}
           winnerId={result?.id ?? null}
-          receded={showResult}
+          // No recede on this page (owner's pick, 2026-09-23). In the app the
+          // camera parks the disc centre above the dock, so the receded winning
+          // pane fills the top half; here the disc sits under the hero at ~2x,
+          // and a pale disc blurred on pale ground left that half empty. Kept
+          // sharp, the top half shows the pointer resting on the won pane.
+          receded={false}
         />
 
         <div className="w-full flex flex-col items-center gap-3" style={{ maxWidth: 390, ...goneWhileZoomed }}>
