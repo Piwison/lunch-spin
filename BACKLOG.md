@@ -457,15 +457,15 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 | 7d | 隊友的 toast 比轉的人先揭曉結果；首頁「everyone watches the same result land」不成立（P0-D） | 已驗證 | ✅ **延後通知＋點開重播** | A4 | 📋 |
 | 7e | 評分從結果卡移到下次打開（「昨天吃了嗎？★」）＋「這次沒去成」；說明評分會影響機率（P1-I） | 已驗證 + 已確認 | — | A5 | 📋 |
 | 7f | 紀錄頁改成午餐日記；刪掉 Total spins / Favourite / Most picked / Who's been picking（第 5 節） | 已驗證 | — | A2、A8 | 📋（依賴 A1、A5） |
-| 7g | 首次設定：搜尋會取代清單；首頁草稿和 Google 結果不合併；「Spin these 8」不會轉（P1-E/F/G） | 已驗證 | 直接轉（預設，可改） | B2、B3、A7 | 📋 |
+| 7g | 首次設定：搜尋會取代清單；首頁草稿和 Google 結果不合併；「Spin these 8」不會轉（P1-E/F/G） | 已驗證 | ✅ 「Spin these 8」直接轉 | B2、B3、A7 | 📋 |
 | 7h | Places 的語言跟手機語言，不跟介面語言（P1-H） | 已驗證 | — | B4 | 📋 |
 | 7i | **bug**：複製輪盤後每家都變 no location（P1-L） | 已驗證 | — | A9 | 📋 隨時可做 |
-| 7j | 快關門的店仍然會被抽中（P1-M） | 已確認 | buffer 20 分鐘（預設） | A6 | 📋 |
+| 7j | 快關門的店仍然會被抽中（P1-M） | 已確認 | ✅ 剩餘營業 < 步行 + 20 分鐘就不上輪盤 | A6 | 📋 |
 | 7k | This round 改版：料理 chip、自動料理標籤、44px 的投票／否決（P1-K） | 已驗證 | — | B7 | 📋 |
-| 7k2 | 否決和「Avoid today」永不過期；飲食偏好改成個人設定（P1-K2） | 已確認 | ⏳ **待決定**（預設：當天有效＋個人設定） | B8 | ⏸ 等決定 |
+| 7k2 | 否決和「Avoid today」永不過期；飲食偏好改成個人設定（P1-K2） | 已確認 | ✅ **否決、投票當天有效；「我不吃」改成個人設定**，這個人今天有打開輪盤才套用。schema 併進 P0 | B8 | 📋 |
 | 7l | 店家詳情補 Google 評分、價位、營業到幾點、上次吃；Nearby 共用挑選清單（P1-N/O） | 已驗證 | — | B5、B6 | 📋 |
 | 7m | 擁有者刪帳號會刪掉團隊輪盤，沒有警告，也不能轉移（P1-P） | 已驗證 + 已確認 | — | A10 | 📋 |
-| 7n | P2 小項（switch label、自動全選、starter pack、1 家也能轉、文案、邀請分享、桌面截斷、`-1d`） | 已驗證 | starter pack 拿掉（預設） | A11、B9、B10 | 📋 |
+| 7n | P2 小項（switch label、自動全選、starter pack、1 家也能轉、文案、邀請分享、桌面截斷、`-1d`） | 已驗證 | ✅ 拿掉 starter pack；公開連結定位成給外人用 | A11、B9、B10 | 📋 |
 | 7o | 本機 http 無法登入登出（`cookies.ts` 的 `SameSite=None` 沒有 `Secure`） | 已驗證 | ⏳ session 合約，改之前要問 | — | ⏸ |
 
 ## Changelog
@@ -499,3 +499,4 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
   最大發現：app 不知道「今天決定了什麼」和「最後吃了哪家」，紀錄頁的統計因此失準。報告在 `docs/user-tests/`。
 - 2026-09-24 — 第 7 節定案：業主決定 7a（當天最後一次轉 = 午餐）、7b（可以多個）、7c（建完問）、7d（延後＋重播）。
   實作計畫 `docs/plans/2026-09-24-walkthrough-plan.md`（P0 + A/B 兩線 21 個工作包）；本機複本進 repo（`scripts/replica/`）。
+- 2026-09-24 — 業主同意 B8（7k2）和其餘預設值；只剩 7o（`cookies.ts`）照預設不動。B8 的 schema（`round_marks.createdAt`、`user_dietary`）併進 P0，維持「只有 P0 有 migration」。
