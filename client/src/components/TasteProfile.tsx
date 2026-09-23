@@ -3,11 +3,13 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StarRating, RatingChip } from "@/components/StarRating";
 import { Star, TrendingUp, TrendingDown } from "lucide-react";
+import { useLang } from "@/i18n";
 
 /** History-tab card that turns the wheel's star ratings into a team taste read:
  *  overall mood, crowd-favourite places, and cuisines the team leans / cools on.
  *  Read-only; the data comes from stats.tasteProfile. */
 export function TasteProfile({ wheelId }: { wheelId: number }) {
+  const { t } = useLang();
   const { data, isLoading } = trpc.stats.tasteProfile.useQuery({ wheelId });
 
   if (isLoading) {
@@ -24,7 +26,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
   const Title = (
     <div className="flex items-center gap-2">
       <Star size={16} style={{ fill: "var(--star)", color: "var(--star-edge)" }} />
-      <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>Team taste</h3>
+      <h3 className="type-eyebrow" style={{ color: "var(--brand-text)" }}>{t("history.taste.title")}</h3>
     </div>
   );
 
@@ -34,12 +36,12 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
       <Card className="p-5 space-y-3">
         {Title}
         <p className="text-sm text-muted-foreground">
-          Rate places (tap the ⋮ on a restaurant) and this fills in with what your team loves.
+          {t("history.taste.help")}
         </p>
         <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
           <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--brand)" }} />
         </div>
-        <p className="type-meta text-muted-foreground">{data.totalRatings} of 5 ratings</p>
+        <p className="type-meta text-muted-foreground">{t("history.taste.progress", { n: data.totalRatings })}</p>
       </Card>
     );
   }
@@ -57,7 +59,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           <div>
             <StarRating value={data.overallAverage} size={18} />
             <div className="type-meta text-muted-foreground mt-0.5">
-              {data.totalRatings} rating{data.totalRatings === 1 ? "" : "s"} across the team
+              {t(data.totalRatings === 1 ? "history.taste.ratings.one" : "history.taste.ratings.other", { n: data.totalRatings })}
             </div>
           </div>
         </div>
@@ -66,7 +68,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
       {/* Crowd favourites */}
       {data.topPlaces.length > 0 && (
         <div>
-          <div className="type-eyebrow mb-2" style={{ color: "var(--body-warm)" }}>Team favourites</div>
+          <div className="type-eyebrow mb-2" style={{ color: "var(--body-warm)" }}>{t("history.taste.favorites")}</div>
           <div className="space-y-1.5">
             {data.topPlaces.map((p) => (
               <div key={p.restaurantId} className="flex items-center justify-between gap-2">
@@ -84,7 +86,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           {data.leans.length > 0 && (
             <div>
               <div className="type-eyebrow flex items-center gap-1.5 mb-2" style={{ color: "var(--body-warm)" }}>
-                <TrendingUp size={13} style={{ color: "var(--ok)" }} /> Leans toward
+                <TrendingUp size={13} style={{ color: "var(--ok)" }} /> {t("history.taste.leans")}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {data.leans.map((c) => (
@@ -96,7 +98,7 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           {data.cools.length > 0 && (
             <div>
               <div className="type-eyebrow flex items-center gap-1.5 mb-2" style={{ color: "var(--body-warm)" }}>
-                <TrendingDown size={13} style={{ color: "var(--muted-foreground)" }} /> Cools on
+                <TrendingDown size={13} style={{ color: "var(--muted-foreground)" }} /> {t("history.taste.cools")}
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {data.cools.map((c) => (

@@ -5,6 +5,7 @@ import { RestaurantStats } from "./RestaurantStats";
 import { TasteProfile } from "./TasteProfile";
 import { StarRating, RatingChip } from "@/components/StarRating";
 import { formatExclusionTimeLeft } from "@shared/exclusion";
+import { useLang } from "@/i18n";
 
 interface HistoryTabProps {
   wheelId: number;
@@ -19,19 +20,18 @@ interface HistoryTabProps {
   onGoToWheel?: () => void;
 }
 
-function timeAgo(date: Date): string {
-  const now = Date.now();
-  const diff = now - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  return `${days}d ago`;
-}
-
 export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDays, currentUserId, onGoToWheel }: HistoryTabProps) {
+  const { t } = useLang();
+  const timeAgo = (date: Date): string => {
+    const diff = Date.now() - new Date(date).getTime();
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (mins < 1) return t("history.time.now");
+    if (mins < 60) return t("history.time.minutes", { n: mins });
+    if (hours < 24) return t("history.time.hours", { n: hours });
+    return t("history.time.days", { n: days });
+  };
   const utils = trpc.useUtils();
   const { data: history, isLoading } = trpc.spins.history.useQuery({ wheelId });
   const { data: restaurants } = trpc.restaurants.list.useQuery({ wheelId });
@@ -46,14 +46,14 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
     onSuccess: () => {
       utils.spins.history.invalidate({ wheelId });
       onReenabled();
-      toast.success("Restaurant re-enabled on the wheel");
+      toast.success(t("history.reenabled"));
     },
     onError: e => toast.error(e.message),
   });
 
   const rateRestaurant = trpc.restaurants.rate.useMutation({
     onSuccess: () => utils.restaurants.ratings.invalidate({ wheelId }),
-    onError: () => toast.error("Couldn't save your rating"),
+    onError: () => toast.error(t("history.ratingError")),
   });
 
   // restaurantId → server-computed exclusion expiry. The server derives this
@@ -82,7 +82,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
       {stats && stats.length > 0 && (
         <div>
           <h2 className="type-section mb-4" style={{ color: "var(--ink-warm)" }}>
-            Insights
+            {t("history.insights")}
           </h2>
           <RestaurantStats
             stats={stats}
@@ -98,10 +98,10 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="type-section" style={{ color: "var(--ink-warm)" }}>
-            Spin history
+            {t("history.title")}
           </h2>
           <span className="type-meta text-muted-foreground">
-            {history?.length ?? 0} spin{history?.length !== 1 ? "s" : ""}
+            {t((history?.length ?? 0) === 1 ? "history.count.one" : "history.count.other", { n: history?.length ?? 0 })}
           </span>
         </div>
 
@@ -118,11 +118,9 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
           >
             <Clock size={13} className="mt-0.5 flex-shrink-0" />
             <span>
-              Restaurants are auto-excluded
               {exclusionDays
-                ? ` for ${exclusionDays} day${exclusionDays !== 1 ? "s" : ""}`
-                : ""}{" "}
-              after being spun. You can manually re-enable them below.
+                ? t(exclusionDays === 1 ? "history.exclusion.one" : "history.exclusion.other", { n: exclusionDays })
+                : t("history.exclusion.default")}
             </span>
           </div>
         )}
@@ -142,9 +140,9 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
             <div className="text-4xl opacity-30">🎡</div>
             <div>
               <p className="type-section mb-1.5" style={{ color: "var(--ink-warm)" }}>
-                No spins yet
+                {t("history.empty.title")}
               </p>
-              <p className="text-sm text-muted-foreground">Your picks and exclusions will show up here.</p>
+              <p className="text-sm text-muted-foreground">{t("history.empty.body")}</p>
             </div>
             {onGoToWheel && (
               <button
@@ -160,7 +158,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                   letterSpacing: "0.05em",
                 }}
               >
-                <Clock size={15} /> Spin to start a history
+                <Clock size={15} /> {t("history.empty.action")}
               </button>
             )}
           </div>
@@ -214,7 +212,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                             border: "1px solid oklch(from var(--destructive) l c h / 0.3)",
                           }}
                         >
-                          excluded · {timeLeft === "expired" ? "expired" : `${timeLeft} left`}
+                          {timeLeft === "expired" ? t("history.expired") : t("history.excluded", { time: timeLeft ?? "" })}
                         </span>
                       )}
                       {entry.manuallyReenabled && (
@@ -226,12 +224,12 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                             border: "1px solid oklch(from var(--ok) l c h / 0.3)",
                           }}
                         >
-                          re-enabled
+                          {t("history.reenabledBadge")}
                         </span>
                       )}
                     </div>
                     <p className="type-meta text-muted-foreground mt-0.5">
-                      {timeAgo(spunAtDate)} · by {entry.spunByName ?? "Unknown"}
+                      {timeAgo(spunAtDate)} · {t("history.by", { name: entry.spunByName ?? t("history.unknown") })}
                     </p>
 
                     {/* Rate this place (1–5 stars) — writes the restaurant's team
@@ -282,7 +280,7 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
                       {reenable.isPending
                         ? <span className="w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />
                         : <RefreshCw size={11} />}
-                      {reenable.isPending ? "Enabling…" : "Re-enable"}
+                      {reenable.isPending ? t("history.enabling") : t("history.reenable")}
                     </button>
                   )}
                 </div>
