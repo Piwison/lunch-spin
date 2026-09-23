@@ -20,7 +20,8 @@
    already swept ~260 hardcoded values into, so no call site had to change:
 
      spec --accent → --brand / --primary / --ring      spec --ink    → --foreground
-     spec --hairline → --border / --input              spec --muted  → --muted-foreground
+     spec --hairline → --border (dividers) + --input (control edges, 3:1)
+     spec --muted    → --muted-foreground (an alias of --body-warm since the one-ink decision)
      spec --ground → --ground (gradient) + --background (its flat mid stop,
      because bg-background compiles to background-color, which cannot take one)
 
@@ -100,28 +101,43 @@
   --background: #efe8df;
   --paper: #fbf7f2;              /* text on accent; solid cards */
 
-  /* Ink */
-  --foreground: #14161c;         /* spec --ink: headings, primary text */
-  --ink-strong: #0d0f14;         /* display type only */
-  --body: #5a626d;               /* body copy */
-  /* Spec --muted. The handoff's #868D97 measured 3.14:1 on --paper, which fails
-     AA for the 12-13px meta it carries, so it is darkened to clear 4.5. */
-  --muted-foreground: #666d77;
-  --faint: #9aa1aa;              /* placeholder, disabled */
-  --border: #c7cbd1;             /* spec --hairline: rules, dividers */
-  --input: #c7cbd1;
+  /* Ink — ONE family, the warm one (owner decision, 2026-09-23).
+     The app used to run two primary inks side by side: the cool #14161C of the
+     spec and the shadcn primitives, and the warm --ink-warm the Ember-drawn
+     screens had adopted ~100 times. The warm ramp won. --ink-warm and
+     --body-warm (below) hold the values; the shadcn names alias them, so a
+     primitive and a hand-drawn screen can no longer disagree about what
+     "text" is. The rungs with no warm twin (--ink-strong, --body, --faint)
+     were moved to the warm hue at the SAME relative luminance, so every
+     contrast ratio and every step of the hierarchy is unchanged — only the
+     hue moved (measured: within 0.05:1 of the cool originals). */
+  --foreground: var(--ink-warm);   /* headings, primary text */
+  --ink-strong: #120f0b;           /* display type only (was #0d0f14) */
+  --body: #66605d;                 /* body copy (was #5a626d) */
+  /* Meta. Was a cool #666D77 that cleared 4.5 on --paper (4.90) but not on the
+     bare ground (4.30); aliasing the warm meta rung clears both (5.14 / 4.51). */
+  --muted-foreground: var(--body-warm);
+  --faint: #a5a09b;                /* placeholder, disabled (was #9aa1aa) */
+  /* Two edges, two jobs (owner decision, 2026-09-23). --border is the
+     hairline for dividers, rules and cards: decorative, and deliberately
+     light. --input is the edge of a CONTROL — a field, an outlined button, a
+     chip, a checkbox, a switch track — and owes WCAG 1.4.11's 3:1, because for
+     a text field the edge is the only thing that says where it is. At the
+     hairline's 1.53:1 it did not. 3.52 on --paper, 3.09 on --background. */
+  --border: #c7cbd1;
+  --input: #88837f;
 
   /* Surfaces. --muted and --accent are pale panels/hover fills (repo meaning),
      NOT the spec's grey and persimmon — those are --muted-foreground and --brand. */
   --card: #fbf7f2;
-  --card-foreground: #14161c;
+  --card-foreground: var(--ink-warm);
   --popover: #fbf7f2;
-  --popover-foreground: #14161c;
+  --popover-foreground: var(--ink-warm);
   --secondary: #e7ded2;
-  --secondary-foreground: #14161c;
+  --secondary-foreground: var(--ink-warm);
   --muted: #e7ded2;
   --accent: #e7ded2;
-  --accent-foreground: #14161c;
+  --accent-foreground: var(--ink-warm);
 
   /* Persimmon — the only saturated colour in the app. */
   --primary: #de5c1f;
@@ -142,15 +158,11 @@
   --brand-solid: #de5c1f;        /* persimmon as a COLOUR: borders, SVG fills, anything
                                     that cannot take a gradient value */
   --accent-ink: #c04f18;         /* winner display type: 34px+, clears the 3:1 large-text bar */
-  /* Warm ink, for CJK set on the warm paper ground. The cool near-black of
-     --foreground is right for Latin display type but reads hard against the
-     ground under the denser strokes of a Chinese character.
-     It was introduced scoped to the wheel labels and the readout's secondary
-     line. It is no longer scoped: the Ember-drawn screens (Home, first run,
-     Places, the wheel page, History) set their text in it ~100 times, while
-     the shadcn primitives and the un-redrawn dialogs still use --foreground.
-     So the app has TWO primary inks, 7% apart in lightness. Which one is THE
-     text colour is an open decision — docs/design-system/README.md. */
+  /* THE ink. Introduced for CJK set on the warm paper ground — a cool
+     near-black reads hard against the ground under the denser strokes of a
+     Chinese character — then adopted by every Ember-drawn screen, and since
+     2026-09-23 the app's only primary ink: --foreground and the shadcn
+     *-foreground names alias it (see "Ink" above). */
   --ink-warm: #2e2a27;
   /* #78716C measured 4.50:1 on --paper but only 3.95:1 on --background, and
      this token carries meta text on both. Darkened until the worse of the two
@@ -324,23 +336,25 @@
   --background: #15171c;
   --paper: #1e2127;
 
-  --foreground: #f6f3ee;
+  /* One warm ink here too; the dark values were already near-warm, so only the
+     cool greys moved (meta #9BA0A8 -> --body-warm, faint luminance-matched). */
+  --foreground: var(--ink-warm);
   --ink-strong: #fcfaf7;
   --body: #e6e2db;
-  --muted-foreground: #9ba0a8;
-  --faint: #7c838c;
+  --muted-foreground: var(--body-warm);
+  --faint: #87817d;                /* was #7c838c */
   --border: #2e323a;
-  --input: #2e323a;
+  --input: #706b67;                /* control edge: 3.06 on --paper, 3.40 on --background */
 
   --card: #1e2127;
-  --card-foreground: #f6f3ee;
+  --card-foreground: var(--ink-warm);
   --popover: #1e2127;
-  --popover-foreground: #f6f3ee;
+  --popover-foreground: var(--ink-warm);
   --secondary: #23262c;
-  --secondary-foreground: #f6f3ee;
+  --secondary-foreground: var(--ink-warm);
   --muted: #23262c;
   --accent: #23262c;
-  --accent-foreground: #f6f3ee;
+  --accent-foreground: var(--ink-warm);
 
   --primary: #f2703a;
   --primary-foreground: #16120f;

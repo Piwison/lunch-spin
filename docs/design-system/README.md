@@ -53,7 +53,7 @@ Ember 那一輪把**顏色**做成了 token，但沒有做**元件**。結果是
 | 按鈕字級 / 字距 / disabled 透明度 | 14/15/16/17px；0 / 0.04 / 0.05em；0.4 / 0.5 / 0.55 | 16（實心動作）/ 15（其他）；0.05em（只給 primary）；0.4 |
 | Lucide icon 尺寸 | **15 種**（10–48px） | 未動 —— Phase 3 |
 | 行內 `style={{…}}` / TSX 裡的 `var(--…)` | 401 / 827 | 364 / 638；語意色都有 utility 了（`text-ink-warm` 等），其餘 Phase 2 清 |
-| `--ink-warm` | 註解寫「只用於輪盤標籤」，實際 101 處 | 註解改為實況；是否成為唯一墨色 → 待決 D1 |
+| 兩種主要墨色（冷 `--foreground` / 暖 `--ink-warm`） | 各用一半 | **統一為暖墨**（D1，2026-09-23 決定）：冷的名字改成別名，其餘灰階改成同亮度的暖色 |
 | 死 token | `--color-chart-1..5`（其中 3 個是飽和色，違反「柿子橘是唯一飽和色」）、`--brand-glow`、`--glass-highlight`、`--ease-decay` | 刪除。`--ease-decay` 還存著失敗模式 45 已淘汰的曲線，和 `shared/wheelGeometry.ts` 的 `EASE_DECAY` 互相矛盾（BACKLOG 4a） |
 | Tailwind `dark:` | 跟著**作業系統**的深淺色，不是 app 的切換 | 改為跟 `.dark` class（`@custom-variant dark`）。OS 深色、app 選淺色的人，輸入框底色原本是錯的 |
 | `cn()` 的 tailwind-merge | 不認得 `rounded-control` 等自訂圓角 → `cn("rounded-control", "rounded-full")` 兩個都留 | 教它認得 4 個 `--radius-*` |
@@ -62,9 +62,9 @@ Ember 那一輪把**顏色**做成了 token，但沒有做**元件**。結果是
 
 | 配對 | 淺色 | 深色 | 狀態 |
 |---|---|---|---|
-| CTA 文字 on 漸層**淺端** `--brand-2` | **2.35:1** | 8.31:1 | 待決 D2 —— 失敗模式 20 量的是「平塗」柿子橘的 3.48，漸層（失敗模式 26）回來之後淺端沒人量過 |
-| `--muted-foreground` on 地面 `--background` | **4.30:1** | 6.82:1 | 待決 D3 |
-| 髮絲線 `--border` 作為輸入框唯一邊界 | **1.53:1** | 1.25:1 | 待決 D4（WCAG 1.4.11 要 3:1） |
+| CTA 文字 on 漸層**淺端** `--brand-2` | **2.35:1** | 8.31:1 | ✅ 已接受（D2，2026-09-23：漸層不變） |
+| `--muted-foreground` on 地面 `--background` | ~~4.30:1~~ → **4.51:1** | 6.40:1 | ✅ 隨 D1 解決（別名到 `--body-warm`） |
+| 控制元件邊界 | ~~1.53:1~~ → **3.52 / 3.09:1**（紙 / 地面） | ~~1.25~~ → **3.06 / 3.40:1** | ✅ D4 已執行：`--input` 成為控制元件邊界 |
 | 柿子橘文字、CTA on 平塗柿子橘、星星填色 | 3.48 / 3.05 / 1.53 | ✅ | 已接受（業主決定，失敗模式 20） |
 
 ---
@@ -84,9 +84,9 @@ Ember 那一輪把**顏色**做成了 token，但沒有做**元件**。結果是
 |---|---|---|
 | Persimmon | `#DE5C1F` → `#F0894A`（漸層）；`#C04F18`（34px+ 標題） | `#F2703A` → `#F79463` |
 | Paper / Ground | `#FBF7F2`、`#F6F2EC → #EFE8DF → #E7DED2` | `#1E2127`、`#191B20 → #15171C → #101216` |
-| Ink（冷） | `#0D0F14`、`#14161C`、`#5A626D`、`#666D77`、`#9AA1AA` | `#FCFAF7`、`#F6F3EE`、`#E6E2DB`、`#9BA0A8`、`#7C838C` |
-| Ink（暖） | `#2E2A27`、`#6F6862` | `#F2EDE8`、`#A8A29E` |
-| Hairline | `#C7CBD1` | `#2E323A` |
+| Ink（單一暖色系） | strong `#120F0B`、ink `#2E2A27`、body `#66605D`、meta `#6F6862`、faint `#A5A09B` | strong `#FCFAF7`、ink `#F2EDE8`、body `#E6E2DB`、meta `#A8A29E`、faint `#87817D` |
+| Hairline（分隔線） | `#C7CBD1` | `#2E323A` |
+| Control edge（控制元件邊界） | `#88837F` | `#706B67` |
 | Semantic | 紅 `#B3261E`、綠 `#2F6B4F`、資訊 `#7A5B33`、星 `#FFC107` / `#96650F` | `#E5654F`、`#6FBF95`、`#C9A97A`、`#FFC94A` |
 
 ### 3.2 語意 token（`:root` / `.dark`）
@@ -94,6 +94,8 @@ Ember 那一輪把**顏色**做成了 token，但沒有做**元件**。結果是
 以「用途」命名。幾個反直覺但刻意的名字（沿用 shadcn 的語意，改名會牽動所有 primitives）：
 
 - `--muted`、`--accent` 是**淺色面板 / hover 底色**，不是灰色文字或柿子橘。灰字是 `--muted-foreground`，柿子橘是 `--brand`。
+- **只有一種墨色**：值放在 `--ink-warm` / `--body-warm`，`--foreground` / `--muted-foreground` 是別名 —— shadcn primitives 和手繪畫面讀的是同一個顏色。
+- **兩種線**：`--border` 是裝飾性的分隔線與卡片外框（輕）；`--input` 是控制元件的邊界（欄位、描邊按鈕、chip、勾選框、switch 軌道），必須 ≥ 3:1。
 - `--brand-grad` 是**所有柿子橘背景**；`--brand-solid` 是柿子橘作為**顏色**（邊框、SVG —— 它們吃不了漸層）；`--brand-text` 是柿子橘**文字**。三者在淺色目前同值，但角色不同，未來可以分開調。
 
 每個語意色都有對應的 Tailwind utility（`text-ink-warm`、`border-brand-solid`、`bg-ok/15`…），新程式碼不需要再寫 `style={{ color: "var(--…)" }}`。
@@ -245,18 +247,30 @@ UI 變更的檢查清單（補充 `deploy-gate`）：
 | 次要按鈕 hover：`white/5`（淺色看不見）→ `--accent` | 桌機 hover | 淺色模式終於有 hover |
 | `dark:` utilities 跟著 app 主題 | 輸入框、Switch、選單 | 原本跟著作業系統 |
 
+**決策落地（2026-09-23 第二輪，業主決定 D1 / D2 / D4）**：
+
+| 變更 | 位置 | 數值 |
+|---|---|---|
+| 所有文字改成單一暖色系：冷黑 `#14161C` → 暖墨 `#2E2A27` | shadcn primitives、未重繪的對話框、選單、toast | `--foreground` 等改為 `--ink-warm` 的別名 |
+| meta 灰：冷 `#666D77` → 暖 `#6F6862` | 所有 `text-muted-foreground`（127 處） | 別名到 `--body-warm`；地面上 4.30 → 4.51:1 |
+| body / ink-strong / faint 改成同亮度的暖色 | `--body`、`--ink-strong`、`--faint` | 對比每一階都在原值 ±0.05 內 —— 只換色相，不動層級 |
+| 控制元件邊界加深到 3:1 | 所有輸入框、Select、Textarea、`secondary` / `outline` 按鈕、未選取的 Chip、附近搜尋的勾選框、Switch 軌道 | `--input` `#C7CBD1` → `#88837F`（淺色 3.52 / 3.09:1），深色 `#2E323A` → `#706B67`（3.06 / 3.40:1） |
+| 呼叫端移除 16 處 `border-border/50` | 對話框裡的欄位 | 原本把欄位邊框再淡化一半，會蓋掉上一列 |
+| 分隔線、卡片外框**不變** | `--border` 仍是 `#C7CBD1` | 裝飾性的線保持輕 |
+| CTA 在漸層上的文字**不變** | — | D2：接受 2.35:1，漸層不動 |
+
 ---
 
-## 8. 待業主決定
+## 8. 業主決定
 
-每一項都附目前的事實；決定之後把 `pairs.ts` 的 `open` 改成修正或 `accepted`。
+每一項都附當時的事實；決定之後把 `pairs.ts` 的 `open` 改成修正或 `accepted`。D1–D4 已於 2026-09-23 決定並執行；D5–D7 仍待決。
 
 | # | 問題 | 選項 | 建議 |
 |---|---|---|---|
-| **D1** | App 有兩種主要墨色：冷的 `--foreground #14161C`（shadcn、未重繪的對話框）和暖的 `--ink-warm #2E2A27`（Ember 重繪過的畫面，101 處） | (a) 全面改用暖墨 (b) 全面改用冷墨 (c) 維持，定義分工 | (a)：暖墨是後來為了 CJK 在暖紙上的觀感刻意做的，且已是多數；做法是把 `--foreground` 指向暖墨，一次改完 —— 但要看過畫面 |
-| **D2** | CTA 文字在漸層淺端只有 **2.35:1** | (a) 接受 (b) 淺端加深：`#E8753A` → 2.80、`#E26A2F` → 3.11 —— 到 3:1 時漸層幾乎是平的 (c) 漸層只跑到 60–70%，文字落在較深的那段 | (a) 或 (c)：(b) 等於把業主要回來的漸層（失敗模式 26）拿掉。要看截圖 |
-| **D3** | `--muted-foreground` 在地面上 **4.30:1** | (a) 加深到 `#626972`（4.57）—— 但會和 `--body` 幾乎一樣，層級變平 (b) 接受，meta 字多半在紙/玻璃上 | (b)，並把放在裸地面的 meta 改用 `--body-warm`（4.51） |
-| **D4** | 髮絲線 `#C7CBD1` 作為輸入框、描邊按鈕**唯一**的邊界：**1.53:1**（深色 1.25） | (a) 新增 `--border-control`（約 3:1）只給控制元件 (b) 接受 | (a)：分隔線維持輕，控制元件的邊界加深 —— 需要看畫面 |
+| **D1** ✅ | 兩種主要墨色 | **決定（2026-09-23）：統一成一種** → 暖墨 | 已執行，見 §7 第二輪 |
+| **D2** ✅ | CTA 文字在漸層淺端 2.35:1 | **決定（2026-09-23）：漸層不變** | `pairs.ts` 記為 accepted |
+| **D3** ✅ | meta 在地面上 4.30:1 | 隨 D1 解決 | `--muted-foreground` = `--body-warm`，4.51:1 |
+| **D4** ✅ | 控制元件邊界 1.53:1 | **決定（2026-09-23）：控制元件加深、分隔線維持輕** | 用 shadcn 既有的 `--input`（「表單控制邊框」）承擔這個角色，不另開新名字 |
 | **D5** | Landing 兩個 CTA 是 600 字重，app 內是 500 | (a) 全部 600 (b) 全部 500 (c) 維持 | 看截圖決定 |
 | **D6** | Icon 15 種尺寸 | 收成 12 / 16 / 20 / 24 | 做，Phase 3 |
 | **D7** | Disabled primary：淡漸層（40%）vs 灰色（目前只有 Spin 用灰色） | (a) 全部灰色 (b) 維持 | (a) 較清楚表達「不能按」，但會改變所有 disabled CTA 的樣子 |
@@ -270,6 +284,6 @@ UI 變更的檢查清單（補充 `deploy-gate`）：
 | **1. 基礎** | 元件 token、Button / Chip / Badge / Input、遷移 44 個呼叫端、守門測試、`/design-system`、本文件 | ✅ 這個 branch |
 | **2. 元件補齊** | glass icon 按鈕、ListRow、Avatar、Field、Select/Textarea/Switch 高度；行內 `var()` → utility（加棘輪）；`text-sm` → `type-meta` | 待做 |
 | **3. Asset** | icon 尺寸收斂（D6）、`components/brand/`、`.design/assets/` 產生腳本 | 待做 |
-| **4. 決策落地** | D1–D5、D7 依業主看過的截圖套用 | 等業主 |
+| **4. 決策落地** | D1、D2、D3、D4 ✅；D5、D7 依業主看過的截圖套用 | 部分完成 |
 
 每個階段一個 PR、可單獨 revert；每個階段都要在 staging 看過（AGENTS.md「Definition of done」）。

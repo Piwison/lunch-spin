@@ -86,7 +86,7 @@ export default function ConfirmDangerDialog({
               autoCorrect="off"
               spellCheck={false}
               aria-label={t("app.dialog.type", { word: confirmWord })}
-              className="bg-secondary/50 border-border/50 font-mono"
+              className="bg-secondary/50 font-mono"
             />
           </div>
         )}

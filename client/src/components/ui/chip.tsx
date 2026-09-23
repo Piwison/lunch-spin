@@ -34,7 +34,7 @@ function Chip({
         "disabled:pointer-events-none disabled:opacity-(--control-disabled-opacity)",
         pressed
           ? "border-transparent bg-(image:--brand-grad) text-on-accent"
-          : "border-border bg-transparent text-body-warm hover:text-ink-warm",
+          : "border-input bg-transparent text-body-warm hover:text-ink-warm",
         className,
       )}
       {...props}

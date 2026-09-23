@@ -187,7 +187,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") (coords ? runSearch(coords, radius) : locateAndSearch()); }}
-                className="bg-secondary/50 border-border/50 pl-9"
+                className="bg-secondary/50 pl-9"
               />
             </div>
             <Button
@@ -338,7 +338,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
                           ? { background: "oklch(from var(--ok) l c h / 0.2)", color: "var(--ok)" }
                           : on
                             ? { background: "var(--brand-grad)", color: "var(--on-accent)" }
-                            : { border: "1.5px solid var(--border)" }
+                            : { border: "1.5px solid var(--input)" }
                       }
                     >
                       {(isAdded || on) && <Check size={13} strokeWidth={3} />}

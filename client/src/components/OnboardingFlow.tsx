@@ -502,7 +502,7 @@ export default function OnboardingFlow({
                     minHeight: 48,
                     borderRadius: "var(--radius-control)",
                     background: "var(--paper)",
-                    border: "1px solid var(--border)",
+                    border: "1px solid var(--input)",
                     color: "var(--ink-warm)",
                     fontSize: 16,
                   }}

@@ -207,7 +207,7 @@ export default function LocationPicker({
                       runSearch();
                     }
                   }}
-                  className="bg-secondary/50 border-border/50 pl-9"
+                  className="bg-secondary/50 pl-9"
                 />
               </div>
               {/* With geolocation unavailable this is the screen's primary
@@ -267,7 +267,7 @@ export default function LocationPicker({
                 placeholder="https://maps.app.goo.gl/…"
                 value={link}
                 onChange={(e) => setLink(e.target.value)}
-                className="bg-secondary/50 border-border/50 flex-1"
+                className="bg-secondary/50 flex-1"
               />
               <Button
                 type="button"

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import BrandLoader from "@/components/BrandLoader";
 import { SpinWheelIcon } from "@/components/SpinWheelIcon";
 import { StatusChip } from "@/components/StatusChip";
@@ -434,6 +435,10 @@ export default function StyleGuide() {
                   <Button size="icon" variant="outline" aria-label="Look up">
                     <Search />
                   </Button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch aria-label="Example switch, off" data-ds="switch-off" />
+                  <Switch aria-label="Example switch, on" defaultChecked />
                 </div>
               </div>
             </div>

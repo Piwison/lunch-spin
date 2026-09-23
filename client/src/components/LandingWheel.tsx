@@ -262,7 +262,7 @@ export default function LandingWheel({
               fontSize: 16,
               borderRadius: "var(--radius-control)",
               background: "var(--paper)",
-              border: `1px solid ${draftIsDuplicate ? "var(--destructive)" : "var(--border)"}`,
+              border: `1px solid ${draftIsDuplicate ? "var(--destructive)" : "var(--input)"}`,
               color: "var(--ink-warm)",
             }}
           />

@@ -865,7 +865,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       searchByName();
                     }
                   }}
-                  className="bg-secondary/50 border-border/50 flex-1"
+                  className="bg-secondary/50 flex-1"
                 />
                 <Button
                   type="button"
@@ -928,7 +928,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               placeholder={t("places.form.notes")}
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              className="bg-secondary/50 border-border/50 resize-none"
+              className="bg-secondary/50 resize-none"
               rows={2}
             />
             <div className="flex flex-col gap-1.5">
@@ -941,7 +941,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     placeholder={t("places.form.mapLink")}
                     value={form.mapUrl}
                     onChange={(e) => setForm((f) => ({ ...f, mapUrl: e.target.value }))}
-                    className="bg-secondary/50 border-border/50 pl-9"
+                    className="bg-secondary/50 pl-9"
                   />
                 </div>
                 <Button
@@ -1008,7 +1008,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                 value={newTagName}
                 onChange={(e) => { setNewTagName(e.target.value); setTagError(null); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && newTagName.trim()) { setTagError(null); createTag.mutate({ name: newTagName.trim(), wheelId, category: newTagCategory }); } }}
-                className="bg-secondary/50 border-border/50"
+                className="bg-secondary/50"
                 autoFocus
               />
               <Button

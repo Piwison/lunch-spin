@@ -10,14 +10,14 @@ export type TokenGroup = { title: string; note: string; tokens: TokenEntry[] };
 export const COLOR_GROUPS: TokenGroup[] = [
   {
     title: "Ink",
-    note: "Two primary inks coexist today: --foreground (cool, shadcn primitives) and --ink-warm (warm, the Ember-drawn screens). Which one is THE text colour is open.",
+    note: "One warm ink family (decided 2026-09-23). --ink-warm and --body-warm hold the values; --foreground and --muted-foreground are aliases so the shadcn primitives follow.",
     tokens: [
       { name: "--ink-strong", role: "display type only" },
-      { name: "--foreground", role: "headings, primary text (cool)" },
-      { name: "--ink-warm", role: "primary text on Ember screens (warm)" },
+      { name: "--ink-warm", role: "THE ink: headings, primary text" },
+      { name: "--foreground", role: "alias of --ink-warm" },
       { name: "--body", role: "body copy" },
-      { name: "--body-warm", role: "meta on Ember screens" },
-      { name: "--muted-foreground", role: "labels, meta" },
+      { name: "--body-warm", role: "meta, labels" },
+      { name: "--muted-foreground", role: "alias of --body-warm" },
       { name: "--faint", role: "placeholder, disabled" },
     ],
   },
@@ -30,7 +30,8 @@ export const COLOR_GROUPS: TokenGroup[] = [
       { name: "--card", role: "card surface" },
       { name: "--muted", role: "pale panel" },
       { name: "--accent", role: "hover fill" },
-      { name: "--border", role: "hairline, rules" },
+      { name: "--border", role: "hairline: dividers, cards (decorative)" },
+      { name: "--input", role: "control edge: fields, outlines, chips (3:1)" },
     ],
   },
   {

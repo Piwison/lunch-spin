@@ -48,8 +48,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary: "bg-(image:--brand-grad) text-on-accent tracking-(--control-tracking) hover:brightness-105",
-        secondary: "border border-border bg-paper text-ink-warm hover:bg-accent",
-        outline: "border border-border bg-transparent text-ink-warm hover:bg-accent",
+        secondary: "border border-input bg-paper text-ink-warm hover:bg-accent",
+        outline: "border border-input bg-transparent text-ink-warm hover:bg-accent",
         "brand-outline": "border border-brand-solid bg-transparent text-brand-text font-semibold hover:bg-accent",
         ghost: "bg-transparent text-body-warm hover:bg-accent hover:text-ink-warm",
         positive: "border border-ok/40 bg-ok/15 text-ok",

@@ -60,17 +60,12 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
     role: "meta on cards",
   },
   {
+    // Was 4.30 on the ground while it was a cool #666D77; aliasing it to
+    // --body-warm under the one-ink decision (2026-09-23) cleared it.
     fg: "--muted-foreground",
     bg: "--background",
     min: AA_TEXT,
     role: "meta on the bare ground",
-    known: {
-      light: {
-        floor: 4.3,
-        status: "open",
-        why: "Darkened to clear 4.5 on --paper only. Clearing the ground too (#626972) nearly merges it with --body, so it is a hierarchy call, not a fix.",
-      },
-    },
   },
 
   // ── Persimmon ──
@@ -115,8 +110,8 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
     known: {
       light: {
         floor: 2.35,
-        status: "open",
-        why: "FM20 measured 3.48 against the FLAT persimmon. The gradient came back afterwards (FM26), and its light end is lower — nobody has decided on this number.",
+        status: "accepted",
+        why: "Owner decision 2026-09-23: the gradient stays as it is. Reaching 3:1 at the light end needs #E26A2F, which all but flattens the gradient FM26 brought back.",
       },
     },
   },
@@ -149,22 +144,11 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
       },
     },
   },
-  {
-    fg: "--border",
-    bg: "--paper",
-    min: AA_NON_TEXT,
-    role: "hairline — the only edge of an input or outlined button",
-    known: {
-      light: {
-        floor: 1.53,
-        status: "open",
-        why: "Fine for dividers, which are decorative. Where the hairline is the ONLY boundary of a control (inputs, outlined buttons) WCAG 1.4.11 asks 3:1.",
-      },
-      dark: {
-        floor: 1.25,
-        status: "open",
-        why: "Same as light: decorative as a divider, the sole boundary of an input.",
-      },
-    },
-  },
+  // The control edge (owner decision 2026-09-23). --border stays the light
+  // hairline for dividers and cards, which are decorative; --input is the edge
+  // of a field, an outlined button, a chip, a checkbox — where the edge is what
+  // says a control is there.
+  ...(["--paper", "--background"] as const).map(
+    (bg): ContrastPair => ({ fg: "--input", bg, min: AA_NON_TEXT, role: "control edge: field, outline, chip, checkbox" }),
+  ),
 ];
