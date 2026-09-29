@@ -8,20 +8,28 @@ const TAIPEI_MIDNIGHT_AFTER = new Date("2026-06-10T16:00:00Z"); // next Taipei m
 const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000);
 const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
 
+const AMY = 1;
+const BEN = 2;
+let nextId = 1;
 function spin(
   restaurantId: number,
   spunAt: Date,
-  opts: { accepted?: boolean; reenabled?: boolean } = {},
+  opts: { accepted?: boolean; reenabled?: boolean; skipped?: boolean; by?: number } = {},
 ): SpinRecord {
   return {
+    id: nextId++,
     restaurantId,
+    spunBy: opts.by ?? AMY,
     spunAt,
     manuallyReenabled: opts.reenabled ?? false,
     accepted: opts.accepted ?? false,
+    skipped: opts.skipped ?? false,
   };
 }
+// The same person spinning again later — what turns an earlier spin into a respin.
+const respinAfter = (at: Date, by = AMY) => spin(99, new Date(at.getTime() + 60_000), { by });
 
-describe("computeExclusions — two-tier (accepted vs rejected)", () => {
+describe("computeExclusions — lunch vs respun (shared/lunch.ts)", () => {
   it("an ACCEPTED spin is excluded for the full window", () => {
     const at = hoursAgo(1);
     expect(computeExclusions([spin(1, at, { accepted: true })], { now, windowDays: 3 })).toEqual([
@@ -34,20 +42,46 @@ describe("computeExclusions — two-tier (accepted vs rejected)", () => {
     expect(computeExcludedIds([spin(1, at, { accepted: true })], { now, windowDays: 3 })).toEqual([1]);
   });
 
-  it("a non-accepted (rejected) spin from earlier the same Taipei day excludes only until the next Taipei midnight", () => {
-    expect(computeExclusions([spin(1, hoursAgo(1))], { now, windowDays: 3 })).toEqual([
-      { restaurantId: 1, excludedUntil: TAIPEI_MIDNIGHT_AFTER },
+  it("an unaccepted spin nobody replaced is lunch: excluded for the full window", () => {
+    const at = hoursAgo(1);
+    expect(computeExclusions([spin(1, at)], { now, windowDays: 3 })).toEqual([
+      { restaurantId: 1, excludedUntil: new Date(at.getTime() + 3 * 24 * 60 * 60 * 1000) },
     ]);
   });
 
-  it("a non-accepted spin from a PREVIOUS Taipei day is NOT excluded, even inside the window", () => {
+  it("yesterday's unaccepted, unreplaced spin is still excluded (it was lunch)", () => {
+    expect(computeExcludedIds([spin(1, new Date("2026-06-09T04:00:00Z"))], { now, windowDays: 3 })).toEqual([1]);
+  });
+
+  it("a spin the same person replaced today excludes only until the next Taipei midnight", () => {
+    const at = hoursAgo(1);
+    const excl = computeExclusions([spin(1, at), respinAfter(at)], { now, windowDays: 3 });
+    expect(excl.find((e) => e.restaurantId === 1)).toEqual({ restaurantId: 1, excludedUntil: TAIPEI_MIDNIGHT_AFTER });
+  });
+
+  it("a spin replaced on a PREVIOUS Taipei day is NOT excluded, even inside the window", () => {
     // 2026-06-09T12:00Z = 20:00 Taipei on 06-09 — yesterday in Taipei, ~16h ago.
-    expect(computeExcludedIds([spin(1, new Date("2026-06-09T12:00:00Z"))], { now, windowDays: 3 })).toEqual([]);
+    const at = new Date("2026-06-09T12:00:00Z");
+    expect(computeExcludedIds([spin(1, at), respinAfter(at)], { now, windowDays: 3 })).not.toContain(1);
   });
 
   it("treats a late-UTC-yesterday spin that is still 'today' in Taipei as today", () => {
     // 2026-06-09T20:00Z = 04:00 Taipei on 06-10 — same Taipei day as `now`.
-    expect(computeExcludedIds([spin(1, new Date("2026-06-09T20:00:00Z"))], { now, windowDays: 3 })).toEqual([1]);
+    const at = new Date("2026-06-09T20:00:00Z");
+    expect(computeExclusions([spin(1, at), respinAfter(at)], { now, windowDays: 3 }).find((e) => e.restaurantId === 1)).toEqual({
+      restaurantId: 1,
+      excludedUntil: TAIPEI_MIDNIGHT_AFTER,
+    });
+  });
+
+  it("another person's spin does not replace mine (two groups)", () => {
+    const at = hoursAgo(2);
+    const excl = computeExclusions([spin(1, at, { by: AMY }), spin(2, hoursAgo(1), { by: BEN })], { now, windowDays: 3 });
+    expect(excl.find((e) => e.restaurantId === 1)?.excludedUntil).toEqual(new Date(at.getTime() + 3 * 86400000));
+  });
+
+  it("a skipped spin excludes nothing", () => {
+    expect(computeExcludedIds([spin(1, hoursAgo(1), { skipped: true })], { now, windowDays: 3 })).toEqual([]);
   });
 
   it("a manual re-enable overrides even an accepted spin", () => {
@@ -66,11 +100,12 @@ describe("computeExclusions — two-tier (accepted vs rejected)", () => {
     expect(computeExcludedIds([spin(1, hoursAgo(1), { accepted: true })], { now, windowDays: 0 })).toEqual([]);
   });
 
-  it("handles a mix of accepted, rejected-today, rejected-earlier-day independently", () => {
+  it("handles a mix of lunch, respun-today and respun-earlier-day independently", () => {
     const spins = [
-      spin(1, hoursAgo(1), { accepted: true }), // long exclusion
-      spin(2, hoursAgo(2)), // rejected today → excluded until Taipei midnight
-      spin(3, new Date("2026-06-09T12:00:00Z")), // rejected yesterday (Taipei) → available
+      spin(1, hoursAgo(1), { accepted: true }), // lunch → long exclusion
+      spin(2, hoursAgo(2)), // replaced by the 1h-ago spin → excluded until Taipei midnight
+      spin(3, new Date("2026-06-09T12:00:00Z")), // replaced yesterday (Taipei) → available
+      spin(4, new Date("2026-06-09T12:05:00Z")),
     ];
     const excluded = computeExcludedIds(spins, { now, windowDays: 3 });
     expect(excluded).toContain(1);

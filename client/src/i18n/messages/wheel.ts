@@ -7,6 +7,9 @@ export const zh = {
   "wheel.result.closingIn": "約 {n} 分鐘後打烊，動作要快！",
   "wheel.result.closing": "快打烊了，動作要快！",
   "wheel.result.accept": "就吃這家",
+  // ── A: today ──
+  "wheel.result.tellTeam": "通知大家",
+  "wheel.result.soundsGood": "好",
   "wheel.result.respin": "再轉一次",
   "wheel.result.directions": "查看路線",
   "wheel.filter.label": "篩選",
@@ -44,6 +47,9 @@ export const en: Record<keyof typeof zh, string> = {
   "wheel.result.closingIn": "Closing in ~{n} min — hurry!",
   "wheel.result.closing": "Closing soon — hurry!",
   "wheel.result.accept": "Lock it in",
+  // ── A: today ──
+  "wheel.result.tellTeam": "Tell the team",
+  "wheel.result.soundsGood": "Sounds good",
   "wheel.result.respin": "Respin",
   "wheel.result.directions": "Directions",
   "wheel.filter.label": "Filter",

@@ -726,7 +726,7 @@ export default function WheelApp() {
   );
 
   /** A restaurant refresh that is owed but must wait for the camera to pull out
-   *  — see handleSpinEnd. Every exit from the result (Lock it in, Respin, [x],
+   *  — see handleSpinEnd. Every exit from the result (accept, Respin, [x],
    *  Esc, backdrop) lands in the effect below, so none of them needs to
    *  remember to do this for itself. */
   const pendingRestaurantRefresh = useRef(false);
@@ -805,10 +805,11 @@ export default function WheelApp() {
     requestAnimationFrame(() => handleSpin());
   };
 
-  // ACCEPT — "we're eating here". Records the accept (full-window exclusion +
-  // team notification on shared wheels) then closes. [x] / backdrop / Esc skip
-  // this: the spin was already recorded as a rejected (today-only) result, so
-  // closing without accepting is the "skip this one today" path.
+  // ACCEPT — "Tell the team" on a shared wheel, "Sounds good" on a personal one.
+  // Closing the result any other way already leaves this spin as today's lunch
+  // (shared/lunch.ts: the last spin of the day counts). Accepting pins it — a
+  // later respin by the same person no longer replaces it — and on a shared
+  // wheel notifies the team.
   const handleAccept = () => {
     if (selectedWheelId && spinId != null) {
       acceptSpin.mutate({ wheelId: selectedWheelId, spinId });
@@ -1603,6 +1604,7 @@ export default function WheelApp() {
               ) : null
             }
             onAccept={handleAccept}
+            acceptLabel={t(isShared ? "wheel.result.tellTeam" : "wheel.result.soundsGood")}
             onRespin={handleReSpin}
             respinDisabled={wheelSegments.length === 0}
             onDirections={() => openDirections(spinResult)}

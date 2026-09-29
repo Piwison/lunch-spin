@@ -795,7 +795,8 @@ export async function getSpinHistory(wheelId: number) {
       spunByName: users.name,
       spunAt: spinHistory.spunAt,
       manuallyReenabled: spinHistory.manuallyReenabled,
-      rating: spinHistory.rating,
+      accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
     })
     .from(spinHistory)
     .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
@@ -812,10 +813,13 @@ export async function getExclusions(wheelId: number, windowDays: number): Promis
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const recent = await db
     .select({
+      id: spinHistory.id,
       restaurantId: spinHistory.restaurantId,
+      spunBy: spinHistory.spunBy,
       spunAt: spinHistory.spunAt,
       manuallyReenabled: spinHistory.manuallyReenabled,
       accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
     })
     .from(spinHistory)
     .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));

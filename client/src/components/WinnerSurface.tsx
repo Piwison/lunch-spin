@@ -21,8 +21,8 @@ interface WinnerSurfaceProps {
   respinDisabled?: boolean;
   onDirections: () => void;
   /** The quiet way out. Distinct from Respin: the spin already stands as
-   *  rejected for today, so dismissing means "not this one, not now" without
-   *  starting another. Bound to a downward drag, a tap on the ground, and Esc. */
+   *  today's lunch (shared/lunch.ts), so dismissing just closes the result.
+   *  Bound to a downward drag, a tap on the ground, and Esc. */
   onDismiss: () => void;
 }
 

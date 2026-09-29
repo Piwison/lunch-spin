@@ -107,26 +107,6 @@ export default function HistoryTab({ wheelId, onReenabled, isShared, exclusionDa
           </span>
         </div>
 
-        {/* Exclusion legend */}
-        {restaurants && restaurants.filter(r => r.isExcluded).length > 0 && (
-          <div
-            className="flex items-start gap-2 px-3.5 py-2.5 type-meta"
-            style={{
-              borderRadius: "var(--radius-chip)",
-              background: "oklch(from var(--brand) l c h / 0.08)",
-              border: "1px solid oklch(from var(--brand) l c h / 0.22)",
-              color: "var(--body-warm)",
-            }}
-          >
-            <Clock size={13} className="mt-0.5 flex-shrink-0" />
-            <span>
-              {exclusionDays
-                ? t(exclusionDays === 1 ? "history.exclusion.one" : "history.exclusion.other", { n: exclusionDays })
-                : t("history.exclusion.default")}
-            </span>
-          </div>
-        )}
-
         {isLoading ? (
           <div className="flex flex-col gap-2">
             {[1, 2, 3, 4].map(i => (

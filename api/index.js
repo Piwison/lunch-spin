@@ -256,8 +256,7 @@ var ENV = {
   appOrigin: process.env.APP_ORIGIN ?? ""
 };
 
-// shared/exclusion.ts
-var DEFAULT_EXCLUSION_DAYS = 3;
+// shared/lunch.ts
 var TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1e3;
 var DAY_MS = 24 * 60 * 60 * 1e3;
 function taipeiDayIndex(t2) {
@@ -266,6 +265,30 @@ function taipeiDayIndex(t2) {
 function endOfTaipeiDay(t2) {
   return new Date((taipeiDayIndex(t2) + 1) * DAY_MS - TAIPEI_OFFSET_MS);
 }
+function bySpinOrder(a, b) {
+  return a.spunAt.getTime() - b.spunAt.getTime() || a.id - b.id;
+}
+function classifySpins(rows) {
+  const kinds = /* @__PURE__ */ new Map();
+  const lastOfDay = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const key = `${row.spunBy}:${taipeiDayIndex(row.spunAt)}`;
+    const cur = lastOfDay.get(key);
+    if (!cur || bySpinOrder(row, cur) > 0) lastOfDay.set(key, row);
+  }
+  for (const row of rows) {
+    if (row.skipped) kinds.set(row.id, "skipped");
+    else if (row.accepted) kinds.set(row.id, "lunch");
+    else {
+      const last = lastOfDay.get(`${row.spunBy}:${taipeiDayIndex(row.spunAt)}`);
+      kinds.set(row.id, last?.id === row.id ? "lunch" : "respun");
+    }
+  }
+  return kinds;
+}
+
+// shared/exclusion.ts
+var DEFAULT_EXCLUSION_DAYS = 3;
 function computeExclusions(spins, opts = {}) {
   const now = opts.now ?? /* @__PURE__ */ new Date();
   const windowDays = opts.windowDays ?? DEFAULT_EXCLUSION_DAYS;
@@ -273,16 +296,18 @@ function computeExclusions(spins, opts = {}) {
   const windowMs = windowDays * DAY_MS;
   const cutoff = new Date(now.getTime() - windowMs);
   const nowDay = taipeiDayIndex(now);
-  const recent = spins.filter((s) => s.spunAt > cutoff).sort((a, b) => b.spunAt.getTime() - a.spunAt.getTime());
+  const kinds = classifySpins(spins);
+  const recent = spins.filter((s) => s.spunAt > cutoff).sort((a, b) => b.spunAt.getTime() - a.spunAt.getTime() || b.id - a.id);
   const seen = /* @__PURE__ */ new Set();
   const exclusions = [];
   for (const row of recent) {
     if (seen.has(row.restaurantId)) continue;
     seen.add(row.restaurantId);
     if (row.manuallyReenabled) continue;
-    if (row.accepted) {
+    const kind = kinds.get(row.id);
+    if (kind === "lunch") {
       exclusions.push({ restaurantId: row.restaurantId, excludedUntil: new Date(row.spunAt.getTime() + windowMs) });
-    } else if (taipeiDayIndex(row.spunAt) === nowDay) {
+    } else if (kind === "respun" && taipeiDayIndex(row.spunAt) === nowDay) {
       exclusions.push({ restaurantId: row.restaurantId, excludedUntil: endOfTaipeiDay(row.spunAt) });
     }
   }
@@ -772,7 +797,8 @@ async function getSpinHistory(wheelId) {
     spunByName: users.name,
     spunAt: spinHistory.spunAt,
     manuallyReenabled: spinHistory.manuallyReenabled,
-    rating: spinHistory.rating
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped
   }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(eq(spinHistory.wheelId, wheelId)).orderBy(sql`${spinHistory.spunAt} DESC`);
 }
 async function getExclusions(wheelId, windowDays) {
@@ -780,10 +806,13 @@ async function getExclusions(wheelId, windowDays) {
   if (!db || windowDays <= 0) return /* @__PURE__ */ new Map();
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1e3);
   const recent = await db.select({
+    id: spinHistory.id,
     restaurantId: spinHistory.restaurantId,
+    spunBy: spinHistory.spunBy,
     spunAt: spinHistory.spunAt,
     manuallyReenabled: spinHistory.manuallyReenabled,
-    accepted: spinHistory.accepted
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped
   }).from(spinHistory).where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
   const exclusions = computeExclusions(recent, { windowDays });
   return new Map(exclusions.map((e) => [e.restaurantId, e.excludedUntil]));
