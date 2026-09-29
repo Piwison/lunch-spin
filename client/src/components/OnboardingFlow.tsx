@@ -78,7 +78,7 @@ import {
 } from "lucide-react";
 import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
-type Step = "locate" | "pick" | "building";
+type Step = "locate" | "pick" | "building" | "office";
 type NearbyRow = RouterOutputs["places"]["searchNearby"]["places"][number];
 type SearchResult = RouterOutputs["places"]["searchNearby"];
 
@@ -168,6 +168,10 @@ export default function OnboardingFlow({
 
   const search = trpc.places.searchNearby.useMutation();
   const createWheel = trpc.wheels.createFromNearby.useMutation();
+  const saveOffice = trpc.wheels.setDistanceOrigin.useMutation();
+  // The wheel just built from a raw location fix, while we ask whether that
+  // spot is the office (plan 7c: saved only with a yes).
+  const [builtId, setBuiltId] = useState<number | null>(null);
 
   const pool = pools[query] ?? null;
   const selected = useMemo(() => new Set(selection), [selection]);
@@ -375,6 +379,14 @@ export default function OnboardingFlow({
           } catch {
             /* nothing to clear */
           }
+          // A raw location fix is where the person happened to stand, so it is
+          // never saved as the office on its own — but it usually IS the
+          // office, and without an origin no place has a walk time. Ask once.
+          if (origin && !origin.label) {
+            setBuiltId(res.id);
+            setStep("office");
+            return;
+          }
           onCreated(res.id);
         },
         // Back to the list with every choice intact; the error shows there.
@@ -382,6 +394,49 @@ export default function OnboardingFlow({
       }
     );
   };
+
+  // ── Save as office? ──────────────────────────────────────────────────────
+  if (step === "office" && builtId !== null && origin) {
+    const done = () => onCreated(builtId);
+    return (
+      <div className="grow flex flex-col items-center justify-center px-5 py-6 w-full">
+        <div className="w-full max-w-sm flex flex-col items-center gap-4 text-center">
+          <MapPin size={28} style={{ color: "var(--brand-text)" }} />
+          <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
+            {t("onb.office.title")}
+          </h1>
+          <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+            {t("onb.office.body")}
+          </p>
+          {saveOffice.isError && <ErrorNote>{t("onb.office.error")}</ErrorNote>}
+          <div className="w-full flex flex-col gap-2">
+            <Button
+              className="w-full"
+              disabled={saveOffice.isPending}
+              onClick={() =>
+                saveOffice.mutate(
+                  {
+                    id: builtId,
+                    enabled: true,
+                    originLat: origin.lat,
+                    originLng: origin.lng,
+                    originLabel: t("onb.office.label"),
+                  },
+                  { onSuccess: done }
+                )
+              }
+            >
+              {saveOffice.isPending ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+              {t("onb.office.save")}
+            </Button>
+            <Button variant="ghost" className="w-full" disabled={saveOffice.isPending} onClick={done}>
+              {t("onb.office.skip")}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Building ─────────────────────────────────────────────────────────────
   if (step === "building") {
