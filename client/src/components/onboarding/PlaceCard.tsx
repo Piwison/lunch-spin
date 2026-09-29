@@ -10,6 +10,8 @@ export interface PlaceCardData {
   walkSource: "route" | "estimate";
   priceLevel: number | null;
   open: boolean | null;
+  /** Google's CLOSED_TEMPORARILY — said as such, not as "closed now". */
+  temporarilyClosed?: boolean;
   rating: number | null;
   ratingCount: number | null;
 }
@@ -196,7 +198,7 @@ export default function PlaceCard({
                     color: place.open ? "var(--ok)" : "var(--muted-foreground)",
                   }}
                 >
-                  {t(place.open ? "onb.card.open" : "onb.card.closed")}
+                  {t(place.open ? "onb.card.open" : place.temporarilyClosed ? "onb.card.paused" : "onb.card.closed")}
                 </span>
               </>
             )}

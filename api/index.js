@@ -2245,7 +2245,8 @@ function toNearbyPlace(raw, origin) {
     address: raw.vicinity ?? raw.formatted_address ?? null,
     rating: normalizeRating(raw.rating),
     ratingCount: normalizeRatingCount(raw.user_ratings_total),
-    permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY"
+    permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY",
+    temporarilyClosed: raw.business_status === "CLOSED_TEMPORARILY"
   };
 }
 function mapProviderResults(rows, origin) {
@@ -3583,6 +3584,7 @@ var appRouter = router({
         cuisine: p.cuisine,
         priceLevel: p.priceLevel,
         open: p.open ?? null,
+        temporarilyClosed: p.temporarilyClosed,
         lat: p.lat,
         lng: p.lng,
         address: p.address,

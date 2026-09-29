@@ -49,6 +49,9 @@ export interface MappedPlace extends NearbyPlace {
   ratingCount: number | null;
   /** CLOSED_PERMANENTLY — can never be lunch, unlike a temporary closure. */
   permanentlyClosed: boolean;
+  /** CLOSED_TEMPORARILY — paused (renovation, holiday). Ranked like "closed
+   *  now", but a card says "temporarily closed", not "closed now". */
+  temporarilyClosed: boolean;
 }
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -174,6 +177,7 @@ export function toNearbyPlace(raw: ProviderPlace, origin: LatLng): MappedPlace {
     rating: normalizeRating(raw.rating),
     ratingCount: normalizeRatingCount(raw.user_ratings_total),
     permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY",
+    temporarilyClosed: raw.business_status === "CLOSED_TEMPORARILY",
   };
 }
 

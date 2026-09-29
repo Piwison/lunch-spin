@@ -652,9 +652,12 @@ export default function OnboardingFlow({
               style={{ color: "var(--body-warm)" }}
             >
               <span>
-                {filters.showLowRated
-                  ? t("onb.lowRated.shown", { n: view.lowRated.length })
-                  : t("onb.lowRated.hidden", { n: view.lowRated.length })}
+                {t(
+                  filters.showLowRated
+                    ? view.lowRated.length === 1 ? "onb.lowRated.shown.one" : "onb.lowRated.shown.other"
+                    : view.lowRated.length === 1 ? "onb.lowRated.hidden.one" : "onb.lowRated.hidden.other",
+                  { n: view.lowRated.length },
+                )}
               </span>
               <button
                 type="button"

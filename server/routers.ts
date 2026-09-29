@@ -1087,6 +1087,7 @@ export const appRouter = router({
           cuisine: p.cuisine,
           priceLevel: p.priceLevel,
           open: p.open ?? null,
+          temporarilyClosed: p.temporarilyClosed,
           lat: p.lat,
           lng: p.lng,
           address: p.address,
