@@ -151,6 +151,12 @@ var restaurants = mysqlTable("restaurants", {
   // restaurant has no resolvable location. Same value for every member — the
   // origin is per-wheel, not per-user.
   walkSeconds: int("walkSeconds"),
+  // Google's own rating and review count, stored when the place is added or its
+  // hours are refreshed; null for hand-typed places and rows added before these
+  // columns existed (they fill in as hours refresh). Display only — the team's
+  // own stars in restaurant_ratings are what weight the spin.
+  googleRating: decimal("googleRating", { precision: 2, scale: 1 }),
+  googleRatingCount: int("googleRatingCount"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 }, (t2) => ({
@@ -192,7 +198,11 @@ var spinHistory = mysqlTable("spin_history", {
   // any more: `spins.rate`, `rateSpin` and `getLatestRatings` are gone, and the
   // weighting that this comment used to claim ("biases future spins") had
   // already moved to `applyStarWeights` long before. Do not build on it.
-  rating: mysqlEnum("rating", ["loved", "ok", "never"])
+  rating: mysqlEnum("rating", ["loved", "ok", "never"]),
+  // "We didn't end up going": set by the person who spun it. A skipped spin is
+  // not a lunch — it excludes nothing and counts in no statistic
+  // (shared/lunch.ts).
+  skipped: boolean("skipped").default(false).notNull()
 }, (t2) => ({
   // The hottest table: the latest spin (WHERE wheelId ORDER BY spunAt DESC, now
   // served by wheels.realtime), history, and exclusion all scope by wheelId +
@@ -221,8 +231,14 @@ var roundMarks = mysqlTable("round_marks", {
   wheelId: int("wheelId").notNull(),
   kind: mysqlEnum("kind", ["veto", "vote", "dietary"]).notNull(),
   refId: int("refId").notNull(),
-  userId: int("userId").notNull()
+  userId: int("userId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
 }, (t2) => ({ pk: primaryKey({ columns: [t2.wheelId, t2.kind, t2.refId, t2.userId] }) }));
+var userDietary = mysqlTable("user_dietary", {
+  userId: int("userId").notNull(),
+  tagId: int("tagId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+}, (t2) => ({ pk: primaryKey({ columns: [t2.userId, t2.tagId] }) }));
 
 // server/_core/env.ts
 var ENV = {

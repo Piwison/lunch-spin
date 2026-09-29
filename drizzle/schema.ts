@@ -153,6 +153,12 @@ export const restaurants = mysqlTable("restaurants", {
   // restaurant has no resolvable location. Same value for every member — the
   // origin is per-wheel, not per-user.
   walkSeconds: int("walkSeconds"),
+  // Google's own rating and review count, stored when the place is added or its
+  // hours are refreshed; null for hand-typed places and rows added before these
+  // columns existed (they fill in as hours refresh). Display only — the team's
+  // own stars in restaurant_ratings are what weight the spin.
+  googleRating: decimal("googleRating", { precision: 2, scale: 1 }),
+  googleRatingCount: int("googleRatingCount"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => ({
@@ -213,6 +219,10 @@ export const spinHistory = mysqlTable("spin_history", {
   // weighting that this comment used to claim ("biases future spins") had
   // already moved to `applyStarWeights` long before. Do not build on it.
   rating: mysqlEnum("rating", ["loved", "ok", "never"]),
+  // "We didn't end up going": set by the person who spun it. A skipped spin is
+  // not a lunch — it excludes nothing and counts in no statistic
+  // (shared/lunch.ts).
+  skipped: boolean("skipped").default(false).notNull(),
 }, (t) => ({
   // The hottest table: the latest spin (WHERE wheelId ORDER BY spunAt DESC, now
   // served by wheels.realtime), history, and exclusion all scope by wheelId +
@@ -253,11 +263,25 @@ export const wheelPresence = mysqlTable("wheel_presence", {
   lastSeen: timestamp("lastSeen").defaultNow().notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.wheelId, t.userId] }) }));
 
-// Round marks: per-wheel veto/vote (refId = restaurantId) and dietary
-// (refId = tagId) selections. Replaces the old in-memory session maps.
+// Round marks: per-wheel veto/vote (refId = restaurantId) selections. A mark
+// counts only on the Taipei day it was made (createdAt, shared/realtimeState.ts);
+// older rows are ignored rather than deleted. `dietary` rows are no longer read —
+// dietary is a personal setting now (user_dietary) — and stay for history.
 export const roundMarks = mysqlTable("round_marks", {
   wheelId: int("wheelId").notNull(),
   kind: mysqlEnum("kind", ["veto", "vote", "dietary"]).notNull(),
   refId: int("refId").notNull(),
   userId: int("userId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.wheelId, t.kind, t.refId, t.userId] }) }));
+
+// ─── Personal dietary ("I don't eat X") ───────────────────────────────────────
+// One row per (user, tag), independent of any wheel. Applied to a spin only for
+// people who opened that wheel today, plus the spinner (shared/session.ts).
+// No foreign keys, as everywhere in this schema: deleteUserAccount removes a
+// user's rows explicitly.
+export const userDietary = mysqlTable("user_dietary", {
+  userId: int("userId").notNull(),
+  tagId: int("tagId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.userId, t.tagId] }) }));
