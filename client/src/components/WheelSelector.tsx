@@ -21,7 +21,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import LocationPicker from "@/components/LocationPicker";
-import { STARTER_RESTAURANTS } from "@shared/starter";
 import { useLang } from "@/i18n";
 import { userError } from "@/lib/userError";
 import { DEFAULT_ORIGIN_LABEL, originLabelText } from "@/lib/tagLabel";
@@ -37,12 +36,8 @@ interface WheelSelectorProps {
    * available anymore".
    */
   onDeleted: (id: number) => void;
-  /**
-   * Lets a parent (e.g. WheelApp's first-run card) open the create dialog. The
-   * registered opener takes the desired starter-pack state: `true` = "start from a
-   * sample" (adds STARTER_RESTAURANTS), `false` = blank wheel.
-   */
-  registerCreateOpener?: (open: (withStarter: boolean) => void) => void;
+  /** Lets a parent (first run's "I'll add places myself") open the create dialog. */
+  registerCreateOpener?: (open: () => void) => void;
   /**
    * Lets a parent (the Wheel tab's gear icon) open the settings dialog for a
    * given wheel without duplicating its form state/mutations — same pattern
@@ -88,6 +83,41 @@ function SettingsSection({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * A setting you switch. The whole row — its words and its description — is the
+ * switch's <label>, so tapping "Fairness mode" toggles it instead of doing
+ * nothing, and the row is at least the 44px control height. The bare 18px
+ * switch was the only target before.
+ */
+function SwitchRow({
+  id,
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled = false,
+}: {
+  id: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className={`flex items-center justify-between gap-3 min-h-11 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+    >
+      <span className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        {description && <span className="type-meta text-muted-foreground">{description}</span>}
+      </span>
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
+    </label>
+  );
+}
+
 function WheelActionsMenu({
   wheel,
   isOwner,
@@ -98,10 +128,13 @@ function WheelActionsMenu({
   onSettings,
   onDelete,
   onLeave,
+  defaultToggle,
 }: {
   wheel: { isShared: boolean; isPublic: boolean };
   isOwner: boolean;
   large?: boolean;
+  /** The rail has no room for the star button, so "default wheel" lives here. */
+  defaultToggle?: { isDefault: boolean; onToggle: () => void };
   onShare: () => void;
   onCopyPublic: () => void;
   onCopyWheel: () => void;
@@ -124,6 +157,11 @@ function WheelActionsMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="glass-card min-w-44">
+        {defaultToggle && (
+          <DropdownMenuItem onClick={defaultToggle.onToggle} className="gap-2.5">
+            <Star size={14} /> {defaultToggle.isDefault ? t("settings.default.unset") : t("settings.default.set")}
+          </DropdownMenuItem>
+        )}
         {/* Public wheels can be shared with anyone — no sign-in, no token. */}
         {wheel.isPublic && (
           <DropdownMenuItem onClick={onCopyPublic} className="gap-2.5">
@@ -146,9 +184,9 @@ function WheelActionsMenu({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {/* The owner's exit is Delete and a member's is Leave — never both, and
-            never neither. There is no ownership transfer in this app, so an
-            owner who left would strand the team on a wheel nobody can
-            administer; the server refuses it too. */}
+            never neither. An owner who left would strand the team on a wheel
+            nobody can administer, so the server refuses it; ownership only
+            moves when an owner deletes their account and hands it on. */}
         {isOwner ? (
           <DropdownMenuItem onClick={onDelete} variant="destructive" className="gap-2.5">
             <Trash2 size={14} /> {t("settings.actions.delete")}
@@ -203,7 +241,6 @@ export default function WheelSelector({
   const [exclusionDays, setExclusionDays] = useState("3");
   const [fairnessMode, setFairnessMode] = useState(false);
   const [rotateCuisines, setRotateCuisines] = useState(false);
-  const [addStarterPack, setAddStarterPack] = useState(true);
   const [showInvite, setShowInvite] = useState<{ wheelId: number; token: string; name: string } | null>(null);
   const [editWheel, setEditWheel] = useState<{
     id: number;
@@ -253,19 +290,10 @@ export default function WheelSelector({
     onError: (e) => toast.error(userError(e, t)),
   });
 
-  // Default the starter pack on for a user's very first wheel only. Skip while the
-  // create dialog is open so a wheels.list refetch (e.g. window refocus) can't
-  // silently clobber the user's explicit toggle / the imperative opener's choice.
+  // Expose an imperative opener so the first-run card can launch the create
+  // dialog. setState setters are stable, so this registers once.
   useEffect(() => {
-    if (wheels && !showCreate) setAddStarterPack(wheels.length === 0);
-  }, [wheels, showCreate]);
-
-  // Expose an imperative opener so the first-run card can launch the create dialog
-  // with the starter-pack toggle pre-set (sample vs blank). setState setters are
-  // stable, so this registers once.
-  useEffect(() => {
-    registerCreateOpener?.((withStarter: boolean) => {
-      setAddStarterPack(withStarter);
+    registerCreateOpener?.(() => {
       setCreateError(null);
       setShowCreate(true);
     });
@@ -304,19 +332,12 @@ export default function WheelSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registerSettingsOpener, wheels]);
 
-  const importStarterPack = trpc.restaurants.addBulk.useMutation();
   const createWheel = trpc.wheels.create.useMutation({
     onSuccess: (data) => {
       utils.wheels.list.invalidate();
       setShowCreate(false);
       setNewName("");
       onSelect(data.id);
-      if (addStarterPack) {
-        importStarterPack.mutate(
-          { wheelId: data.id, text: STARTER_RESTAURANTS.join("\n") },
-          { onSuccess: () => utils.restaurants.list.invalidate({ wheelId: data.id }) },
-        );
-      }
       if (data.inviteToken) {
         setShowInvite({ wheelId: data.id, token: data.inviteToken, name: newName });
       }
@@ -538,38 +559,54 @@ export default function WheelSelector({
             className={`w-6 h-6 rounded-full flex-shrink-0 ${isSelected ? "orb-wheel" : ""}`}
             style={isSelected ? undefined : { background: "var(--border)" }}
           />
+          {/* The name owns the row's width. In the 240px rail the star button,
+              the lock and the ⋮ used to take 116px of it and cut "Lunch near
+              Ruiguang Rd" to "Lun…"; there it may wrap to two lines instead. */}
           <span
-            className="flex-1 truncate"
+            className={`flex-1 min-w-0 ${inSheet ? "truncate" : "line-clamp-2 break-words"}`}
             style={{ fontSize: 15, fontWeight: 500, color: isSelected ? "var(--ink-warm)" : "var(--body-warm)" }}
           >
             {wheel.name}
           </span>
+          {!inSheet && isDefault && (
+            <Star size={12} className="flex-shrink-0" style={{ color: "var(--brand)" }} fill="var(--brand)" aria-label={t("settings.default.activeTitle")} />
+          )}
           {isSelected && inSheet && <Check size={16} style={{ color: "var(--brand-text)" }} className="flex-shrink-0" />}
-          <span
-            className="text-muted-foreground/50 flex-shrink-0"
-            title={wheel.isPublic ? t("settings.visibility.public") : t("settings.visibility.private")}
+          {inSheet && (
+            <span
+              className="text-muted-foreground/50 flex-shrink-0"
+              title={wheel.isPublic ? t("settings.visibility.public") : t("settings.visibility.private")}
+            >
+              {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
+            </span>
+          )}
+        </button>
+        {inSheet && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setDefaultWheel.mutate({ wheelId: isDefault ? null : wheel.id }); }}
+            disabled={setDefaultWheel.isPending}
+            aria-label={isDefault ? t("settings.default.unset") : t("settings.default.set")}
+            title={isDefault ? t("settings.default.activeTitle") : t("settings.default.inactiveTitle")}
+            className="flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors h-14 w-11"
           >
-            {wheel.isPublic ? <Globe size={12} /> : <Lock size={12} />}
-          </span>
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); setDefaultWheel.mutate({ wheelId: isDefault ? null : wheel.id }); }}
-          disabled={setDefaultWheel.isPending}
-          aria-label={isDefault ? t("settings.default.unset") : t("settings.default.set")}
-          title={isDefault ? t("settings.default.activeTitle") : t("settings.default.inactiveTitle")}
-          className={`flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors ${inSheet ? "h-14 w-11" : "h-11 w-11"}`}
-        >
-          <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
-        </button>
+            <Star size={14} style={{ color: isDefault ? "var(--brand)" : "var(--muted-foreground)" }} fill={isDefault ? "var(--brand)" : "none"} />
+          </button>
+        )}
         <div
-          className={`flex-shrink-0 pr-1 ${
-            inSheet ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
-          }`}
+          /* In the rail the ⋮ floats over the row's end on hover or focus
+             rather than holding a column of its own. */
+          className={
+            inSheet
+              ? "flex-shrink-0 pr-1"
+              : "absolute right-1 top-1/2 -translate-y-1/2 rounded-xl opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
+          }
+          style={inSheet ? undefined : { background: "var(--paper)" }}
         >
           <WheelActionsMenu
             wheel={wheel}
             isOwner={isOwner}
             large={inSheet}
+            defaultToggle={inSheet ? undefined : { isDefault, onToggle: () => setDefaultWheel.mutate({ wheelId: isDefault ? null : wheel.id }) }}
             onShare={() => regenInvite.mutate({ id: wheel.id })}
             onCopyPublic={() => copyPublicLink(wheel.id)}
             onCopyWheel={() => copyWheel.mutate({ id: wheel.id })}
@@ -681,7 +718,7 @@ export default function WheelSelector({
 
       {/* Create wheel dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="glass-sheet max-w-sm">
+        <DialogContent className="glass-sheet max-w-sm" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("settings.create.title")}</DialogTitle>
           </DialogHeader>
@@ -693,15 +730,9 @@ export default function WheelSelector({
               onKeyDown={(e) => e.key === "Enter" && newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines })}
               className="bg-secondary/50"
             />
-            <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">{t("settings.create.shared")}</Label>
-              <Switch checked={isShared} onCheckedChange={setIsShared} />
-            </div>
+            <SwitchRow id="create-shared" label={t("settings.create.shared")} checked={isShared} onCheckedChange={setIsShared} />
             {isShared && (
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">{t("settings.create.public")}</Label>
-                <Switch checked={isPublic} onCheckedChange={setIsPublic} />
-              </div>
+              <SwitchRow id="create-public" label={t("settings.create.public")} checked={isPublic} onCheckedChange={setIsPublic} />
             )}
             <div className="flex items-center justify-between">
               <Label className="text-sm text-muted-foreground">{t("settings.create.exclusion")}</Label>
@@ -716,28 +747,22 @@ export default function WheelSelector({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">{t("settings.create.fairness")}</Label>
-              <Switch checked={fairnessMode} onCheckedChange={setFairnessMode} />
-            </div>
-            {fairnessMode && (
-              <p className="-mt-2 type-meta text-muted-foreground">
-                {t("settings.create.fairnessDesc")}
-              </p>
-            )}
-            <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">{t("settings.create.rotate")}</Label>
-              <Switch checked={rotateCuisines} onCheckedChange={setRotateCuisines} />
-            </div>
-            {rotateCuisines && (
-              <p className="-mt-2 type-meta text-muted-foreground">
-                {t("settings.create.rotateDesc")}
-              </p>
-            )}
-            <div className="flex items-center justify-between">
-              <Label className="text-sm text-muted-foreground">{t("settings.create.starter")}</Label>
-              <Switch checked={addStarterPack} onCheckedChange={setAddStarterPack} />
-            </div>
+            {/* Described whether on or off: you can't decide to turn on a
+                setting whose meaning only appears once it is on. */}
+            <SwitchRow
+              id="create-fairness"
+              label={t("settings.create.fairness")}
+              description={t("settings.create.fairnessDesc")}
+              checked={fairnessMode}
+              onCheckedChange={setFairnessMode}
+            />
+            <SwitchRow
+              id="create-rotate"
+              label={t("settings.create.rotate")}
+              description={t("settings.create.rotateDesc")}
+              checked={rotateCuisines}
+              onCheckedChange={setRotateCuisines}
+            />
             <ErrorChip error={createError} onDismiss={() => setCreateError(null)} />
             <Button
               onClick={() => { setCreateError(null); newName.trim() && createWheel.mutate({ name: newName.trim(), isShared, isPublic, exclusionDays: parseInt(exclusionDays), fairnessMode, rotateCuisines }); }}
@@ -754,7 +779,7 @@ export default function WheelSelector({
 
       {/* Invite link dialog */}
       <Dialog open={!!showInvite} onOpenChange={() => setShowInvite(null)}>
-        <DialogContent className="glass-sheet max-w-sm">
+        <DialogContent className="glass-sheet max-w-sm" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("settings.invite.title")}</DialogTitle>
           </DialogHeader>
@@ -762,10 +787,17 @@ export default function WheelSelector({
             <p className="text-sm text-muted-foreground">{t("settings.invite.share", { name: showInvite?.name ?? "" })}</p>
             <div className="flex gap-2">
               <Input value={inviteUrl} readOnly className="bg-secondary/50 type-meta" />
-              <Button size="icon" variant="outline" onClick={copyInvite}>
+              <Button size="icon" variant="outline" onClick={copyInvite} aria-label={t("settings.invite.copyTitle")} title={t("settings.invite.copyTitle")}>
                 <Copy size={14} />
               </Button>
             </div>
+            {/* The share sheet (LINE, Slack, Messages) is where an invite is
+                actually going; copy-then-switch-apps was the only way before. */}
+            {showInvite && (
+              <Button onClick={() => shareInviteLink(showInvite.token, showInvite.name)}>
+                <Share2 size={16} /> {t("settings.invite.shareTitle")}
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -777,7 +809,14 @@ export default function WheelSelector({
             pinned title, a single scrolling body, and a pinned footer so Save is
             always reachable no matter how many sections are expanded. (p-0 +
             flex-col overrides DialogContent's default grid/padding.) */}
-        <DialogContent className="glass-sheet max-w-sm p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <DialogContent
+          className="glass-sheet max-w-sm p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden"
+          aria-describedby={undefined}
+          /* Radix focuses the first field on open, which is the name — and on
+             a phone that selects it and raises the keyboard over the dialog
+             most people opened to look at, not to rename. */
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader className="px-5 pt-5 pb-3 flex-shrink-0">
             <DialogTitle className="type-section" style={{ color: "var(--ink-warm)" }}>{t("settings.title")}</DialogTitle>
           </DialogHeader>
@@ -809,10 +848,13 @@ export default function WheelSelector({
                 className="bg-secondary/50"
               />
               <SettingsSection>{t("settings.section.sharing")}</SettingsSection>
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">{t("settings.create.shared")}</Label>
-                <Switch disabled={!canEdit} checked={editWheel.isShared} onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })} />
-              </div>
+              <SwitchRow
+                id="settings-shared"
+                label={t("settings.create.shared")}
+                disabled={!canEdit}
+                checked={editWheel.isShared}
+                onCheckedChange={(v) => setEditWheel({ ...editWheel, isShared: v })}
+              />
               {editWheel.isShared && (() => {
                 // Team invite link for members to join. Sharing itself has to be
                 // persisted before the server will issue/regenerate a token (it
@@ -871,10 +913,13 @@ export default function WheelSelector({
                   </div>
                 );
               })()}
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">{t("settings.public.label")}</Label>
-                <Switch disabled={!canEdit} checked={editWheel.isPublic} onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })} />
-              </div>
+              <SwitchRow
+                id="settings-public"
+                label={t("settings.public.label")}
+                disabled={!canEdit}
+                checked={editWheel.isPublic}
+                onCheckedChange={(v) => setEditWheel({ ...editWheel, isPublic: v })}
+              />
               {editWheel.isPublic && (() => {
                 // The link is live only once isPublic is persisted; if it was just
                 // toggled on this session, say so instead of implying it already works.
@@ -918,34 +963,38 @@ export default function WheelSelector({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">{t("settings.rules.fairness")}</Label>
-                <Switch disabled={!canEdit} checked={editWheel.fairnessMode} onCheckedChange={(v) => setEditWheel({ ...editWheel, fairnessMode: v })} />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-muted-foreground">{t("settings.rules.rotate")}</Label>
-                <Switch disabled={!canEdit} checked={editWheel.rotateCuisines} onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })} />
-              </div>
+              <SwitchRow
+                id="settings-fairness"
+                label={t("settings.rules.fairness")}
+                description={t("settings.create.fairnessDesc")}
+                disabled={!canEdit}
+                checked={editWheel.fairnessMode}
+                onCheckedChange={(v) => setEditWheel({ ...editWheel, fairnessMode: v })}
+              />
+              <SwitchRow
+                id="settings-rotate"
+                label={t("settings.rules.rotate")}
+                description={t("settings.create.rotateDesc")}
+                disabled={!canEdit}
+                checked={editWheel.rotateCuisines}
+                onCheckedChange={(v) => setEditWheel({ ...editWheel, rotateCuisines: v })}
+              />
 
               <SettingsSection>{t("settings.section.distance")}</SettingsSection>
               {/* Distance mode — its origin (paste a link / geolocate) is resolved
                   into local state here and only actually persisted by the single
                   save button below, together with everything else in this dialog. */}
               <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm text-muted-foreground">{t("settings.distance.mode")}</Label>
-                  <Switch
-                    disabled={!canEdit}
-                    checked={editWheel.distanceEnabled}
-                    onCheckedChange={(v) => setEditWheel({ ...editWheel, distanceEnabled: v })}
-                  />
-                </div>
+                <SwitchRow
+                  id="settings-distance"
+                  label={t("settings.distance.mode")}
+                  description={`${t("settings.distance.desc")}${editWheel.isShared ? ` ${t("settings.distance.sharedDesc")}` : ""}`}
+                  disabled={!canEdit}
+                  checked={editWheel.distanceEnabled}
+                  onCheckedChange={(v) => setEditWheel({ ...editWheel, distanceEnabled: v })}
+                />
                 {editWheel.distanceEnabled && (
                   <>
-                    <p className="-mt-1 type-meta text-muted-foreground">
-                      {t("settings.distance.desc")}
-                      {editWheel.isShared ? ` ${t("settings.distance.sharedDesc")}` : ""}
-                    </p>
                     {editingOrigin && canEdit && (
                       <>
                         <Input

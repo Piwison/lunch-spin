@@ -560,14 +560,14 @@ export default function WheelApp() {
   }, [params.wheelId, selectedWheelId, copyPending, bootstrapQuery.data?.wheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
-  // can launch it (sample vs blank). Ref keeps the callback identity stable.
+  // can launch it. Ref keeps the callback identity stable.
   // Relies on WheelSelector rendering (and registering) before the first-run card
   // becomes interactive — it's an always-mounted sibling above the tab content, so
   // the ref is populated by the time a button can be clicked. Keep that ordering if
   // WheelSelector ever becomes conditionally rendered.
-  const createOpenerRef = useRef<((withStarter: boolean) => void) | null>(null);
+  const createOpenerRef = useRef<(() => void) | null>(null);
   const registerCreateOpener = useCallback(
-    (open: (withStarter: boolean) => void) => {
+    (open: () => void) => {
       createOpenerRef.current = open;
     },
     [],
@@ -1414,7 +1414,7 @@ export default function WheelApp() {
                     setActiveTab("wheel");
                     navigate(`/app/${wheelId}`, { replace: true });
                   }}
-                  onManualCreate={() => createOpenerRef.current?.(false)}
+                  onManualCreate={() => createOpenerRef.current?.()}
                 />
               ) : (
                 /* Empty state — has wheels, none selected */

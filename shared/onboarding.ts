@@ -30,10 +30,6 @@ export function isFirstRun(wheelCount: number): boolean {
   return wheelCount === 0;
 }
 
-// Note: the "start from a sample" contents reuse the existing, tested
-// `STARTER_RESTAURANTS` (shared/starter.ts) via the create dialog's starter-pack
-// option — we do NOT define a second sample list here.
-
 // ── First-run wheel building (Locate → Pick → Spin) ─────────────────────────
 
 /**
