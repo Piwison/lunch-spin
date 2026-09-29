@@ -513,7 +513,8 @@ export const appRouter = router({
           source.fairnessMode,
           source.rotateCuisines,
         );
-        if (source.distanceEnabled && source.originLat != null && source.originLng != null) {
+        const sameOrigin = source.distanceEnabled && source.originLat != null && source.originLng != null;
+        if (sameOrigin) {
           await setWheelOrigin(newId, {
             distanceEnabled: true,
             originLat: Number(source.originLat),
@@ -527,7 +528,7 @@ export const appRouter = router({
         // key — nothing in this schema is — so deleting either wheel leaves the
         // other intact and the count simply stops finding it.
         await updateWheel(newId, { sourceWheelId: input.id });
-        const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
+        const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id, { copyWalkSeconds: sameOrigin });
         return { id: newId, name, restaurants: copied };
       }),
 

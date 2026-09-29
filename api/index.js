@@ -679,7 +679,7 @@ async function addProviderRestaurants(wheelId, addedBy, rows) {
     return id == null ? [] : [{ id, placeId: r.place.placeId }];
   });
 }
-async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy) {
+async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy, opts = {}) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const source = await db.select().from(restaurants).where(eq(restaurants.wheelId, fromWheelId));
@@ -702,7 +702,10 @@ async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy) {
       openHours: r.openHours,
       hoursUpdatedAt: r.hoursUpdatedAt,
       utcOffsetMinutes: r.utcOffsetMinutes,
-      source: r.source
+      googleRating: r.googleRating,
+      googleRatingCount: r.googleRatingCount,
+      source: r.source,
+      walkSeconds: opts.copyWalkSeconds ? r.walkSeconds : null
     }))
   );
   const inserted = await db.select({ id: restaurants.id }).from(restaurants).where(eq(restaurants.wheelId, toWheelId)).orderBy(restaurants.id);
@@ -2949,7 +2952,8 @@ var appRouter = router({
         source.fairnessMode,
         source.rotateCuisines
       );
-      if (source.distanceEnabled && source.originLat != null && source.originLng != null) {
+      const sameOrigin = source.distanceEnabled && source.originLat != null && source.originLng != null;
+      if (sameOrigin) {
         await setWheelOrigin(newId, {
           distanceEnabled: true,
           originLat: Number(source.originLat),
@@ -2958,7 +2962,7 @@ var appRouter = router({
         });
       }
       await updateWheel(newId, { sourceWheelId: input.id });
-      const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
+      const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id, { copyWalkSeconds: sameOrigin });
       return { id: newId, name, restaurants: copied };
     }),
     // "12 teams started from this wheel" — social proof for the owner, and the

@@ -585,9 +585,10 @@ export async function addProviderRestaurants(
  * staleness window instead of looking brand-new and triggering a fresh round of
  * Place Details calls for restaurants we already have hours for.
  *
- * walkSeconds is deliberately NOT copied: it is measured from the *source*
- * wheel's origin, and the copy's origin is set independently. Leaving it null
- * lets the caller recompute against the right point.
+ * walkSeconds is measured from the source wheel's origin, so it is only valid
+ * on a copy that starts from the same point: pass `copyWalkSeconds` when the
+ * caller copied that origin too, and the copy keeps every walk time without a
+ * Distance Matrix call. Otherwise it stays null, as on any wheel with no origin.
  *
  * Four round trips regardless of size (read rows, read their tags, insert rows,
  * insert tags), same reasoning as addProviderRestaurants.
@@ -596,6 +597,7 @@ export async function copyWheelRestaurants(
   fromWheelId: number,
   toWheelId: number,
   addedBy: number,
+  opts: { copyWalkSeconds?: boolean } = {},
 ): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -625,7 +627,10 @@ export async function copyWheelRestaurants(
       openHours: r.openHours,
       hoursUpdatedAt: r.hoursUpdatedAt,
       utcOffsetMinutes: r.utcOffsetMinutes,
+      googleRating: r.googleRating,
+      googleRatingCount: r.googleRatingCount,
       source: r.source,
+      walkSeconds: opts.copyWalkSeconds ? r.walkSeconds : null,
     })),
   );
 
