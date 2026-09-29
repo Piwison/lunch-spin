@@ -871,6 +871,25 @@ export default function WheelApp() {
     }
   };
 
+  /**
+   * First run ends in a spin (plan C4): "Spin these 8" builds the wheel and
+   * spins it, with no second tap on a Spin button. The wheel id is recorded when
+   * OnboardingFlow reports the wheel created; the spin waits until that wheel's
+   * own list has loaded and nothing else is on screen, then fires once.
+   * One ref, cleared before firing, so a re-render or a later wheel switch can
+   * never spin again (failure modes 14, 51).
+   */
+  const autoSpinFor = useRef<number | null>(null);
+  useEffect(() => {
+    const id = autoSpinFor.current;
+    if (id == null || selectedWheelId !== id) return;
+    if (restaurantsLoading || !restaurants || wheelSegments.length === 0) return;
+    if (isSpinning || showResult || createSpin.isPending) return;
+    autoSpinFor.current = null;
+    void handleSpin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWheelId, restaurantsLoading, restaurants, wheelSegments.length, isSpinning, showResult]);
+
   /** Play a teammate's spin on this wheel, landing where theirs did. The server
    *  decided it already — this only animates; spins.create is never called. */
   const startReplay = (r: { restaurantId: number; name: string; by: string }) => {
@@ -1310,6 +1329,7 @@ export default function WheelApp() {
                    to share their location falls through to that same dialog. */
                 <OnboardingFlow
                   onCreated={(wheelId) => {
+                    autoSpinFor.current = wheelId;
                     utils.wheels.list.invalidate();
                     utils.wheels.bootstrap.invalidate();
                     setSelectedWheelId(wheelId);
