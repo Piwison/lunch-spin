@@ -53,6 +53,7 @@ import PlaceCard, { placeMapUrl } from "@/components/onboarding/PlaceCard";
 import { MAX_SEGMENTS, MIN_SEGMENTS } from "@shared/nearby";
 import { MIN_SPINNABLE, canStartSpinning } from "@shared/onboarding";
 import { DEMO_DRAFT_KEY, parseDemoDraft } from "@shared/demoDraft";
+import { bestNameMatch } from "@shared/nameMatch";
 import {
   CANDIDATE_POOL,
   arrivalTicks,
@@ -144,6 +145,10 @@ export default function OnboardingFlow({
     }
   });
   const [typedOn, setTypedOn] = useState<Set<string>>(() => new Set(typed));
+  // Typed names that turned out to be a place in the nearby list (shared/
+  // nameMatch): typed name → that place's id. A matched name is represented by
+  // the real listing — location, hours, walk time — not sent as a bare name.
+  const [matched, setMatched] = useState<Record<string, string>>({});
 
   const miniWheelRef = useRef<HTMLDivElement>(null);
   const revealTimer = useRef<number | null>(null);
@@ -180,7 +185,7 @@ export default function OnboardingFlow({
     [selection, known]
   );
   const lifts = useMemo(() => relaxations(rows, filters), [rows, filters]);
-  const typedOnWheel = typed.filter(n => typedOn.has(n));
+  const typedOnWheel = typed.filter(n => typedOn.has(n) && !(n in matched));
   // The wheel is the visible ticked nearby places PLUS the typed ones; every
   // count on screen (button, mini wheel, cap) is this one number.
   const total = wheel.length + typedOnWheel.length;
@@ -205,9 +210,29 @@ export default function OnboardingFlow({
     search.mutate(baseInput(at), {
       onSuccess: data => {
         const fresh = toPool(data);
-        const preset = arrivalTicks(
-          filterCandidates(fresh.rows, {}).visible,
-          typedOnWheel.length
+        // A name typed on the landing page that is really one of these places
+        // ticks that place instead of riding along as a second, location-less
+        // copy of it (P1-F).
+        const matches: Record<string, string> = {};
+        for (const name of typed) {
+          const hit = bestNameMatch(name, fresh.rows);
+          if (hit) matches[name] = hit.placeId;
+        }
+        setMatched(matches);
+        const matchedTicks = typed
+          .filter(n => typedOn.has(n) && n in matches)
+          .map(n => matches[n]);
+        const unmatchedOn = typed.filter(n => typedOn.has(n) && !(n in matches)).length;
+        // Array.from, not a Set spread: the client compiles to a pre-ES2015
+        // target where spreading a Set is TS2802.
+        const preset = Array.from(
+          new Set([
+            ...matchedTicks,
+            ...arrivalTicks(
+              filterCandidates(fresh.rows, {}).visible.filter(r => !matchedTicks.includes(r.placeId)),
+              unmatchedOn + matchedTicks.length
+            ),
+          ])
         );
         setPools({ "": fresh });
         setQuery("");
@@ -632,6 +657,21 @@ export default function OnboardingFlow({
                   </span>
                 </div>
                 {typed.map((name, i) => {
+                  const placeId = matched[name];
+                  if (placeId) {
+                    const on = selected.has(placeId);
+                    return (
+                      <TypedCard
+                        key={`typed:${name}`}
+                        name={name}
+                        matchedTo={known.get(placeId)?.name}
+                        on={on}
+                        dimmed={atCap && !on}
+                        index={i}
+                        onToggle={() => toggle(placeId)}
+                      />
+                    );
+                  }
                   const on = typedOn.has(name);
                   return (
                     <TypedCard
@@ -1186,12 +1226,15 @@ function OutlineButton({
  */
 function TypedCard({
   name,
+  matchedTo,
   on,
   dimmed,
   index,
   onToggle,
 }: {
   name: string;
+  /** The Google listing this typed name was matched to, if any. */
+  matchedTo?: string;
   on: boolean;
   dimmed: boolean;
   index: number;
@@ -1271,7 +1314,7 @@ function TypedCard({
               color: "var(--body-warm)",
             }}
           >
-            {t("onb.typed.meta")}
+            {matchedTo ? t("onb.typed.matched", { name: matchedTo }) : t("onb.typed.meta")}
           </span>
         </span>
       </button>
