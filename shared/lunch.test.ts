@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifySpins, endOfTaipeiDay, lunchStats, promptableLunch, startOfTaipeiDay, taipeiClock, taipeiDayIndex, todaysLunches, type SpinFacts } from "./lunch";
+import { classifySpins, endOfTaipeiDay, lunchDiary, lunchStats, mondayWeek, promptableLunch, startOfTaipeiDay, taipeiClock, taipeiDayIndex, todaysLunches, weeksSpanned, type SpinFacts } from "./lunch";
 
 const AMY = 1;
 const BEN = 2;
@@ -232,5 +232,35 @@ describe("promptableLunch — the one lunch worth asking about", () => {
     const older = spin(10, AMY, taipei("12:10", "2026-09-22"));
     const newer = spin(11, BEN, taipei("12:10", "2026-09-23"));
     expect(promptableLunch([older, newer], now, none)?.id).toBe(newer.id);
+  });
+});
+
+describe("lunchDiary — History's days", () => {
+  it("groups by Taipei day, newest day first, with respun and skipped apart", () => {
+    const d1a = spin(11, BEN, taipei("11:51", "2026-09-15")); // respun
+    const d1b = spin(1, BEN, taipei("11:51", "2026-09-15")); // respun
+    const d1c = spin(4, BEN, taipei("11:52", "2026-09-15"), { accepted: true }); // lunch
+    const d2 = spin(3, AMY, taipei("11:50", "2026-09-16"), { accepted: true });
+    const d2s = spin(9, AMY, taipei("11:55", "2026-09-16"), { skipped: true });
+    const days = lunchDiary([d1a, d1b, d1c, d2, d2s]);
+    expect(days.map((d) => d.day)).toEqual([taipeiDayIndex(d2.spunAt), taipeiDayIndex(d1a.spunAt)]);
+    expect(days[1].lunches.map((r) => r.id)).toEqual([d1c.id]);
+    expect(days[1].respun.map((r) => r.id)).toEqual([d1a.id, d1b.id]);
+    expect(days[0].skipped.map((r) => r.id)).toEqual([d2s.id]);
+  });
+
+  it("marks where a new Monday-to-Sunday week starts", () => {
+    const fri = taipeiDayIndex(taipei("12:00", "2026-09-18"));
+    const mon = taipeiDayIndex(taipei("12:00", "2026-09-21"));
+    const tue = taipeiDayIndex(taipei("12:00", "2026-09-22"));
+    expect(mondayWeek(mon)).toBe(mondayWeek(tue));
+    expect(mondayWeek(fri)).toBe(mondayWeek(mon) - 1);
+  });
+
+  it("counts the span in weeks: 9/03 to 9/23 is three", () => {
+    const first = taipeiDayIndex(taipei("12:00", "2026-09-03"));
+    const last = taipeiDayIndex(taipei("12:00", "2026-09-23"));
+    expect(weeksSpanned(first, last)).toBe(3);
+    expect(weeksSpanned(last, last)).toBe(1);
   });
 });

@@ -21,28 +21,6 @@ export function statsFromLunches(rests: { id: number; name: string }[], lunches:
   });
 }
 
-/** Most-picked first; ties broken by most-recently picked. */
-export function rankStats(stats: RestaurantStat[]): RestaurantStat[] {
-  return [...stats].sort((a, b) => {
-    if (b.pickCount !== a.pickCount) return b.pickCount - a.pickCount;
-    const at = a.lastPickedAt?.getTime() ?? 0;
-    const bt = b.lastPickedAt?.getTime() ?? 0;
-    return bt - at;
-  });
-}
-
-export function topRestaurants(stats: RestaurantStat[], n = 5): RestaurantStat[] {
-  return rankStats(stats).slice(0, n);
-}
-
-export function totalPicks(stats: RestaurantStat[]): number {
-  return stats.reduce((sum, r) => sum + r.pickCount, 0);
-}
-
-export function averagePicks(stats: RestaurantStat[]): number {
-  return stats.length > 0 ? totalPicks(stats) / stats.length : 0;
-}
-
 /** Whole days since a restaurant was last picked; null if it never has been.
  *  Never negative: a viewer whose clock runs a little behind the server's would
  *  otherwise see "-1d". */
@@ -80,24 +58,4 @@ export function overdueRestaurants(
     if (b.daysSince === null) return 1;
     return b.daysSince - a.daysSince; // longest-overdue first
   });
-}
-
-export interface PersonPicks {
-  userId: number;
-  name: string | null;
-  count: number;
-}
-
-/**
- * Group fairness: how many spins each member has driven. Most-active first.
- * A lopsided list is the signal that one person is always deciding.
- */
-export function picksByPerson(history: { spunBy: number; spunByName: string | null }[]): PersonPicks[] {
-  const byUser = new Map<number, PersonPicks>();
-  for (const h of history) {
-    const cur = byUser.get(h.spunBy);
-    if (cur) cur.count++;
-    else byUser.set(h.spunBy, { userId: h.spunBy, name: h.spunByName, count: 1 });
-  }
-  return Array.from(byUser.values()).sort((a, b) => b.count - a.count);
 }

@@ -1724,9 +1724,6 @@ export default function WheelApp() {
                   <HistoryTab
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
-                    isShared={isShared}
-                    exclusionDays={wheelData?.exclusionDays}
-                    currentUserId={user.id}
                     onGoToWheel={() => setActiveTab("wheel")}
                   />
                 )}

@@ -37,6 +37,7 @@ import {
   getRoundMarks,
   pingPresence,
   toggleRoundMark,
+  placeRoundMark,
 } from "./db";
 import {
   addRestaurant,
@@ -1496,11 +1497,14 @@ export const appRouter = router({
       }),
 
     vote: protectedProcedure
-      .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
+      // `on: true` only ever adds the vote (History's "due for a comeback"); the
+      // round panel omits it and toggles.
+      .input(z.object({ wheelId: z.number(), restaurantId: z.number(), on: z.literal(true).optional() }))
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+        if (input.on) await placeRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+        else await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
         return { success: true };
       }),
 

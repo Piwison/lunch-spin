@@ -143,3 +143,37 @@ export function promptableLunch<T extends SpinFacts>(
   }
   return best;
 }
+
+export interface DiaryDay<T> {
+  /** Taipei day index (taipeiDayIndex). */
+  day: number;
+  lunches: T[];
+  respun: T[];
+  skipped: T[];
+}
+
+/** History as a diary: one entry per Taipei day that had any spin, newest day
+ *  first, each day's spins oldest first and split by kind. */
+export function lunchDiary<T extends SpinFacts>(rows: readonly T[]): DiaryDay<T>[] {
+  const kinds = classifySpins(rows);
+  const byDay = new Map<number, DiaryDay<T>>();
+  for (const r of [...rows].sort(bySpinOrder)) {
+    const day = taipeiDayIndex(r.spunAt);
+    let d = byDay.get(day);
+    if (!d) byDay.set(day, (d = { day, lunches: [], respun: [], skipped: [] }));
+    const kind = kinds.get(r.id);
+    (kind === "lunch" ? d.lunches : kind === "respun" ? d.respun : d.skipped).push(r);
+  }
+  return Array.from(byDay.values()).sort((a, b) => b.day - a.day);
+}
+
+/** Which Monday-to-Sunday week a Taipei day falls in. Day 0 (1970-01-01) was a
+ *  Thursday, so +3 puts Mondays on the week boundary. */
+export function mondayWeek(day: number): number {
+  return Math.floor((day + 3) / 7);
+}
+
+/** A span of days as whole weeks, rounded up: 21 days is three, one day is one. */
+export function weeksSpanned(firstDay: number, lastDay: number): number {
+  return Math.max(1, Math.ceil((lastDay - firstDay + 1) / 7));
+}

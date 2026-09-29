@@ -1000,6 +1000,19 @@ export async function getActivePresence(wheelId: number, cutoff: Date) {
     .where(and(eq(wheelPresence.wheelId, wheelId), gte(wheelPresence.lastSeen, cutoff)));
 }
 
+/** Make sure this person's mark is ON (placed now), without the toggle's risk
+ *  of taking it back — for one-tap actions like "vote for it today" from
+ *  History, where a second tap must not withdraw the vote. */
+export async function placeRoundMark(wheelId: number, kind: MarkKind, refId: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db
+    .insert(roundMarks)
+    .values({ wheelId, kind, refId, userId, createdAt: now })
+    .onDuplicateKeyUpdate({ set: { createdAt: now } });
+}
+
 /** Toggle one round mark (veto/vote on a restaurant, or dietary on a tag). */
 export async function toggleRoundMark(wheelId: number, kind: MarkKind, refId: number, userId: number): Promise<void> {
   const db = await getDb();

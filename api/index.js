@@ -925,6 +925,12 @@ async function getActivePresence(wheelId, cutoff) {
   if (!db) return [];
   return db.select({ userId: wheelPresence.userId, name: wheelPresence.name, lastSeen: wheelPresence.lastSeen }).from(wheelPresence).where(and(eq(wheelPresence.wheelId, wheelId), gte(wheelPresence.lastSeen, cutoff)));
 }
+async function placeRoundMark(wheelId, kind, refId, userId) {
+  const db = await getDb();
+  if (!db) return;
+  const now = /* @__PURE__ */ new Date();
+  await db.insert(roundMarks).values({ wheelId, kind, refId, userId, createdAt: now }).onDuplicateKeyUpdate({ set: { createdAt: now } });
+}
 async function toggleRoundMark(wheelId, kind, refId, userId) {
   const db = await getDb();
   if (!db) return;
@@ -3813,10 +3819,11 @@ var appRouter = router({
       await toggleRoundMark(input.wheelId, "veto", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
-    vote: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
+    vote: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number(), on: z2.literal(true).optional() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+      if (input.on) await placeRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+      else await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
     dietary: protectedProcedure.input(z2.object({ wheelId: z2.number(), tagId: z2.number() })).mutation(async ({ ctx, input }) => {

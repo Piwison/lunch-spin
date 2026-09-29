@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  averagePicks,
   daysSinceLastPick,
   overdueRestaurants,
-  picksByPerson,
-  rankStats,
   statsFromLunches,
   type RestaurantStat,
-  topRestaurants,
-  totalPicks,
 } from "./stats";
 
 const d = (s: string) => new Date(s);
@@ -38,36 +33,6 @@ describe("statsFromLunches", () => {
       { id: 1, name: "A", pickCount: 2, lastPickedAt: d("2026-06-08") },
       { id: 2, name: "B", pickCount: 0, lastPickedAt: null },
     ]);
-  });
-});
-
-describe("rankStats", () => {
-  it("sorts by pick count desc, breaking ties by most recent pick", () => {
-    const ranked = rankStats(sample).map((r) => r.id);
-    expect(ranked).toEqual([3, 2, 1, 4]);
-  });
-
-  it("does not mutate the input", () => {
-    const copy = [...sample];
-    rankStats(sample);
-    expect(sample).toEqual(copy);
-  });
-});
-
-describe("topRestaurants", () => {
-  it("returns the n highest-ranked", () => {
-    expect(topRestaurants(sample, 2).map((r) => r.id)).toEqual([3, 2]);
-  });
-});
-
-describe("aggregates", () => {
-  it("totals and averages pick counts", () => {
-    expect(totalPicks(sample)).toBe(23);
-    expect(averagePicks(sample)).toBeCloseTo(5.75);
-  });
-
-  it("averages to 0 for an empty list", () => {
-    expect(averagePicks([])).toBe(0);
   });
 });
 
@@ -107,21 +72,3 @@ describe("overdueRestaurants", () => {
   });
 });
 
-describe("picksByPerson", () => {
-  it("tallies spins per member, most-active first", () => {
-    const history = [
-      { spunBy: 1, spunByName: "Alex" },
-      { spunBy: 2, spunByName: "Sam" },
-      { spunBy: 1, spunByName: "Alex" },
-      { spunBy: 1, spunByName: "Alex" },
-    ];
-    expect(picksByPerson(history)).toEqual([
-      { userId: 1, name: "Alex", count: 3 },
-      { userId: 2, name: "Sam", count: 1 },
-    ]);
-  });
-
-  it("returns an empty list for no history", () => {
-    expect(picksByPerson([])).toEqual([]);
-  });
-});
