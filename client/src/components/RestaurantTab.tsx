@@ -3,7 +3,7 @@ import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
 import { useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Check, Tag, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3, Search, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -730,7 +730,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       {/* Restaurant detail sheet — glance chip on the row opens this. Holds the
           team rating, the member's own star control, and (owner) Edit/Delete. */}
       <Drawer open={detailId !== null} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <DrawerContent>
+        {/* No description sentence exists for a place's detail; Radix's
+            documented way to say so is an explicit undefined. */}
+        <DrawerContent aria-describedby={undefined}>
           {(() => {
             const r = (restaurants ?? []).find((x) => x.id === detailId);
             if (!r) return null;
@@ -742,7 +744,11 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               <div className="mx-auto w-full max-w-md px-5 pb-8 pt-1">
                 {/* Detail card title — 17px/600 per the CJK type pass; the old
                     20px display face set Chinese names far heavier than Latin. */}
-                <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
+                {/* The drawer's accessible title (Radix warns, and a screen
+                    reader announces an unnamed dialog, without one). */}
+                <DrawerTitle asChild>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
+                </DrawerTitle>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {r.tags.map((tag) => (
                     <span key={tag.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: tag.color + "18", color: tag.color, border: `1px solid ${tag.color}35`, fontSize: 15, fontWeight: 500 }}>{tagLabel(tag.name, t, tag.category)}</span>

@@ -948,6 +948,29 @@ export default function WheelApp() {
   };
   startReplayRef.current = startReplay;
 
+  /**
+   * One place left: no wheel to spin, just the decision. Still recorded through
+   * spins.create — the server re-validates and picks from a list of one, so the
+   * lunch rule, exclusion and History treat it like any other spin — but the
+   * result comes up without a one-pane wheel pretending to be random.
+   */
+  const handleGoThere = async () => {
+    const only = wheelSegments[0];
+    if (!selectedWheelId || !only || createSpin.isPending || isSpinning) return;
+    setReplay(null);
+    setSpinError(null);
+    try {
+      const { id } = await createSpin.mutateAsync({ wheelId: selectedWheelId, candidateIds: [only.id] });
+      setSpinId(id);
+      setSpinResult(only);
+      setShowResult(true);
+      pendingRestaurantRefresh.current = true;
+    } catch (e) {
+      const code = (e as { data?: { code?: string } | null } | null)?.data?.code;
+      setSpinError(t(code === "BAD_REQUEST" ? "app.block.default" : "app.spin.failed"));
+    }
+  };
+
   const handleReSpin = () => {
     setShowResult(false);
     setSpinResult(null);
@@ -1604,14 +1627,21 @@ export default function WheelApp() {
 
                             {/* A spent or empty Spin goes grey, not pale persimmon —
                                 the same state override GuestWheel's Spin carries. */}
+                            {wheelSegments.length === 1 && !isSpinning && (
+                              <p className="type-meta text-center" style={{ color: "var(--body)" }}>
+                                {t("app.wheel.onlyOne", { name: wheelSegments[0].label })}
+                              </p>
+                            )}
                             <Button
-                              onClick={handleSpin}
+                              onClick={wheelSegments.length === 1 && !isSpinning ? handleGoThere : handleSpin}
                               disabled={spinDisabled}
                               className={cn("w-full", spinDisabled && "bg-none bg-muted text-muted-foreground")}
                             >
                               {isSpinning || createSpin.isPending
                                 ? t("app.wheel.spinning")
-                                : myReplaceable
+                                : wheelSegments.length === 1
+                                  ? t("app.wheel.goThere")
+                                  : myReplaceable
                                   ? t("app.wheel.spinReplace", { name: myReplaceable.name })
                                   : t("app.wheel.spin")}
                             </Button>

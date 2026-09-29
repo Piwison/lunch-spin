@@ -50,12 +50,9 @@ interface WheelSelectorProps {
    */
   registerSettingsOpener?: (open: (wheelId: number) => void) => void;
   /**
-   * Replaces the settings gear in the picker row.
-   *
-   * The Wheel tab puts the filter here instead. Settings is still one tap away
-   * from the switcher sheet's per-wheel ⋮, and the gear is still in this row on
-   * Places and History — but on the Wheel tab the row is prime real estate and
-   * a filter you actually use beats a gear you rarely do.
+   * Sits in the picker row before the settings gear (the Wheel tab's filter).
+   * It used to REPLACE the gear, which left the Wheel tab on a phone as the one
+   * screen with no way into settings short of the switcher sheet's ⋮ (P1-J).
    */
   trailing?: React.ReactNode;
   /**
@@ -668,18 +665,18 @@ export default function WheelSelector({
             rules are things a teammate needs to be able to look up. Everything
             inside is read-only for them (see `canEdit`), and the dialog says so
             at the top. */}
-        {trailing ??
-          (selectedWheel && (
-            <button
-              onClick={() => openSettingsFor(selectedWheel)}
-              aria-label={t("settings.open.aria")}
-              title={isSelectedWheelOwner ? t("settings.open.title") : t("settings.open.viewOnlyTitle")}
-              className="flex-shrink-0 flex items-center justify-center glass-bar text-muted-foreground hover:text-foreground transition-transform active:scale-[var(--press-scale)]"
-              style={{ minHeight: 56, minWidth: 56, borderRadius: "var(--radius-control)" }}
-            >
-              <Settings size={19} />
-            </button>
-          ))}
+        {trailing}
+        {selectedWheel && (
+          <button
+            onClick={() => openSettingsFor(selectedWheel)}
+            aria-label={t("settings.open.aria")}
+            title={isSelectedWheelOwner ? t("settings.open.title") : t("settings.open.viewOnlyTitle")}
+            className="flex-shrink-0 flex items-center justify-center glass-bar text-muted-foreground hover:text-foreground transition-transform active:scale-[var(--press-scale)]"
+            style={{ minHeight: 56, minWidth: 56, borderRadius: "var(--radius-control)" }}
+          >
+            <Settings size={19} />
+          </button>
+        )}
       </div>
 
       {/* Create wheel dialog */}
