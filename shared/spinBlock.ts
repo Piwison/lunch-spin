@@ -1,10 +1,10 @@
 /**
  * Why the wheel has nothing on it — and which single constraint to lift.
  *
- * Seven independent things can empty the wheel: the wheel is genuinely empty,
+ * Eight independent things can empty the wheel: the wheel is genuinely empty,
  * everything was recently spun (excluded), a tag filter, a walk-time limit,
- * closing hours, closing before you could get there, or this round's vetoes
- * and dietary avoids. The Wheel tab used
+ * closing hours, closing before you could get there, today's vetoes, or the
+ * "I don't eat" of someone here today. The Wheel tab used
  * to answer with one fixed sentence — "every restaurant is excluded or vetoed",
  * with "filtered out or" spliced in only when a TAG was set — so a user who had
  * merely set a 5-minute walk limit was told their places were excluded and
@@ -17,8 +17,11 @@
  * and if it comes out empty, re-run it with each stage lifted in turn. The
  * first lift that puts a place back on the wheel is the one worth offering.
  *
- * Order is cheapest-to-undo first, not pipeline order — clearing the round is
- * one tap, and re-enabling an excluded place is a hunt through a collapsed list.
+ * Order is cheapest-to-undo first, not pipeline order — clearing today's votes
+ * is one tap, and re-enabling an excluded place is a hunt through a collapsed
+ * list. Vetoes and "I don't eat" are separate stages because only the first is
+ * cleared by Clear: a person's "I don't eat" is theirs, and a Clear button
+ * offered for it would do nothing.
  */
 
 export interface SpinBlockRestaurant {
@@ -41,15 +44,24 @@ export interface SpinBlockInput {
   /** null = the walk-time limit is off. */
   maxWalkMinutes: number | null;
   vetoedIds: number[];
+  /** Tags someone here today doesn't eat (shared/session `dietaryForPresent`). */
   dietaryTagIds: number[];
 }
 
-export type SpinBlockReason = "none" | "empty" | "round" | "filters" | "closed" | "closingSoon" | "excluded";
+export type SpinBlockReason =
+  | "none"
+  | "empty"
+  | "round"
+  | "filters"
+  | "diet"
+  | "closed"
+  | "closingSoon"
+  | "excluded";
 
 export interface SpinBlock {
   reason: SpinBlockReason;
   /** How many places each stage removed, for copy that can quote a number. */
-  counts: { excluded: number; filtered: number; closed: number; closingSoon: number; round: number };
+  counts: { excluded: number; filtered: number; closed: number; closingSoon: number; round: number; diet: number };
 }
 
 interface Stages {
@@ -58,9 +70,10 @@ interface Stages {
   closed: boolean;
   closingSoon: boolean;
   round: boolean;
+  diet: boolean;
 }
 
-const ALL: Stages = { excluded: true, filters: true, closed: true, closingSoon: true, round: true };
+const ALL: Stages = { excluded: true, filters: true, closed: true, closingSoon: true, round: true, diet: true };
 
 /** The wheel's own pipeline, with any stage switched off. */
 function survivors(input: SpinBlockInput, on: Stages): SpinBlockRestaurant[] {
@@ -78,10 +91,8 @@ function survivors(input: SpinBlockInput, on: Stages): SpinBlockRestaurant[] {
     }
     if (on.closed && r.openStatus === "closed") return false;
     if (on.closingSoon && r.tooLate) return false;
-    if (on.round) {
-      if (vetoed.has(r.id)) return false;
-      if (avoided.size > 0 && r.tags.some((t) => avoided.has(t.id))) return false;
-    }
+    if (on.round && vetoed.has(r.id)) return false;
+    if (on.diet && avoided.size > 0 && r.tags.some((t) => avoided.has(t.id))) return false;
     return true;
   });
 }
@@ -92,12 +103,12 @@ export function diagnoseSpinBlock(input: SpinBlockInput): SpinBlock {
     // What the filters alone remove, counted on the places they could apply to,
     // so a tag filter and a walk limit don't double-count the same place.
     filtered:
-      survivors(input, { ...ALL, filters: false, closed: false, closingSoon: false, round: false }).length -
-      survivors(input, { ...ALL, closed: false, closingSoon: false, round: false }).length,
+      survivors(input, { ...ALL, filters: false, closed: false, closingSoon: false, round: false, diet: false }).length -
+      survivors(input, { ...ALL, closed: false, closingSoon: false, round: false, diet: false }).length,
     closed: input.restaurants.filter((r) => r.openStatus === "closed").length,
     closingSoon: input.restaurants.filter((r) => r.openStatus !== "closed" && r.tooLate).length,
-    round:
-      survivors(input, { ...ALL, round: false }).length - survivors(input, ALL).length,
+    round: survivors(input, { ...ALL, round: false }).length - survivors(input, ALL).length,
+    diet: survivors(input, { ...ALL, diet: false }).length - survivors(input, ALL).length,
   };
 
   if (survivors(input, ALL).length > 0) return { reason: "none", counts };
@@ -107,6 +118,7 @@ export function diagnoseSpinBlock(input: SpinBlockInput): SpinBlock {
   const lifts: [SpinBlockReason, Stages][] = [
     ["round", { ...ALL, round: false }],
     ["filters", { ...ALL, filters: false }],
+    ["diet", { ...ALL, diet: false }],
     ["closed", { ...ALL, closed: false }],
     ["closingSoon", { ...ALL, closingSoon: false }],
     ["excluded", { ...ALL, excluded: false }],
@@ -120,6 +132,7 @@ export function diagnoseSpinBlock(input: SpinBlockInput): SpinBlock {
   const byReason: [SpinBlockReason, number][] = [
     ["round", counts.round],
     ["filters", counts.filtered],
+    ["diet", counts.diet],
     ["closed", counts.closed],
     ["closingSoon", counts.closingSoon],
     ["excluded", counts.excluded],

@@ -99,11 +99,25 @@ describe("diagnoseSpinBlock", () => {
     expect(d.counts.round).toBe(2);
   });
 
-  it("names a dietary avoid as a round mark", () => {
+  // "I don't eat" is a person's standing setting, not today's mark: Clear does
+  // not touch it, so offering Clear for it would be a button that does nothing.
+  it("names someone's 'I don't eat' as its own cause, not the round", () => {
     const d = diagnoseSpinBlock({
       ...base,
       restaurants: [place(1, { tags: [{ id: 7 }] }), place(2, { tags: [{ id: 7 }] })],
       dietaryTagIds: [7],
+    });
+    expect(d.reason).toBe("diet");
+    expect(d.counts.diet).toBe(2);
+    expect(d.counts.round).toBe(0);
+  });
+
+  it("still offers Clear when a veto alone would put a place back", () => {
+    const d = diagnoseSpinBlock({
+      ...base,
+      restaurants: [place(1, { tags: [{ id: 7 }] }), place(2)],
+      dietaryTagIds: [7],
+      vetoedIds: [2],
     });
     expect(d.reason).toBe("round");
   });
@@ -139,6 +153,6 @@ describe("diagnoseSpinBlock", () => {
       ],
       vetoedIds: [3],
     });
-    expect(d.counts).toEqual({ excluded: 1, filtered: 0, closed: 1, closingSoon: 0, round: 1 });
+    expect(d.counts).toEqual({ excluded: 1, filtered: 0, closed: 1, closingSoon: 0, round: 1, diet: 0 });
   });
 });

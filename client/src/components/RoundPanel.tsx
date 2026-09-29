@@ -36,9 +36,13 @@ interface RoundPanelProps {
   currentUserId: number;
   /** Everyone on the wheel, owner included — to put initials on a vote. */
   people: RoundPerson[];
+  /** The viewer's own standing "I don't eat" tags (user_dietary). */
+  myDietary: number[];
   onVote: (restaurantId: number) => void;
   onVeto: (restaurantId: number) => void;
-  onDietary: (tagId: number) => void;
+  /** Add or remove a tag from the viewer's own "I don't eat". */
+  onToggleDietary: (tagId: number) => void;
+  /** Clears today's votes and vetoes — never anyone's "I don't eat". */
   onClear: () => void;
   /** Where "tag places with a cuisine" goes — the Places tab. */
   onAddCuisines?: () => void;
@@ -47,12 +51,14 @@ interface RoundPanelProps {
 }
 
 /**
- * Today's votes: "want it" and "not today" per place, and the cuisines nobody
- * is in the mood for. Both are text buttons at the 44px control height — the
- * old thumb and ban glyphs were 24px pills whose meaning you had to hover for.
- * Only cuisines some place on the wheel actually carries are offered: the full
- * 31-tag catalogue offered "Korean" on wheels with no Korean place, where
- * tapping it did nothing.
+ * Today's votes: "want it" and "not today" per place, which last until the end
+ * of the Taipei day, and each person's standing "I don't eat", which lasts until
+ * they change it and shapes the wheel only on the days they are here
+ * (shared/session `dietaryForPresent`). Votes and vetoes are text buttons at the
+ * 44px control height — the old thumb and ban glyphs were 24px pills whose
+ * meaning you had to hover for. Only tags some place on the wheel carries are
+ * offered: the full 31-tag catalogue offered "Korean" on wheels with no Korean
+ * place, where tapping it did nothing.
  */
 export default function RoundPanel({
   restaurants,
@@ -60,9 +66,10 @@ export default function RoundPanel({
   session,
   currentUserId,
   people,
+  myDietary,
   onVote,
   onVeto,
-  onDietary,
+  onToggleDietary,
   onClear,
   onAddCuisines,
   collapsible = false,
@@ -88,12 +95,28 @@ export default function RoundPanel({
   for (const m of session.dietary) for (const id of m.tagIds) avoidersOf.set(id, [...(avoidersOf.get(id) ?? []), m.userId]);
   const votersOf = new Map(session.votes.filter((m) => m.userIds.length > 0).map((m) => [m.restaurantId, m.userIds]));
   const vetoersOf = new Map(session.vetoes.filter((m) => m.userIds.length > 0).map((m) => [m.restaurantId, m.userIds]));
-  const hasMarks = counts.size > 0 || vetoersOf.size > 0 || avoidedTags.size > 0;
+  // Only what Clear can clear: a standing "I don't eat" is not today's mark.
+  const hasMarks = counts.size > 0 || vetoersOf.size > 0;
 
-  // Cuisines on the wheel today, plus any already avoided (its places left the
-  // list above, and the chip has to stay to be undone).
+  // Tags on the wheel today, plus the viewer's own "I don't eat" tags (their
+  // places have left the wheel, and the chip has to stay to be undone).
+  const mine = new Set(myDietary);
   const onWheel = new Set(restaurants.flatMap((r) => r.tagIds));
-  const cuisineTags = tags.filter((tag) => onWheel.has(tag.id) || avoidedTags.has(tag.id));
+  const cuisineTags = tags.filter((tag) => onWheel.has(tag.id) || mine.has(tag.id));
+  // Teammates here today whose "I don't eat" is shaping the wheel, and by how
+  // much — so a missing Korean place is explained by a name, not a mystery.
+  const tagName = (id: number) => {
+    const tag = tags.find((x) => x.id === id);
+    return tag ? tagLabel(tag.name, t, tag.category) : null;
+  };
+  const teammates = session.dietary
+    .filter((m) => m.userId !== currentUserId && m.tagIds.length > 0)
+    .map((m) => ({
+      userId: m.userId,
+      names: m.tagIds.map(tagName).filter((n): n is string => !!n),
+      fewer: restaurants.filter((r) => r.tagIds.some((id) => m.tagIds.includes(id))).length,
+    }))
+    .filter((m) => m.names.length > 0);
 
   // Most-voted first, then alphabetical, so the group's lean is visible at a glance.
   const ordered = [...restaurants].sort((a, b) => {
@@ -135,33 +158,34 @@ export default function RoundPanel({
         )}
       </div>
 
-      {/* Cuisines nobody is in the mood for today. */}
+      {/* My standing "I don't eat" — a personal setting, not today's mark. */}
       {showBody &&
         (cuisineTags.length > 0 ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="type-meta text-muted-foreground flex items-center gap-1">
-              <Salad size={13} /> {t("wheel.round.avoid")}
-            </span>
-            {cuisineTags.map((tag) => {
-              const avoiders = avoidersOf.get(tag.id) ?? [];
-              const mine = avoiders.includes(currentUserId);
-              const others = avoiders.filter((id) => id !== currentUserId);
-              return (
-                <Chip
-                  key={tag.id}
-                  pressed={mine}
-                  onClick={() => onDietary(tag.id)}
-                  title={mine ? t("wheel.round.allow") : t("wheel.round.avoidTitle")}
-                >
-                  {tagLabel(tag.name, t, tag.category)}
-                  {others.length > 0 && (
-                    <span className="type-meta" aria-label={t("wheel.round.by", { names: others.map(fullName).join(t("wheel.round.listSep")) })}>
-                      {others.map(monogram).join(" ")}
-                    </span>
-                  )}
-                </Chip>
-              );
-            })}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="type-meta text-muted-foreground flex items-center gap-1">
+                <Salad size={13} /> {t("wheel.round.avoid")}
+              </span>
+              {cuisineTags.map((tag) => {
+                const on = mine.has(tag.id);
+                return (
+                  <Chip
+                    key={tag.id}
+                    pressed={on}
+                    onClick={() => onToggleDietary(tag.id)}
+                    title={on ? t("wheel.round.allow") : t("wheel.round.avoidTitle")}
+                  >
+                    {tagLabel(tag.name, t, tag.category)}
+                  </Chip>
+                );
+              })}
+            </div>
+            {teammates.map((m) => (
+              <p key={m.userId} className="type-meta" style={{ color: "var(--body)" }}>
+                {t("wheel.round.theyAvoid", { name: fullName(m.userId), tags: m.names.join(t("wheel.round.listSep")) })}
+                {m.fewer > 0 && ` → ${t(m.fewer === 1 ? "wheel.round.fewer.one" : "wheel.round.fewer.other", { n: m.fewer })}`}
+              </p>
+            ))}
           </div>
         ) : (
           onAddCuisines && (
@@ -179,9 +203,11 @@ export default function RoundPanel({
             const isVetoed = vetoers.length > 0;
             const iVetoed = vetoers.includes(currentUserId);
             const iVoted = voters.includes(currentUserId);
-            // Off the wheel because nobody's in the mood for its cuisine — say
-            // which, or the row looks spinnable while the wheel lacks it.
+            // Off the wheel because someone here doesn't eat what it serves —
+            // say who and what, or the row looks spinnable while the wheel
+            // lacks it.
             const skippedCuisine = tags.find((tag) => avoidedTags.has(tag.id) && r.tagIds.includes(tag.id));
+            const skippedBy = skippedCuisine ? (avoidersOf.get(skippedCuisine.id) ?? []) : [];
             const isOff = isVetoed || !!skippedCuisine;
             return (
               <div
@@ -199,7 +225,10 @@ export default function RoundPanel({
                   </p>
                   {skippedCuisine && (
                     <p className="type-meta" style={{ color: "var(--body)" }}>
-                      {t("wheel.round.offByCuisine", { name: tagLabel(skippedCuisine.name, t, skippedCuisine.category) })}
+                      {t("wheel.round.offByDiet", {
+                        who: skippedBy.map(fullName).join(t("wheel.round.listSep")),
+                        name: tagLabel(skippedCuisine.name, t, skippedCuisine.category),
+                      })}
                     </p>
                   )}
                   {(voters.length > 0 || vetoers.length > 0) && (

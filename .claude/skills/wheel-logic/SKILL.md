@@ -39,14 +39,22 @@ product's core. These rules are subtle and easy to break. Source of truth:
 4. **The server picks the winner — never the client.** `spins.create` receives
    `candidateIds` (a proposal) and re-validates server-side against: on-wheel,
    not excluded, not vetoed, not dietary-blocked. Empty eligible set → throw.
-5. **Vetoes, votes, and dietary filters are read from the round's server-side
-   marks** (`round_marks`, via `server/db.ts`), never trusted from the client payload.
+5. **Vetoes, votes and "I don't eat" are read server-side, never trusted from the
+   client payload.** Votes and vetoes come from `round_marks` and count only on
+   the Taipei day they were made (`isActiveMark`, `buildSessionState(rows, now)`
+   in `shared/realtimeState.ts`); an expired row is re-marked, not deleted.
+   "I don't eat" is a personal setting in `user_dietary`, applied for everyone
+   who opened the wheel today plus the spinner (`getPresentDietary`, one JOIN,
+   filtered by `dietaryForPresent` in `shared/session.ts`). Legacy
+   `kind = 'dietary'` rows in `round_marks` are no longer read.
 6. **Weighting only applies when `fairnessMode || rotateCuisines || hasVotes ||
    hasRatings`;** otherwise it's uniform `pickWinner`. Compose in this order:
    `computeWeights` (or a uniform base) → `applyCuisineRotation` →
    `applyStarWeights` → `applyVoteWeights` → `pickWeighted`.
-7. **Votes clear after each spin** (`clearVotes`); vetoes/dietary persist for the
-   round until `clearSession`.
+7. **Votes clear after each spin** (`clearRoundVotes`); vetoes last until the end
+   of the Taipei day or Clear (`session.clear` → `clearRoundMarks`, votes and
+   vetoes only). Nobody's "I don't eat" is ever cleared by someone else — only
+   its owner changes it (`me.setDietary`).
 
 ## TDD seam
 

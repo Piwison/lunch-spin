@@ -17,7 +17,7 @@ import {
   wheelPresence,
   wheels,
 } from "../drizzle/schema";
-import type { MarkKind, RoundMarkRow } from "@shared/realtimeState";
+import { isActiveMark, type MarkKind, type RoundMarkRow } from "@shared/realtimeState";
 import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
 import { statsFromLunches, type RestaurantStat } from "@shared/stats";
@@ -1086,7 +1086,12 @@ export async function placeRoundMark(wheelId: number, kind: MarkKind, refId: num
     .onDuplicateKeyUpdate({ set: { createdAt: now } });
 }
 
-/** Toggle one round mark (veto/vote on a restaurant, or dietary on a tag). */
+/**
+ * Toggle one vote or veto. A mark only counts on the Taipei day it was made
+ * (shared/realtimeState `isActiveMark`), so a row found from an EARLIER day is
+ * not "on": it is re-marked for today (createdAt → now), not deleted. Deleting
+ * it would make "Not today" look like it did nothing.
+ */
 export async function toggleRoundMark(wheelId: number, kind: MarkKind, refId: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -1096,26 +1101,81 @@ export async function toggleRoundMark(wheelId: number, kind: MarkKind, refId: nu
     eq(roundMarks.refId, refId),
     eq(roundMarks.userId, userId),
   );
-  const existing = await db.select({ userId: roundMarks.userId }).from(roundMarks).where(where).limit(1);
-  if (existing.length > 0) {
+  const now = new Date();
+  const existing = await db.select({ createdAt: roundMarks.createdAt }).from(roundMarks).where(where).limit(1);
+  if (existing.length > 0 && isActiveMark(existing[0], now)) {
     await db.delete(roundMarks).where(where);
   } else {
-    // Idempotent insert so a concurrent double-toggle can't crash on the PK.
+    // Insert, or refresh an expired row. Idempotent so a concurrent double
+    // toggle can't crash on the PK.
     await db
       .insert(roundMarks)
-      .values({ wheelId, kind, refId, userId })
-      .onDuplicateKeyUpdate({ set: { userId } });
+      .values({ wheelId, kind, refId, userId, createdAt: now })
+      .onDuplicateKeyUpdate({ set: { createdAt: now } });
   }
 }
 
-/** All round marks for a wheel (shape consumed by buildSessionState). */
+/** A wheel's votes and vetoes from the last 48 hours — enough to cover "today"
+ *  in Taipei from any server clock; buildSessionState keeps only today's.
+ *  Older rows are left in place, not deleted. */
 export async function getRoundMarks(wheelId: number): Promise<RoundMarkRow[]> {
   const db = await getDb();
   if (!db) return [];
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
   return db
-    .select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId })
+    .select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId, createdAt: roundMarks.createdAt })
     .from(roundMarks)
-    .where(eq(roundMarks.wheelId, wheelId));
+    .where(and(eq(roundMarks.wheelId, wheelId), gte(roundMarks.createdAt, since), inArray(roundMarks.kind, ["veto", "vote"])));
+}
+
+/** This person's standing "I don't eat" tags. */
+export async function getUserDietary(userId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ tagId: userDietary.tagId }).from(userDietary).where(eq(userDietary.userId, userId));
+  return rows.map((r) => r.tagId);
+}
+
+/** Replace this person's "I don't eat" tags with exactly `tagIds`. */
+export async function setUserDietary(userId: number, tagIds: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const unique = Array.from(new Set(tagIds));
+  await db.delete(userDietary).where(
+    unique.length > 0
+      ? and(eq(userDietary.userId, userId), sql`${userDietary.tagId} NOT IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})`)
+      : eq(userDietary.userId, userId),
+  );
+  if (unique.length > 0) {
+    await db
+      .insert(userDietary)
+      .values(unique.map((tagId) => ({ userId, tagId })))
+      .onDuplicateKeyUpdate({ set: { tagId: sql`${userDietary.tagId}` } });
+  }
+}
+
+/**
+ * Everyone's "I don't eat" rows that could apply to a spin on this wheel today,
+ * in ONE query: each row says whether its person has opened the wheel since
+ * `since` (the start of the Taipei day). `spinnerId`'s rows come back whether
+ * or not they have a presence row. Filtered by shared/session
+ * `dietaryForPresent` — deliberately not "who is here, then what do they
+ * avoid", which is a second round trip on the spin path (failure mode 52).
+ */
+export async function getPresentDietary(wheelId: number, since: Date, spinnerId: number | null) {
+  const db = await getDb();
+  if (!db) return { prefs: [] as { userId: number; tagId: number }[], presentUserIds: [] as number[] };
+  const here = gte(wheelPresence.lastSeen, since);
+  const rows = await db
+    .select({ userId: userDietary.userId, tagId: userDietary.tagId, lastSeen: wheelPresence.lastSeen })
+    .from(userDietary)
+    .leftJoin(wheelPresence, and(eq(wheelPresence.userId, userDietary.userId), eq(wheelPresence.wheelId, wheelId)))
+    .where(spinnerId != null ? or(here, eq(userDietary.userId, spinnerId)) : here);
+  const sinceMs = since.getTime();
+  return {
+    prefs: rows.map((r) => ({ userId: r.userId, tagId: r.tagId })),
+    presentUserIds: Array.from(new Set(rows.filter((r) => r.lastSeen && new Date(r.lastSeen).getTime() >= sinceMs).map((r) => r.userId))),
+  };
 }
 
 /** Clear just the votes for a wheel (after a spin resolves). */
@@ -1125,11 +1185,12 @@ export async function clearRoundVotes(wheelId: number): Promise<void> {
   await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.kind, "vote")));
 }
 
-/** Clear all round marks for a wheel. */
-export async function clearRoundAll(wheelId: number): Promise<void> {
+/** Clear a wheel's votes and vetoes (Clear in the round panel). Legacy
+ *  `dietary` rows are left alone: they are history, and no longer read. */
+export async function clearRoundMarks(wheelId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), inArray(roundMarks.kind, ["veto", "vote"])));
 }
 
 /** Most recent spin on a wheel (for the polled "someone spun" broadcast). */

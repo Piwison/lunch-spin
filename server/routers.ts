@@ -9,7 +9,7 @@ import { parseRestaurantList } from "@shared/import";
 import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
-import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
+import { applyVoteWeights, dietaryForPresent, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
 import { hoursView } from "@shared/openHours";
@@ -32,11 +32,14 @@ import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, searchPl
 import { computeDistancesFor, maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
 import { maybeFetchOneRestaurantHours, refreshWheelHours } from "./openHours";
 import {
-  clearRoundAll,
+  clearRoundMarks,
   clearRoundVotes,
   getActivePresence,
+  getPresentDietary,
   getRoundMarks,
+  getUserDietary,
   pingPresence,
+  setUserDietary,
   toggleRoundMark,
   placeRoundMark,
 } from "./db";
@@ -453,12 +456,20 @@ export const appRouter = router({
         // Today's spins replace what used to be a separate latest-spin read: the
         // same one query gives the today card and the teammate-spin toast, so
         // this 3s poll carries the card without a query more (failure mode 61).
+        // The "I don't eat" of everyone here today rides the same wave, so the
+        // viewer's wheel drops what the spin will drop, and the panel can say
+        // whose setting it was.
         const now = new Date();
-        const [members, session, spinsToday] = await Promise.all([
+        const [members, marks, spinsToday, dietary] = await Promise.all([
           getWheelMembers(input.wheelId),
-          getRoundMarks(input.wheelId).then(buildSessionState),
+          getRoundMarks(input.wheelId),
           getSpinsSince(input.wheelId, startOfTaipeiDay(now)),
+          getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id),
         ]);
+        const session = {
+          ...buildSessionState(marks, now),
+          dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id),
+        };
         return { members, session, ...todayView(spinsToday, now, ctx.user.id) };
       }),
 
@@ -1316,19 +1327,27 @@ export const appRouter = router({
         // the branch is reached is what made them a ninth and tenth hop.
         // Fairness and cuisine rotation both read the wheel's spins, and both
         // count only lunches (shared/lunch.ts), so one read serves the two.
-        const [rests, exclusions, roundMarks, ratingRows, spinFacts] = await Promise.all([
+        // "I don't eat" is one more read in the SAME wave: whose settings apply
+        // (here today, plus the spinner) comes back with the settings, in one
+        // query (failure mode 52).
+        const now = new Date();
+        const [rests, exclusions, roundMarks, ratingRows, spinFacts, dietary] = await Promise.all([
           getRestaurantsByWheel(input.wheelId),
           getExclusions(input.wheelId, wheel.exclusionDays),
           getRoundMarks(input.wheelId),
           getWheelRatingRows(input.wheelId),
           wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : undefined,
+          getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id),
         ]);
         const valid = new Set(rests.map((r) => r.id));
-        // Server reads the live session itself (anti-tamper): vetoed restaurants
-        // are out, votes bias the weighting.
-        const session = buildSessionState(roundMarks);
+        // Server reads the live session itself (anti-tamper): today's vetoes are
+        // out, today's votes bias the weighting.
+        const session = {
+          ...buildSessionState(roundMarks, now),
+          dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id),
+        };
         const vetoed = new Set(vetoedIds(session));
-        // Dietary constraints: any restaurant carrying an avoided tag is out.
+        // "I don't eat": any restaurant carrying a present person's tag is out.
         const avoidedTags = new Set(excludedDietaryTagIds(session));
         const dietaryBlocked = new Set(
           avoidedTags.size === 0
@@ -1339,7 +1358,6 @@ export const appRouter = router({
         // Hard filter, decided server-side so a tampered candidate list can't
         // spin one. Unknown hours are spinnable — most wheels have hand-typed
         // places with no provider hours, and dropping those would gut the wheel.
-        const now = new Date();
         const closedNow = new Set(
           rests
             .filter((r) => {
@@ -1537,22 +1555,30 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    dietary: protectedProcedure
-      .input(z.object({ wheelId: z.number(), tagId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await toggleRoundMark(input.wheelId, "dietary", input.tagId, ctx.user.id);
-        return { success: true };
-      }),
-
+    // Today's votes and vetoes only. Anyone's "I don't eat" is theirs, and a
+    // teammate pressing Clear used to wipe it.
     clear: protectedProcedure
       .input(z.object({ wheelId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await clearRoundAll(input.wheelId);
+        await clearRoundMarks(input.wheelId);
         return { success: true };
+      }),
+  }),
+
+  // ─── The signed-in person's own settings ─────────────────────────────────────
+
+  me: router({
+    // "I don't eat": set once, applies on every wheel, but only on the days
+    // this person opens that wheel (shared/session `dietaryForPresent`).
+    dietary: protectedProcedure.query(({ ctx }) => getUserDietary(ctx.user.id)),
+
+    setDietary: protectedProcedure
+      .input(z.object({ tagIds: z.array(z.number().int().positive()).max(64) }))
+      .mutation(async ({ ctx, input }) => {
+        await setUserDietary(ctx.user.id, input.tagIds);
+        return { tagIds: Array.from(new Set(input.tagIds)) };
       }),
   }),
 

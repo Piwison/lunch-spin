@@ -639,7 +639,28 @@ export default function WheelApp() {
       refetchInterval: isSpinning || showResult ? false : 3000,
     }
   );
-  const session: SessionState = realtimeQuery.data?.session ?? EMPTY_SESSION;
+  // My standing "I don't eat" (user_dietary). On a shared wheel the realtime
+  // session already carries it, with everyone else's who is here today; on a
+  // personal wheel it is the only one, and spins.create applies it either way,
+  // so the wheel has to drop the same places or it shows ones that can't win.
+  const myDietaryQuery = trpc.me.dietary.useQuery(undefined, { enabled: !!user });
+  const myDietary = useMemo(() => myDietaryQuery.data ?? [], [myDietaryQuery.data]);
+  const setDietary = trpc.me.setDietary.useMutation({
+    onSuccess: (res) => {
+      utils.me.dietary.setData(undefined, res.tagIds);
+      if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
+    },
+    onError: (e) => toast.error(userError(e, t)),
+  });
+  const toggleMyDietary = (tagId: number) =>
+    setDietary.mutate({ tagIds: myDietary.includes(tagId) ? myDietary.filter((id) => id !== tagId) : [...myDietary, tagId] });
+  const session: SessionState = useMemo(
+    () =>
+      isShared
+        ? (realtimeQuery.data?.session ?? EMPTY_SESSION)
+        : { ...EMPTY_SESSION, dietary: user && myDietary.length > 0 ? [{ userId: user.id, tagIds: myDietary }] : [] },
+    [isShared, realtimeQuery.data?.session, myDietary, user],
+  );
 
   // Today's lunches. A shared wheel already polls wheels.realtime, which carries
   // them; a personal wheel has nobody else spinning, so it reads once and
@@ -749,7 +770,6 @@ export default function WheelApp() {
   });
   const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
   const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
-  const dietaryMutation = trpc.session.dietary.useMutation({ onSuccess: refreshSession });
   const clearRound = trpc.session.clear.useMutation({ onSuccess: refreshSession });
 
   const addShared = trpc.restaurants.addBulk.useMutation({
@@ -1043,6 +1063,8 @@ export default function WheelApp() {
     switch (reason) {
       case "round":
         return t("app.block.round", { n: counts.round });
+      case "diet":
+        return t("app.block.diet", { n: counts.diet });
       case "filters":
         return maxWalkMinutes != null && selectedTagIds.length === 0
           ? t("app.block.distance", { n: maxWalkMinutes })
@@ -1539,7 +1561,8 @@ export default function WheelApp() {
                           onAddCuisines={() => setActiveTab("restaurants")}
                           onVote={(id) => selectedWheelId && voteMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
                           onVeto={(id) => selectedWheelId && vetoMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
-                          onDietary={(tagId) => selectedWheelId && dietaryMutation.mutate({ wheelId: selectedWheelId, tagId })}
+                          myDietary={myDietary}
+                          onToggleDietary={toggleMyDietary}
                           onClear={() => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId })}
                           collapsible
                         />

@@ -240,22 +240,6 @@ var userDietary = mysqlTable("user_dietary", {
   createdAt: timestamp("createdAt").defaultNow().notNull()
 }, (t2) => ({ pk: primaryKey({ columns: [t2.userId, t2.tagId] }) }));
 
-// server/_core/env.ts
-var ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
-  isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
-  // Self-hosted Google sign-in (replaces Manus OAuth).
-  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-  appOrigin: process.env.APP_ORIGIN ?? ""
-};
-
 // shared/lunch.ts
 var TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1e3;
 var DAY_MS = 24 * 60 * 60 * 1e3;
@@ -310,6 +294,50 @@ function todaysLunches(rows, now) {
   const kinds = classifySpins(rows);
   return rows.filter((r) => taipeiDayIndex(r.spunAt) === today && kinds.get(r.id) === "lunch").sort(bySpinOrder);
 }
+
+// shared/realtimeState.ts
+function push(map, key, value) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+function isActiveMark(row, now) {
+  return taipeiDayIndex(new Date(row.createdAt)) === taipeiDayIndex(now);
+}
+function buildSessionState(rows, now) {
+  const vetoes = /* @__PURE__ */ new Map();
+  const votes = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (!isActiveMark(r, now)) continue;
+    if (r.kind === "veto") push(vetoes, r.refId, r.userId);
+    else if (r.kind === "vote") push(votes, r.refId, r.userId);
+  }
+  return {
+    vetoes: Array.from(vetoes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
+    votes: Array.from(votes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
+    dietary: []
+  };
+}
+function activePresence(rows, nowMs, ttlMs) {
+  const cutoff = nowMs - ttlMs;
+  return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
+}
+
+// server/_core/env.ts
+var ENV = {
+  appId: process.env.VITE_APP_ID ?? "",
+  cookieSecret: process.env.JWT_SECRET ?? "",
+  databaseUrl: process.env.DATABASE_URL ?? "",
+  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
+  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  isProduction: process.env.NODE_ENV === "production",
+  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
+  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Self-hosted Google sign-in (replaces Manus OAuth).
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  appOrigin: process.env.APP_ORIGIN ?? ""
+};
 
 // shared/exclusion.ts
 var DEFAULT_EXCLUSION_DAYS = 3;
@@ -980,27 +1008,57 @@ async function toggleRoundMark(wheelId, kind, refId, userId) {
     eq(roundMarks.refId, refId),
     eq(roundMarks.userId, userId)
   );
-  const existing = await db.select({ userId: roundMarks.userId }).from(roundMarks).where(where).limit(1);
-  if (existing.length > 0) {
+  const now = /* @__PURE__ */ new Date();
+  const existing = await db.select({ createdAt: roundMarks.createdAt }).from(roundMarks).where(where).limit(1);
+  if (existing.length > 0 && isActiveMark(existing[0], now)) {
     await db.delete(roundMarks).where(where);
   } else {
-    await db.insert(roundMarks).values({ wheelId, kind, refId, userId }).onDuplicateKeyUpdate({ set: { userId } });
+    await db.insert(roundMarks).values({ wheelId, kind, refId, userId, createdAt: now }).onDuplicateKeyUpdate({ set: { createdAt: now } });
   }
 }
 async function getRoundMarks(wheelId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId }).from(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1e3);
+  return db.select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId, createdAt: roundMarks.createdAt }).from(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), gte(roundMarks.createdAt, since), inArray(roundMarks.kind, ["veto", "vote"])));
+}
+async function getUserDietary(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ tagId: userDietary.tagId }).from(userDietary).where(eq(userDietary.userId, userId));
+  return rows.map((r) => r.tagId);
+}
+async function setUserDietary(userId, tagIds) {
+  const db = await getDb();
+  if (!db) return;
+  const unique = Array.from(new Set(tagIds));
+  await db.delete(userDietary).where(
+    unique.length > 0 ? and(eq(userDietary.userId, userId), sql`${userDietary.tagId} NOT IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})`) : eq(userDietary.userId, userId)
+  );
+  if (unique.length > 0) {
+    await db.insert(userDietary).values(unique.map((tagId) => ({ userId, tagId }))).onDuplicateKeyUpdate({ set: { tagId: sql`${userDietary.tagId}` } });
+  }
+}
+async function getPresentDietary(wheelId, since, spinnerId) {
+  const db = await getDb();
+  if (!db) return { prefs: [], presentUserIds: [] };
+  const here = gte(wheelPresence.lastSeen, since);
+  const rows = await db.select({ userId: userDietary.userId, tagId: userDietary.tagId, lastSeen: wheelPresence.lastSeen }).from(userDietary).leftJoin(wheelPresence, and(eq(wheelPresence.userId, userDietary.userId), eq(wheelPresence.wheelId, wheelId))).where(spinnerId != null ? or(here, eq(userDietary.userId, spinnerId)) : here);
+  const sinceMs = since.getTime();
+  return {
+    prefs: rows.map((r) => ({ userId: r.userId, tagId: r.tagId })),
+    presentUserIds: Array.from(new Set(rows.filter((r) => r.lastSeen && new Date(r.lastSeen).getTime() >= sinceMs).map((r) => r.userId)))
+  };
 }
 async function clearRoundVotes(wheelId) {
   const db = await getDb();
   if (!db) return;
   await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.kind, "vote")));
 }
-async function clearRoundAll(wheelId) {
+async function clearRoundMarks(wheelId) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), inArray(roundMarks.kind, ["veto", "vote"])));
 }
 async function getSpinsSince(wheelId, since) {
   const db = await getDb();
@@ -1703,6 +1761,18 @@ function pickWeighted(weights, rng = Math.random) {
 }
 
 // shared/session.ts
+function dietaryForPresent(prefs, presentUserIds, spinnerId) {
+  const here = new Set(presentUserIds);
+  if (spinnerId != null) here.add(spinnerId);
+  const byUser = /* @__PURE__ */ new Map();
+  for (const p of prefs) {
+    if (!here.has(p.userId)) continue;
+    const list = byUser.get(p.userId);
+    if (list) list.push(p.tagId);
+    else byUser.set(p.userId, [p.tagId]);
+  }
+  return Array.from(byUser, ([userId, tagIds]) => ({ userId, tagIds })).sort((a, b) => a.userId - b.userId);
+}
 function vetoedIds(state) {
   return state.vetoes.filter((m) => m.userIds.length > 0).map((m) => m.restaurantId);
 }
@@ -2103,32 +2173,6 @@ function rankNearby(places, filters = {}, opts = {}) {
   const segments = deduped.slice(0, max);
   const weights = segments.map((p) => spinWeight(p, filters));
   return { segments, weights, chainsGrouped, lowDensity: isLowDensity(segments.length, min) };
-}
-
-// shared/realtimeState.ts
-function push(map, key, value) {
-  const list = map.get(key);
-  if (list) list.push(value);
-  else map.set(key, [value]);
-}
-function buildSessionState(rows) {
-  const vetoes = /* @__PURE__ */ new Map();
-  const votes = /* @__PURE__ */ new Map();
-  const dietary = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    if (r.kind === "veto") push(vetoes, r.refId, r.userId);
-    else if (r.kind === "vote") push(votes, r.refId, r.userId);
-    else push(dietary, r.userId, r.refId);
-  }
-  return {
-    vetoes: Array.from(vetoes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
-    votes: Array.from(votes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
-    dietary: Array.from(dietary, ([userId, tagIds]) => ({ userId, tagIds }))
-  };
-}
-function activePresence(rows, nowMs, ttlMs) {
-  const cutoff = nowMs - ttlMs;
-  return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
 }
 
 // shared/candidates.ts
@@ -3082,11 +3126,16 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const now = /* @__PURE__ */ new Date();
-      const [members, session, spinsToday] = await Promise.all([
+      const [members, marks, spinsToday, dietary] = await Promise.all([
         getWheelMembers(input.wheelId),
-        getRoundMarks(input.wheelId).then(buildSessionState),
-        getSpinsSince(input.wheelId, startOfTaipeiDay(now))
+        getRoundMarks(input.wheelId),
+        getSpinsSince(input.wheelId, startOfTaipeiDay(now)),
+        getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id)
       ]);
+      const session = {
+        ...buildSessionState(marks, now),
+        dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id)
+      };
       return { members, session, ...todayView(spinsToday, now, ctx.user.id) };
     }),
     create: protectedProcedure.input(z2.object({
@@ -3766,21 +3815,25 @@ var appRouter = router({
       ]);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const [rests, exclusions, roundMarks2, ratingRows, spinFacts] = await Promise.all([
+      const now = /* @__PURE__ */ new Date();
+      const [rests, exclusions, roundMarks2, ratingRows, spinFacts, dietary] = await Promise.all([
         getRestaurantsByWheel(input.wheelId),
         getExclusions(input.wheelId, wheel.exclusionDays),
         getRoundMarks(input.wheelId),
         getWheelRatingRows(input.wheelId),
-        wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : void 0
+        wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : void 0,
+        getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id)
       ]);
       const valid = new Set(rests.map((r) => r.id));
-      const session = buildSessionState(roundMarks2);
+      const session = {
+        ...buildSessionState(roundMarks2, now),
+        dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id)
+      };
       const vetoed = new Set(vetoedIds(session));
       const avoidedTags = new Set(excludedDietaryTagIds(session));
       const dietaryBlocked = new Set(
         avoidedTags.size === 0 ? [] : rests.filter((r) => r.tags.some((t2) => avoidedTags.has(t2.id))).map((r) => r.id)
       );
-      const now = /* @__PURE__ */ new Date();
       const closedNow = new Set(
         rests.filter((r) => {
           const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
@@ -3926,17 +3979,23 @@ var appRouter = router({
       else await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
-    dietary: protectedProcedure.input(z2.object({ wheelId: z2.number(), tagId: z2.number() })).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      await toggleRoundMark(input.wheelId, "dietary", input.tagId, ctx.user.id);
-      return { success: true };
-    }),
+    // Today's votes and vetoes only. Anyone's "I don't eat" is theirs, and a
+    // teammate pressing Clear used to wipe it.
     clear: protectedProcedure.input(z2.object({ wheelId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      await clearRoundAll(input.wheelId);
+      await clearRoundMarks(input.wheelId);
       return { success: true };
+    })
+  }),
+  // ─── The signed-in person's own settings ─────────────────────────────────────
+  me: router({
+    // "I don't eat": set once, applies on every wheel, but only on the days
+    // this person opens that wheel (shared/session `dietaryForPresent`).
+    dietary: protectedProcedure.query(({ ctx }) => getUserDietary(ctx.user.id)),
+    setDietary: protectedProcedure.input(z2.object({ tagIds: z2.array(z2.number().int().positive()).max(64) })).mutation(async ({ ctx, input }) => {
+      await setUserDietary(ctx.user.id, input.tagIds);
+      return { tagIds: Array.from(new Set(input.tagIds)) };
     })
   }),
   // ─── Statistics ─────────────────────────────────────────────────────────────
