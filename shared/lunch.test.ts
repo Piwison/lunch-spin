@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifySpins, endOfTaipeiDay, lunchStats, startOfTaipeiDay, taipeiDayIndex, type SpinFacts } from "./lunch";
+import { classifySpins, endOfTaipeiDay, lunchStats, startOfTaipeiDay, taipeiClock, taipeiDayIndex, todaysLunches, type SpinFacts } from "./lunch";
 
 const AMY = 1;
 const BEN = 2;
@@ -159,5 +159,42 @@ describe("lunchStats — R3 seed data (three weeks, 20 spins)", () => {
     expect(s.lunchDays).toBe(14);
     expect(s.placesEaten).toBe(10);
     expect(s.byRestaurant.has(2)).toBe(false);
+  });
+});
+
+describe("todaysLunches — the rows on the today card", () => {
+  const now = taipei("12:30");
+
+  it("lists today's lunches oldest first, one row per decision", () => {
+    const a = spin(10, AMY, taipei("12:10"));
+    const b = spin(12, BEN, taipei("12:22"));
+    expect(todaysLunches([b, a], now).map((r) => r.id)).toEqual([a.id, b.id]);
+  });
+
+  it("keeps only the last of one person's respins", () => {
+    const x = spin(10, AMY, taipei("12:10"));
+    const y = spin(11, AMY, taipei("12:11"));
+    expect(todaysLunches([x, y], now).map((r) => r.id)).toEqual([y.id]);
+  });
+
+  it("does not show yesterday's lunch, even one minute before midnight", () => {
+    expect(todaysLunches([spin(10, AMY, taipei("23:59", "2026-09-23"))], now)).toEqual([]);
+  });
+
+  it("leaves out a skipped spin", () => {
+    expect(todaysLunches([spin(10, AMY, taipei("12:10"), { skipped: true })], now)).toEqual([]);
+  });
+
+  it("keeps an accepted lunch alongside the same person's later one", () => {
+    const x = spin(10, AMY, taipei("12:10"), { accepted: true });
+    const w = spin(13, AMY, taipei("12:20"));
+    expect(todaysLunches([x, w], now).map((r) => r.id)).toEqual([x.id, w.id]);
+  });
+});
+
+describe("taipeiClock", () => {
+  it("prints the Taipei wall clock whatever the runtime's zone", () => {
+    expect(taipeiClock(taipei("12:10"))).toBe("12:10");
+    expect(taipeiClock(taipei("00:05"))).toBe("00:05");
   });
 });

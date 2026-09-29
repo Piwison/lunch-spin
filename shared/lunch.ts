@@ -22,6 +22,12 @@ export function taipeiDayIndex(t: Date): number {
   return Math.floor((t.getTime() + TAIPEI_OFFSET_MS) / DAY_MS);
 }
 
+/** "12:10" — the Taipei wall clock, which is the team's, whatever zone the
+ *  viewer or the server runs in. */
+export function taipeiClock(t: Date): string {
+  return new Date(t.getTime() + TAIPEI_OFFSET_MS).toISOString().slice(11, 16);
+}
+
 /** The UTC instant of the Taipei midnight that starts `t`'s day. */
 export function startOfTaipeiDay(t: Date): Date {
   return new Date(taipeiDayIndex(t) * DAY_MS - TAIPEI_OFFSET_MS);
@@ -99,4 +105,15 @@ export function lunchStats(rows: readonly SpinFacts[]): LunchStats {
     }
   }
   return { byRestaurant, lunchDays: days.size, placesEaten: byRestaurant.size };
+}
+
+/** Today's lunches (Taipei day of `now`), oldest first: what the today card
+ *  lists. One person's respins collapse to their last spin; an accepted lunch
+ *  stays beside a later one, because it was a separate decision. */
+export function todaysLunches<T extends SpinFacts>(rows: readonly T[], now: Date): T[] {
+  const today = taipeiDayIndex(now);
+  const kinds = classifySpins(rows);
+  return rows
+    .filter((r) => taipeiDayIndex(r.spunAt) === today && kinds.get(r.id) === "lunch")
+    .sort(bySpinOrder);
 }

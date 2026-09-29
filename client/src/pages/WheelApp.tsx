@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
+import TodayCard, { type TodayEntry } from "@/components/TodayCard";
 import { labelTier } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
@@ -392,10 +393,12 @@ export default function WheelApp() {
   });
   const acceptSpin = trpc.spins.accept.useMutation({
     onSuccess: () => {
-      // Accepting flips this spin to the full-window exclusion tier, so the wheel
-      // and history both need to refetch to drop the now-eaten restaurant.
+      // Accepting pins this lunch (a later respin no longer replaces it), which
+      // changes the today card's offer to decide again.
       refetchRestaurants();
       utils.spins.history.invalidate();
+      utils.spins.today.invalidate();
+      utils.wheels.realtime.invalidate();
     },
   });
   const isShared = !!wheelData?.isShared;
@@ -614,18 +617,37 @@ export default function WheelApp() {
   );
   const session: SessionState = realtimeQuery.data?.session ?? EMPTY_SESSION;
 
+  // Today's lunches. A shared wheel already polls wheels.realtime, which carries
+  // them; a personal wheel has nobody else spinning, so it reads once and
+  // refreshes after its own spins (the pending refresh below).
+  const todayQuery = trpc.spins.today.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && !isShared && seeded && !!user },
+  );
+  const todayEntries: TodayEntry[] = (isShared ? realtimeQuery.data?.today : todayQuery.data) ?? [];
+  /** My newest decision today, if a spin by me now would replace it. */
+  const myReplaceable = useMemo(() => {
+    const mine = todayEntries.filter((e) => e.spunBy === user?.id);
+    const last = mine[mine.length - 1];
+    return last && !last.accepted ? last : null;
+  }, [todayEntries, user?.id]);
+
   // Latest spin: surface a teammate's spin (skip our own).
   const lastSpinIdRef = useRef<number | null>(null);
   useEffect(() => {
     lastSpinIdRef.current = null;
   }, [selectedWheelId]);
   useEffect(() => {
-    const latest = realtimeQuery.data?.latestSpin;
-    if (!latest) return;
+    if (!realtimeQuery.data) return;
+    const latest = realtimeQuery.data.latestSpin;
+    // Baseline on the first load, even when nobody has spun yet today (latest is
+    // null) — otherwise the day's first spin would become the baseline and never
+    // be announced. 0 is never a spin id.
     if (lastSpinIdRef.current === null) {
-      lastSpinIdRef.current = latest.id; // baseline on first load — don't toast history
+      lastSpinIdRef.current = latest?.id ?? 0;
       return;
     }
+    if (!latest) return;
     if (latest.id !== lastSpinIdRef.current) {
       lastSpinIdRef.current = latest.id;
       if (user && latest.spunBy !== user.id) {
@@ -741,6 +763,10 @@ export default function WheelApp() {
     if (resultOnScreen || !pendingRestaurantRefresh.current) return;
     pendingRestaurantRefresh.current = false;
     refetchRestaurants();
+    if (selectedWheelId) {
+      if (isShared) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
+      else utils.spins.today.invalidate({ wheelId: selectedWheelId });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultOnScreen]);
 
@@ -1298,6 +1324,21 @@ export default function WheelApp() {
                       </div>
                     )}
 
+                    {/* Today's decisions — first, because it answers the question
+                        people open the app with. Hidden while the camera is in. */}
+                    {todayEntries.length > 0 && user && (
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        <TodayCard
+                          entries={todayEntries}
+                          currentUserId={user.id}
+                          showWalk={!!wheelData?.distanceEnabled}
+                          onDirections={(e) => openDirections({ id: e.restaurantId, label: e.name, color: "" })}
+                          onRedecide={handleSpin}
+                          redecideDisabled={spinDisabled}
+                        />
+                      </div>
+                    )}
+
                     {/* Team roster */}
                     {isShared && wheelData && (
                       <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
@@ -1420,7 +1461,11 @@ export default function WheelApp() {
                               disabled={spinDisabled}
                               className={cn("w-full", spinDisabled && "bg-none bg-muted text-muted-foreground")}
                             >
-                              {isSpinning || createSpin.isPending ? t("app.wheel.spinning") : t("app.wheel.spin")}
+                              {isSpinning || createSpin.isPending
+                                ? t("app.wheel.spinning")
+                                : myReplaceable
+                                  ? t("app.wheel.spinReplace", { name: myReplaceable.name })
+                                  : t("app.wheel.spin")}
                             </Button>
 
                             {/* The muted line under the stack: how many are on the

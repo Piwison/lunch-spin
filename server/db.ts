@@ -1029,10 +1029,12 @@ export async function clearRoundAll(wheelId: number): Promise<void> {
 }
 
 /** Most recent spin on a wheel (for the polled "someone spun" broadcast). */
-export async function getLatestSpin(wheelId: number) {
+/** Every spin on a wheel since `since` (the start of the Taipei day), with what
+ *  the today card shows about its place and who spun it. */
+export async function getSpinsSince(wheelId: number, since: Date) {
   const db = await getDb();
-  if (!db) return null;
-  const rows = await db
+  if (!db) return [];
+  return db
     .select({
       id: spinHistory.id,
       restaurantId: spinHistory.restaurantId,
@@ -1040,12 +1042,16 @@ export async function getLatestSpin(wheelId: number) {
       spunBy: spinHistory.spunBy,
       spunByName: users.name,
       spunAt: spinHistory.spunAt,
+      accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
+      walkSeconds: restaurants.walkSeconds,
+      openHours: restaurants.openHours,
+      utcOffsetMinutes: restaurants.utcOffsetMinutes,
+      mapUrl: restaurants.mapUrl,
     })
     .from(spinHistory)
     .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
     .innerJoin(users, eq(spinHistory.spunBy, users.id))
-    .where(eq(spinHistory.wheelId, wheelId))
-    .orderBy(desc(spinHistory.id))
-    .limit(1);
-  return rows[0] ?? null;
+    .where(and(eq(spinHistory.wheelId, wheelId), gte(spinHistory.spunAt, since)));
 }
+

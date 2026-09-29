@@ -18,7 +18,7 @@ import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
 import { classifyPlacesStatus } from "@shared/placesError";
 import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
-import { lunchStats, type PlaceLunches } from "@shared/lunch";
+import { bySpinOrder, lunchStats, startOfTaipeiDay, todaysLunches, type PlaceLunches } from "@shared/lunch";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { CANDIDATE_POOL, isCandidate } from "@shared/candidates";
 import { mergeExtraNames } from "@shared/demoDraft";
@@ -33,7 +33,6 @@ import {
   clearRoundAll,
   clearRoundVotes,
   getActivePresence,
-  getLatestSpin,
   getRoundMarks,
   pingPresence,
   toggleRoundMark,
@@ -58,6 +57,7 @@ import {
   getRestaurantStats,
   getSpinFacts,
   getSpinHistory,
+  getSpinsSince,
   markNotificationsRead,
   getTagsForWheel,
   getUserById,
@@ -76,6 +76,40 @@ import {
   upsertRestaurantRating,
   getWheelRatingRows,
 } from "./db";
+
+/** The today card's rows (one per lunch decided today) and the newest spin of
+ *  any kind (for the teammate toast), from one read of today's spins. */
+function todayView(rows: Awaited<ReturnType<typeof getSpinsSince>>, now: Date) {
+  const today = todaysLunches(rows, now).map((r) => {
+    const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+    return {
+      spinId: r.id,
+      restaurantId: r.restaurantId,
+      name: r.restaurantName,
+      spunBy: r.spunBy,
+      spunByName: r.spunByName,
+      spunAt: r.spunAt,
+      accepted: r.accepted,
+      walkSeconds: r.walkSeconds,
+      openStatus: h.openStatus,
+      minutesUntilClose: h.minutesUntilClose,
+      closesAt: h.closesAt,
+      mapUrl: r.mapUrl,
+    };
+  });
+  const last = rows.reduce<(typeof rows)[number] | null>((a, b) => (!a || bySpinOrder(b, a) > 0 ? b : a), null);
+  const latestSpin = last
+    ? {
+        id: last.id,
+        restaurantId: last.restaurantId,
+        restaurantName: last.restaurantName,
+        spunBy: last.spunBy,
+        spunByName: last.spunByName,
+        spunAt: last.spunAt,
+      }
+    : null;
+  return { today, latestSpin };
+}
 
 // A presence heartbeat counts as "online" for this long after the last ping.
 // Kept ≥ 2.5× the client's ~10s ping interval so one dropped beat doesn't flicker.
@@ -368,12 +402,16 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const [members, session, latestSpin] = await Promise.all([
+        // Today's spins replace what used to be a separate latest-spin read: the
+        // same one query gives the today card and the teammate-spin toast, so
+        // this 3s poll carries the card without a query more (failure mode 61).
+        const now = new Date();
+        const [members, session, spinsToday] = await Promise.all([
           getWheelMembers(input.wheelId),
           getRoundMarks(input.wheelId).then(buildSessionState),
-          getLatestSpin(input.wheelId),
+          getSpinsSince(input.wheelId, startOfTaipeiDay(now)),
         ]);
-        return { members, session, latestSpin };
+        return { members, session, ...todayView(spinsToday, now) };
       }),
 
     create: protectedProcedure
@@ -1346,6 +1384,17 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         return getSpinHistory(input.wheelId);
+      }),
+
+    // The today card on a personal wheel. Shared wheels get the same rows from
+    // wheels.realtime, which they already poll — they never call this.
+    today: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const now = new Date();
+        return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now).today;
       }),
 
     // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion

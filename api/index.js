@@ -262,6 +262,9 @@ var DAY_MS = 24 * 60 * 60 * 1e3;
 function taipeiDayIndex(t2) {
   return Math.floor((t2.getTime() + TAIPEI_OFFSET_MS) / DAY_MS);
 }
+function startOfTaipeiDay(t2) {
+  return new Date(taipeiDayIndex(t2) * DAY_MS - TAIPEI_OFFSET_MS);
+}
 function endOfTaipeiDay(t2) {
   return new Date((taipeiDayIndex(t2) + 1) * DAY_MS - TAIPEI_OFFSET_MS);
 }
@@ -301,6 +304,11 @@ function lunchStats(rows) {
     }
   }
   return { byRestaurant, lunchDays: days.size, placesEaten: byRestaurant.size };
+}
+function todaysLunches(rows, now) {
+  const today = taipeiDayIndex(now);
+  const kinds = classifySpins(rows);
+  return rows.filter((r) => taipeiDayIndex(r.spunAt) === today && kinds.get(r.id) === "lunch").sort(bySpinOrder);
 }
 
 // shared/exclusion.ts
@@ -942,18 +950,23 @@ async function clearRoundAll(wheelId) {
   if (!db) return;
   await db.delete(roundMarks).where(eq(roundMarks.wheelId, wheelId));
 }
-async function getLatestSpin(wheelId) {
+async function getSpinsSince(wheelId, since) {
   const db = await getDb();
-  if (!db) return null;
-  const rows = await db.select({
+  if (!db) return [];
+  return db.select({
     id: spinHistory.id,
     restaurantId: spinHistory.restaurantId,
     restaurantName: restaurants.name,
     spunBy: spinHistory.spunBy,
     spunByName: users.name,
-    spunAt: spinHistory.spunAt
-  }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(eq(spinHistory.wheelId, wheelId)).orderBy(desc(spinHistory.id)).limit(1);
-  return rows[0] ?? null;
+    spunAt: spinHistory.spunAt,
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped,
+    walkSeconds: restaurants.walkSeconds,
+    openHours: restaurants.openHours,
+    utcOffsetMinutes: restaurants.utcOffsetMinutes,
+    mapUrl: restaurants.mapUrl
+  }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(and(eq(spinHistory.wheelId, wheelId), gte(spinHistory.spunAt, since)));
 }
 
 // server/_core/cookies.ts
@@ -2651,6 +2664,35 @@ async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
 }
 
 // server/routers.ts
+function todayView(rows, now) {
+  const today = todaysLunches(rows, now).map((r) => {
+    const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+    return {
+      spinId: r.id,
+      restaurantId: r.restaurantId,
+      name: r.restaurantName,
+      spunBy: r.spunBy,
+      spunByName: r.spunByName,
+      spunAt: r.spunAt,
+      accepted: r.accepted,
+      walkSeconds: r.walkSeconds,
+      openStatus: h.openStatus,
+      minutesUntilClose: h.minutesUntilClose,
+      closesAt: h.closesAt,
+      mapUrl: r.mapUrl
+    };
+  });
+  const last = rows.reduce((a, b) => !a || bySpinOrder(b, a) > 0 ? b : a, null);
+  const latestSpin = last ? {
+    id: last.id,
+    restaurantId: last.restaurantId,
+    restaurantName: last.restaurantName,
+    spunBy: last.spunBy,
+    spunByName: last.spunByName,
+    spunAt: last.spunAt
+  } : null;
+  return { today, latestSpin };
+}
 var PRESENCE_TTL_MS = 25e3;
 var nearbyPlaceSchema = z2.object({
   placeId: z2.string().min(1).max(256),
@@ -2853,12 +2895,13 @@ var appRouter = router({
     realtime: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const [members, session, latestSpin] = await Promise.all([
+      const now = /* @__PURE__ */ new Date();
+      const [members, session, spinsToday] = await Promise.all([
         getWheelMembers(input.wheelId),
         getRoundMarks(input.wheelId).then(buildSessionState),
-        getLatestSpin(input.wheelId)
+        getSpinsSince(input.wheelId, startOfTaipeiDay(now))
       ]);
-      return { members, session, latestSpin };
+      return { members, session, ...todayView(spinsToday, now) };
     }),
     create: protectedProcedure.input(z2.object({
       name: z2.string().min(1).max(128),
@@ -3621,6 +3664,14 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getSpinHistory(input.wheelId);
+    }),
+    // The today card on a personal wheel. Shared wheels get the same rows from
+    // wheels.realtime, which they already poll — they never call this.
+    today: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const now = /* @__PURE__ */ new Date();
+      return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now).today;
     }),
     // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
     // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
