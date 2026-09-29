@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifySpins, endOfTaipeiDay, lunchStats, startOfTaipeiDay, taipeiClock, taipeiDayIndex, todaysLunches, type SpinFacts } from "./lunch";
+import { classifySpins, endOfTaipeiDay, lunchStats, promptableLunch, startOfTaipeiDay, taipeiClock, taipeiDayIndex, todaysLunches, type SpinFacts } from "./lunch";
 
 const AMY = 1;
 const BEN = 2;
@@ -196,5 +196,41 @@ describe("taipeiClock", () => {
   it("prints the Taipei wall clock whatever the runtime's zone", () => {
     expect(taipeiClock(taipei("12:10"))).toBe("12:10");
     expect(taipeiClock(taipei("00:05"))).toBe("00:05");
+  });
+});
+
+describe("promptableLunch — the one lunch worth asking about", () => {
+  const now = taipei("12:05");
+  const none = new Set<number>();
+
+  it("asks about yesterday's lunch", () => {
+    const y = spin(10, AMY, taipei("12:10", "2026-09-23"));
+    expect(promptableLunch([y], now, none)?.id).toBe(y.id);
+  });
+
+  it("not today's — you have not eaten it yet", () => {
+    expect(promptableLunch([spin(10, AMY, taipei("11:50"))], now, none)).toBeNull();
+  });
+
+  it("not beyond three days", () => {
+    expect(promptableLunch([spin(10, AMY, taipei("12:10", "2026-09-20"))], now, none)).toBeNull();
+    expect(promptableLunch([spin(10, AMY, taipei("12:10", "2026-09-21"))], now, none)).not.toBeNull();
+  });
+
+  it("not a place you have already rated", () => {
+    expect(promptableLunch([spin(10, AMY, taipei("12:10", "2026-09-23"))], now, new Set([10]))).toBeNull();
+  });
+
+  it("not a skipped or respun spin", () => {
+    const skipped = spin(10, AMY, taipei("12:10", "2026-09-23"), { skipped: true });
+    const respun = spin(11, AMY, taipei("12:10", "2026-09-22"));
+    const after = spin(12, AMY, taipei("12:11", "2026-09-22"));
+    expect(promptableLunch([skipped, respun, after], now, new Set([12]))).toBeNull();
+  });
+
+  it("the most recent eligible lunch wins", () => {
+    const older = spin(10, AMY, taipei("12:10", "2026-09-22"));
+    const newer = spin(11, BEN, taipei("12:10", "2026-09-23"));
+    expect(promptableLunch([older, newer], now, none)?.id).toBe(newer.id);
   });
 });

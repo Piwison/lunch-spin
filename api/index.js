@@ -846,6 +846,12 @@ async function reenableRestaurant(wheelId, restaurantId, windowDays) {
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1e3);
   await db.update(spinHistory).set({ manuallyReenabled: true }).where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
 }
+async function markSpinSkipped(spinId, wheelId, userId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.update(spinHistory).set({ skipped: true }).where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, userId)));
+  return (result[0]?.affectedRows ?? 0) > 0;
+}
 async function acceptSpin(spinId, wheelId, actorUserId) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -3750,6 +3756,15 @@ var appRouter = router({
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
       return { success: result != null };
+    }),
+    // "We didn't go." Only the person who spun it can say so — it changes what
+    // the whole team is excluded from and what History counts.
+    markSkipped: protectedProcedure.input(z2.object({ wheelId: z2.number(), spinId: z2.number() })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const ok = await markSpinSkipped(input.spinId, input.wheelId, ctx.user.id);
+      if (!ok) throw new TRPCError3({ code: "NOT_FOUND" });
+      return { success: true };
     }),
     reenable: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);

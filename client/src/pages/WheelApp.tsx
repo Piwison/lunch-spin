@@ -7,6 +7,7 @@ import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
 import TodayCard, { type TodayEntry } from "@/components/TodayCard";
+import RecentLunchPrompt from "@/components/RecentLunchPrompt";
 import { labelTier, SPIN_REVEAL_DELAY_MS } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
@@ -15,7 +16,6 @@ import { SpinWheelIcon } from "@/components/SpinWheelIcon";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
 import OnboardingFlow from "@/components/OnboardingFlow";
-import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import { TabRail, type TabRailItem } from "@/components/TabRail";
@@ -691,18 +691,40 @@ export default function WheelApp() {
     if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
   };
 
-  // Post-spin rating capture: the result modal lets you star the winner right
-  // there. Reads the viewer's current star so re-opening shows it pre-filled.
+  // The viewer's own stars, for the "how was it?" prompt (which never asks about
+  // a place you have already rated).
   const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId && seeded && !!user },
   );
-  const myStarsFor = (restaurantId: number) =>
-    ratingSummaries?.find((s) => s.restaurantId === restaurantId)?.myStars ?? null;
   const rateRestaurant = trpc.restaurants.rate.useMutation({
     onSuccess: () => {
-      if (selectedWheelId) utils.restaurants.ratings.invalidate({ wheelId: selectedWheelId });
+      if (selectedWheelId) {
+        utils.restaurants.ratings.invalidate({ wheelId: selectedWheelId });
+        utils.stats.tasteProfile.invalidate({ wheelId: selectedWheelId });
+      }
     },
+  });
+  const ratedRestaurantIds = useMemo(
+    () => new Set((ratingSummaries ?? []).filter((s) => s.myStars != null).map((s) => s.restaurantId)),
+    [ratingSummaries],
+  );
+  // The history the "how was it?" prompt reads (already prefetched on entry).
+  const { data: spinHistory } = trpc.spins.history.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && seeded && !!user },
+  );
+  const markSkipped = trpc.spins.markSkipped.useMutation({
+    onSuccess: () => {
+      // A skipped spin stops excluding its place and drops out of every count.
+      refetchRestaurants();
+      utils.spins.history.invalidate();
+      utils.stats.getRestaurantStats.invalidate();
+      utils.spins.today.invalidate();
+      utils.wheels.realtime.invalidate();
+      toast.success(t("app.skipped"));
+    },
+    onError: (e) => toast.error(userError(e, t)),
   });
   const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
   const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
@@ -1400,6 +1422,23 @@ export default function WheelApp() {
                       </div>
                     )}
 
+                    {/* "How was yesterday's lunch?" — asked after the meal. */}
+                    {spinHistory && user && selectedWheelId && (
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        <RecentLunchPrompt
+                          spins={spinHistory}
+                          ratedRestaurantIds={ratedRestaurantIds}
+                          currentUserId={user.id}
+                          rating={rateRestaurant.isPending}
+                          onRate={(restaurantId, stars) =>
+                            rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId, stars })
+                          }
+                          skipping={markSkipped.isPending}
+                          onSkipped={(spinId) => markSkipped.mutate({ wheelId: selectedWheelId, spinId })}
+                        />
+                      </div>
+                    )}
+
                     {/* Today's decisions — first, because it answers the question
                         people open the app with. Hidden while the camera is in. */}
                     {todayEntries.length > 0 && user && (
@@ -1764,20 +1803,6 @@ export default function WheelApp() {
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-3 w-full">
-              <span className="type-eyebrow" style={{ color: "var(--muted-foreground)" }}>
-                {t("app.result.rate")}
-              </span>
-              <StarRating
-                value={myStarsFor(spinResult.id)}
-                size={26}
-                disabled={rateRestaurant.isPending}
-                onChange={(stars) =>
-                  selectedWheelId &&
-                  rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })
-                }
-              />
-            </div>
           </WinnerSurface>
         );
       })()}

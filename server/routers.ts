@@ -76,6 +76,7 @@ import {
   updateWheel,
   upsertRestaurantRating,
   getWheelRatingRows,
+  markSpinSkipped,
 } from "./db";
 
 /** The today card's rows (one per lunch decided today) and the newest spin of
@@ -1419,6 +1420,18 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
         return { success: result != null };
+      }),
+
+    // "We didn't go." Only the person who spun it can say so — it changes what
+    // the whole team is excluded from and what History counts.
+    markSkipped: protectedProcedure
+      .input(z.object({ wheelId: z.number(), spinId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const ok = await markSpinSkipped(input.spinId, input.wheelId, ctx.user.id);
+        if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
+        return { success: true };
       }),
 
     reenable: protectedProcedure

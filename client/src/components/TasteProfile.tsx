@@ -65,6 +65,8 @@ export function TasteProfile({ wheelId }: { wheelId: number }) {
           </div>
         </div>
       )}
+      {/* True since applyStarWeights, and nobody knew: ratings steer the spin. */}
+      <p className="type-meta text-muted-foreground">{t("history.taste.weighting")}</p>
 
       {/* Crowd favourites */}
       {data.topPlaces.length > 0 && (

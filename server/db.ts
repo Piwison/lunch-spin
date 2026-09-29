@@ -848,6 +848,19 @@ export async function reenableRestaurant(wheelId: number, restaurantId: number, 
     .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
 }
 
+/** "We didn't end up going": the spinner marks their own spin skipped, which
+ *  takes it out of exclusion and every count (shared/lunch.ts). Scoped to the
+ *  author, like acceptSpin. Returns whether a row matched. */
+export async function markSpinSkipped(spinId: number, wheelId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db
+    .update(spinHistory)
+    .set({ skipped: true })
+    .where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, userId)));
+  return ((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0) > 0;
+}
+
 // ─── Accept + notifications ───────────────────────────────────────────────────
 
 // Mark a spin as ACCEPTED ("we're eating here"): flips it to the full-window

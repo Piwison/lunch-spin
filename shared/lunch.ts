@@ -117,3 +117,29 @@ export function todaysLunches<T extends SpinFacts>(rows: readonly T[], now: Date
     .filter((r) => taipeiDayIndex(r.spunAt) === today && kinds.get(r.id) === "lunch")
     .sort(bySpinOrder);
 }
+
+/** How many Taipei days back a lunch is still worth asking about. */
+export const PROMPT_DAYS = 3;
+
+/**
+ * The lunch to ask "how was it?" about: the most recent lunch on an EARLIER
+ * Taipei day, within PROMPT_DAYS, at a place the viewer has not rated.
+ * Today's lunch is left alone — you have not eaten it yet, which is why the
+ * stars left the result card.
+ */
+export function promptableLunch<T extends SpinFacts>(
+  rows: readonly T[],
+  now: Date,
+  ratedRestaurantIds: ReadonlySet<number>,
+): T | null {
+  const today = taipeiDayIndex(now);
+  const kinds = classifySpins(rows);
+  let best: T | null = null;
+  for (const r of rows) {
+    const age = today - taipeiDayIndex(r.spunAt);
+    if (age < 1 || age > PROMPT_DAYS) continue;
+    if (kinds.get(r.id) !== "lunch" || ratedRestaurantIds.has(r.restaurantId)) continue;
+    if (!best || bySpinOrder(r, best) > 0) best = r;
+  }
+  return best;
+}
