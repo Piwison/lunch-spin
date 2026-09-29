@@ -13,6 +13,7 @@ import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
 import { hoursView } from "@shared/openHours";
+import { SPIN_REVEAL_DELAY_MS } from "@shared/wheelGeometry";
 import { resolveBootstrapWheelId, speculativeWheelId } from "@shared/bootstrap";
 import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
 import { classifyPlacesStatus } from "@shared/placesError";
@@ -78,9 +79,18 @@ import {
 } from "./db";
 
 /** The today card's rows (one per lunch decided today) and the newest spin of
- *  any kind (for the teammate toast), from one read of today's spins. */
-function todayView(rows: Awaited<ReturnType<typeof getSpinsSince>>, now: Date) {
-  const today = todaysLunches(rows, now).map((r) => {
+ *  any kind (for the teammate toast), from one read of today's spins.
+ *
+ *  Someone else's spin stays off `viewerId`'s card until it is
+ *  SPIN_REVEAL_DELAY_MS old — the spinner's own wheel is still turning until
+ *  then, and a teammate must not learn the answer first (plan 7d). It still
+ *  counts for classification, so a fresh respin still retires the lunch it
+ *  replaces. `latestSpin.ageMs` is measured on this clock, so the client can
+ *  time the toast without trusting its own. */
+function todayView(rows: Awaited<ReturnType<typeof getSpinsSince>>, now: Date, viewerId: number) {
+  const revealed = (r: { spunBy: number; spunAt: Date }) =>
+    r.spunBy === viewerId || now.getTime() - r.spunAt.getTime() >= SPIN_REVEAL_DELAY_MS;
+  const today = todaysLunches(rows, now).filter(revealed).map((r) => {
     const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
     return {
       spinId: r.id,
@@ -106,6 +116,7 @@ function todayView(rows: Awaited<ReturnType<typeof getSpinsSince>>, now: Date) {
         spunBy: last.spunBy,
         spunByName: last.spunByName,
         spunAt: last.spunAt,
+        ageMs: now.getTime() - last.spunAt.getTime(),
       }
     : null;
   return { today, latestSpin };
@@ -411,7 +422,7 @@ export const appRouter = router({
           getRoundMarks(input.wheelId).then(buildSessionState),
           getSpinsSince(input.wheelId, startOfTaipeiDay(now)),
         ]);
-        return { members, session, ...todayView(spinsToday, now) };
+        return { members, session, ...todayView(spinsToday, now, ctx.user.id) };
       }),
 
     create: protectedProcedure
@@ -1394,7 +1405,7 @@ export const appRouter = router({
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const now = new Date();
-        return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now).today;
+        return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now, ctx.user.id).today;
       }),
 
     // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion

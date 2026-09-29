@@ -58,6 +58,33 @@ export const SPIN_TOTAL_MS =
   SPIN_TIMELINE.unrollDelayMs +
   SPIN_TIMELINE.unrollMs;
 
+/** Constant free-spin speed, deg/ms (~4 turns/s). */
+export const FREE_SPIN_SPEED = 1.49;
+
+/**
+ * Whole turns the landing must cover, so the stop reads as a decision.
+ *
+ * Four rather than five over the shortened travel: the spin is shorter because
+ * it turns less, not because it hurries. The handover speed is `decayMs`'s job,
+ * not this constant's — see `decayDurationMs`, which sizes the deceleration to
+ * whatever arc the landing picks.
+ */
+export const MIN_LAND_TURNS = 4;
+
+/**
+ * The final arc handed to the settle, where the overshoot lives.
+ *
+ * Kept well under a half-pane (22.5° at eight places) so the bounce never
+ * carries the pointer off the winning pane and back — the wheel wavers between
+ * two panes during the decay, which is intended, but once it has landed it has
+ * landed.
+ */
+export const SETTLE_DEG = 12;
+
+/** The longest arc a landing's decay can cover: the minimum turns plus up to a
+ *  full turn of alignment, less the settle (landingRotationDeg). */
+export const MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
+
 /** Full size out to here; beyond FAR_DEG a label is not rendered at all. */
 const SHARP_DEG = 22.5;
 const FAR_DEG = 60;
@@ -488,3 +515,26 @@ export function decayDurationMs(arcDeg: number, freeSpinSpeed: number): number {
   if (freeSpinSpeed <= 0) return 0;
   return (Math.abs(arcDeg) * DECAY_PEAK) / freeSpinSpeed;
 }
+
+/**
+ * How long after a spin is recorded its result may be shown to anyone but the
+ * person who spun it: the longest the spinner's own wheel can take to land and
+ * unroll the name. A teammate who hears the answer before the spinner sees it
+ * spoils the one moment the app exists for (7d in the 2026-09-24 plan).
+ *
+ * Measured from the server's record of the spin, which is written when the
+ * winner is chosen. The spinner's wheel cannot start decelerating until the
+ * reply carrying that winner reaches it, so the trip back is allowed for too —
+ * without it the teammate's toast arrived 125–418ms after the spinner's result
+ * in the replica, which is too close to survive a slow phone network.
+ */
+export const REPLY_ALLOWANCE_MS = 500;
+
+export const SPIN_REVEAL_DELAY_MS = Math.ceil(
+  REPLY_ALLOWANCE_MS +
+  SPIN_TIMELINE.windupMs +
+    Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) +
+    SPIN_TIMELINE.settleMs +
+    SPIN_TIMELINE.unrollDelayMs +
+    SPIN_TIMELINE.unrollMs,
+);

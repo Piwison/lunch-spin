@@ -785,7 +785,12 @@ export async function getWheelRatingRows(
 export async function recordSpin(wheelId: number, restaurantId: number, spunBy: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
+  // spunAt from this server's clock, not the column's DEFAULT now(): everything
+  // that reads it back — today's Taipei day, the exclusion window, and the
+  // teammate reveal delay (SPIN_REVEAL_DELAY_MS) — compares it with this
+  // server's `new Date()`, and two clocks can disagree by more than that delay's
+  // margin.
+  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy, spunAt: new Date() });
   return (result as any)[0].insertId as number;
 }
 

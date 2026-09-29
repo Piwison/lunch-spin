@@ -4,6 +4,9 @@ import {
   EASE_EXIT,
   EASE_SETTLE,
   EASE_STANDARD,
+  FREE_SPIN_SPEED,
+  MIN_LAND_TURNS,
+  SETTLE_DEG,
   SPIN_TIMELINE,
   decayDurationMs,
   landingRotationDeg,
@@ -92,28 +95,9 @@ const DISC_CENTER_X = 0.5;
 /** Degrees the disc counter-rotates on the wind-up, before it releases. */
 const WINDUP_DEG = 14;
 
-/** Constant free-spin speed, deg/ms (~4 turns/s). */
-const FREE_SPIN_SPEED = 1.49;
-
-/**
- * Whole turns the landing must cover, so the stop reads as a decision.
- *
- * Four rather than five over the shortened travel: the spin is shorter because
- * it turns less, not because it hurries. The handover speed is `decayMs`'s job,
- * not this constant's — see `decayDurationMs`, which sizes the deceleration to
- * whatever arc the landing picks.
- */
-const MIN_LAND_TURNS = 4;
-
-/**
- * The final arc handed to the settle, where the overshoot lives.
- *
- * Kept well under a half-pane (22.5° at eight places) so the bounce never
- * carries the pointer off the winning pane and back — the wheel wavers between
- * two panes during the decay, which is intended, but once it has landed it has
- * landed.
- */
-const SETTLE_DEG = 12;
+/* FREE_SPIN_SPEED, MIN_LAND_TURNS and SETTLE_DEG live in shared/wheelGeometry:
+   they bound how long a landing can take, which is what SPIN_REVEAL_DELAY_MS —
+   how long teammates wait before they are told — is derived from. */
 
 /** Zoomed disc diameter, as a multiple of the frame width (spec §4). */
 const ZOOM_DISC_TO_FRAME = 1.9;

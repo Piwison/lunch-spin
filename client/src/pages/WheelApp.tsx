@@ -7,7 +7,7 @@ import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
 import TodayCard, { type TodayEntry } from "@/components/TodayCard";
-import { labelTier } from "@shared/wheelGeometry";
+import { labelTier, SPIN_REVEAL_DELAY_MS } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar, { FilterTrigger } from "@/components/FilterBar";
@@ -118,6 +118,9 @@ export default function WheelApp() {
   const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
+  // Replaying a teammate's spin on this wheel: the server already chose, so this
+  // only animates to their result. Null for every spin of your own.
+  const [replay, setReplay] = useState<{ restaurantId: number; name: string; by: string } | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
@@ -632,11 +635,20 @@ export default function WheelApp() {
     return last && !last.accepted ? last : null;
   }, [todayEntries, user?.id]);
 
-  // Latest spin: surface a teammate's spin (skip our own).
+  // Latest spin: surface a teammate's spin (skip our own) — but only once their
+  // own wheel has landed. The toast names who, never what; the answer is theirs
+  // to see first (plan 7d), and [See result] replays it here.
   const lastSpinIdRef = useRef<number | null>(null);
+  const revealTimers = useRef<number[]>([]);
   useEffect(() => {
     lastSpinIdRef.current = null;
+    return () => {
+      revealTimers.current.forEach((id) => window.clearTimeout(id));
+      revealTimers.current = [];
+    };
   }, [selectedWheelId]);
+  /** Always the current render's replay starter, for toast actions that fire later. */
+  const startReplayRef = useRef<(r: { restaurantId: number; name: string; by: string }) => void>(() => {});
   useEffect(() => {
     if (!realtimeQuery.data) return;
     const latest = realtimeQuery.data.latestSpin;
@@ -651,8 +663,23 @@ export default function WheelApp() {
     if (latest.id !== lastSpinIdRef.current) {
       lastSpinIdRef.current = latest.id;
       if (user && latest.spunBy !== user.id) {
-        toast(t("app.realtime.spin", { name: latest.spunByName ?? t("app.teammate"), restaurant: latest.restaurantName }), { icon: "🎡" });
-        refetchRestaurants();
+        const by = latest.spunByName ?? t("app.teammate");
+        const target = { restaurantId: latest.restaurantId, name: latest.restaurantName, by };
+        // ageMs is the server's own measure of how old the spin is, so a phone
+        // whose clock is off by seconds still waits the right amount.
+        const wait = Math.max(0, SPIN_REVEAL_DELAY_MS - latest.ageMs);
+        const timer = window.setTimeout(() => {
+          toast(t("app.realtime.spun", { name: by }), {
+            icon: "🎡",
+            // Long enough to reach for: the button is the point of this toast.
+            duration: 12_000,
+            action: { label: t("app.realtime.see"), onClick: () => startReplayRef.current(target) },
+          });
+          // Deferred with the toast: the refetch drops the winner off this
+          // wheel, and a pane vanishing is the answer too.
+          refetchRestaurants();
+        }, wait);
+        revealTimers.current.push(timer);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -744,14 +771,26 @@ export default function WheelApp() {
     [restaurants, selectedTagIds, maxWalkMinutes, session],
   );
 
-  const wheelSegments: WheelSegment[] = useMemo(() =>
-    filteredRestaurants.map((r, i) => ({
+  const wheelSegments: WheelSegment[] = useMemo(() => {
+    const segs = filteredRestaurants.map((r, i) => ({
       id: r.id,
       label: r.name,
       color: segmentColor(primaryTag(r)?.color, i),
-    })),
-    [filteredRestaurants]
-  );
+    }));
+    // A replayed winner is already excluded — picking it excluded it — so it is
+    // not on this wheel any more. Put it back for the replay, or the disc would
+    // have no pane to land on (failure mode 51). SpinWheel freezes this list for
+    // as long as the replay is on screen.
+    if (replay && !segs.some((s) => s.id === replay.restaurantId)) {
+      const r = restaurants?.find((x) => x.id === replay.restaurantId);
+      segs.push({
+        id: replay.restaurantId,
+        label: replay.name,
+        color: segmentColor(r ? primaryTag(r)?.color : undefined, segs.length),
+      });
+    }
+    return segs;
+  }, [filteredRestaurants, replay, restaurants]);
 
   /** A restaurant refresh that is owed but must wait for the camera to pull out
    *  — see handleSpinEnd. Every exit from the result (accept, Respin, [x],
@@ -774,8 +813,9 @@ export default function WheelApp() {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
-    // The counter that retires the one-time exclusion explainer.
-    setSpinsSeen((n) => {
+    // The counter that retires the one-time exclusion explainer. A replay is not
+    // your spin and shows no explainer.
+    if (!replay) setSpinsSeen((n) => {
       const next = n + 1;
       try {
         localStorage.setItem(SPINS_SEEN_KEY, String(next));
@@ -799,6 +839,7 @@ export default function WheelApp() {
   };
 
   const handleSpin = async () => {
+    setReplay(null);
     if (wheelSegments.length === 0) {
       setSpinError(t("app.spin.noRestaurants"));
       return;
@@ -829,6 +870,21 @@ export default function WheelApp() {
       setSpinError(t(code === "BAD_REQUEST" ? "app.block.default" : "app.spin.failed"));
     }
   };
+
+  /** Play a teammate's spin on this wheel, landing where theirs did. The server
+   *  decided it already — this only animates; spins.create is never called. */
+  const startReplay = (r: { restaurantId: number; name: string; by: string }) => {
+    if (isSpinning || showResult || createSpin.isPending) return;
+    setActiveTab("wheel");
+    setShowResult(false);
+    setSpinResult(null);
+    setSpinId(null);
+    setSpinError(null);
+    setReplay(r);
+    setTargetId(r.restaurantId);
+    setIsSpinning(true);
+  };
+  startReplayRef.current = startReplay;
 
   const handleReSpin = () => {
     setShowResult(false);
@@ -1667,12 +1723,17 @@ export default function WheelApp() {
             }
             onAccept={handleAccept}
             acceptLabel={t(isShared ? "wheel.result.tellTeam" : "wheel.result.soundsGood")}
+            readOnly={!!replay}
+            eyebrow={replay ? t("app.realtime.theirPick", { name: replay.by }) : undefined}
             onRespin={handleReSpin}
             respinDisabled={wheelSegments.length === 0}
             onDirections={() => openDirections(spinResult)}
-            onDismiss={() => setShowResult(false)}
+            onDismiss={() => {
+              setShowResult(false);
+              setReplay(null);
+            }}
           >
-            {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
+            {!replay && isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
               <div className="glass-chip flex items-start gap-2.5 px-4 py-3 w-full text-left">
                 <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand-text)" }} />
                 <span className="type-meta" style={{ color: "var(--body)" }}>

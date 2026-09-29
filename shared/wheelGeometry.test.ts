@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   DECAY_PEAK,
+  FREE_SPIN_SPEED,
+  MAX_LAND_ARC_DEG,
+  MIN_LAND_TURNS,
+  SETTLE_DEG,
+  SPIN_REVEAL_DELAY_MS,
   decayDurationMs,
   EASE_DECAY,
   EASE_EXIT,
@@ -562,5 +567,29 @@ describe("cubicBezier", () => {
 
   it("exits: slow to start, so the wind-up reads as loading up", () => {
     expect(EASE_EXIT(0.25)).toBeLessThan(0.2);
+  });
+});
+
+describe("SPIN_REVEAL_DELAY_MS — teammates never learn the result first", () => {
+  it("covers the longest landing: wind-up, the decay over the longest arc, the settle and the unroll", () => {
+    const longestDecay = decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED);
+    expect(SPIN_REVEAL_DELAY_MS).toBeGreaterThanOrEqual(
+      SPIN_TIMELINE.windupMs +
+        Math.max(SPIN_TIMELINE.travelMs, longestDecay) +
+        SPIN_TIMELINE.settleMs +
+        SPIN_TIMELINE.unrollDelayMs +
+        SPIN_TIMELINE.unrollMs,
+    );
+  });
+
+  it("the longest arc is the minimum turns plus a full alignment remainder, less the settle", () => {
+    expect(MAX_LAND_ARC_DEG).toBe((MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG);
+    // landingRotationDeg never exceeds it, at any pointer angle or target.
+    for (const pointerDeg of POINTER_ANGLES) {
+      for (let target = 0; target < 8; target++) {
+        const to = landingRotationDeg({ fromDeg: 13, targetIndex: target, count: 8, pointerDeg, minTurns: MIN_LAND_TURNS });
+        expect(to - SETTLE_DEG - 13).toBeLessThanOrEqual(MAX_LAND_ARC_DEG);
+      }
+    }
   });
 });

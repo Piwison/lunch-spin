@@ -806,7 +806,7 @@ async function getWheelRatingRows(wheelId) {
 async function recordSpin(wheelId, restaurantId, spunBy) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
+  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy, spunAt: /* @__PURE__ */ new Date() });
   return result[0].insertId;
 }
 async function getSpinHistory(wheelId) {
@@ -1845,6 +1845,72 @@ function hoursView(rawOpenHours, utcOffsetMinutes, walkSeconds, now = /* @__PURE
   };
 }
 
+// shared/wheelGeometry.ts
+var SPIN_TIMELINE = {
+  /** Disc counter-rotates slightly. `--ease-exit`. */
+  windupMs: 180,
+  /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
+   *  server is still choosing — this is the floor, not the ceiling.
+   *
+   *  2600 -> 1900. The old spin read as long, and the reason was not only its
+   *  length: with the old decay curve the wheel finished 96% of its rotation in
+   *  the first half of the decay, so most of what you sat through was a disc
+   *  that had already stopped moving. Shortening the phase and spreading the
+   *  deceleration across it are the same fix. */
+  travelMs: 1900,
+  /** Lands the winning pane on the pointer. `--ease-settle`. */
+  settleMs: 220,
+  /** Disc drops back 52px and blurs to 14px at 50% opacity. */
+  recedeMs: 320,
+  /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
+  unrollDelayMs: 160,
+  /** Winning pane becomes full-bleed display type. */
+  unrollMs: 460,
+  /** Camera push into the wheel. `--ease-zoom`. */
+  zoomMs: 420,
+  /** Reduced motion: no zoom, no blur, no unroll — same result, no theatre. */
+  reducedMs: 400
+};
+var SPIN_TOTAL_MS = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs;
+var FREE_SPIN_SPEED = 1.49;
+var MIN_LAND_TURNS = 4;
+var SETTLE_DEG = 12;
+var MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
+function cubicBezier(x1, y1, x2, y2) {
+  const curve = (a, b, t2) => {
+    const u = 1 - t2;
+    return 3 * u * u * t2 * a + 3 * u * t2 * t2 * b + t2 * t2 * t2;
+  };
+  return (p) => {
+    if (p <= 0) return 0;
+    if (p >= 1) return 1;
+    let lo = 0;
+    let hi = 1;
+    let t2 = p;
+    for (let i = 0; i < 24; i++) {
+      const x = curve(x1, x2, t2);
+      if (Math.abs(x - p) < 1e-6) break;
+      if (x < p) lo = t2;
+      else hi = t2;
+      t2 = (lo + hi) / 2;
+    }
+    return curve(y1, y2, t2);
+  };
+}
+var EASE_STANDARD = cubicBezier(0.2, 0.9, 0.1, 1);
+var EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
+var EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
+var EASE_DECAY = cubicBezier(0.3, 0.45, 0.5, 1);
+var DECAY_PEAK = 1.684;
+function decayDurationMs(arcDeg, freeSpinSpeed) {
+  if (freeSpinSpeed <= 0) return 0;
+  return Math.abs(arcDeg) * DECAY_PEAK / freeSpinSpeed;
+}
+var REPLY_ALLOWANCE_MS = 500;
+var SPIN_REVEAL_DELAY_MS = Math.ceil(
+  REPLY_ALLOWANCE_MS + SPIN_TIMELINE.windupMs + Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs
+);
+
 // shared/bootstrap.ts
 function resolveBootstrapWheelId(accessibleWheelIds, requestedWheelId, defaultWheelId) {
   const accessible = new Set(accessibleWheelIds);
@@ -2664,8 +2730,9 @@ async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
 }
 
 // server/routers.ts
-function todayView(rows, now) {
-  const today = todaysLunches(rows, now).map((r) => {
+function todayView(rows, now, viewerId) {
+  const revealed = (r) => r.spunBy === viewerId || now.getTime() - r.spunAt.getTime() >= SPIN_REVEAL_DELAY_MS;
+  const today = todaysLunches(rows, now).filter(revealed).map((r) => {
     const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
     return {
       spinId: r.id,
@@ -2689,7 +2756,8 @@ function todayView(rows, now) {
     restaurantName: last.restaurantName,
     spunBy: last.spunBy,
     spunByName: last.spunByName,
-    spunAt: last.spunAt
+    spunAt: last.spunAt,
+    ageMs: now.getTime() - last.spunAt.getTime()
   } : null;
   return { today, latestSpin };
 }
@@ -2901,7 +2969,7 @@ var appRouter = router({
         getRoundMarks(input.wheelId).then(buildSessionState),
         getSpinsSince(input.wheelId, startOfTaipeiDay(now))
       ]);
-      return { members, session, ...todayView(spinsToday, now) };
+      return { members, session, ...todayView(spinsToday, now, ctx.user.id) };
     }),
     create: protectedProcedure.input(z2.object({
       name: z2.string().min(1).max(128),
@@ -3671,7 +3739,7 @@ var appRouter = router({
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const now = /* @__PURE__ */ new Date();
-      return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now).today;
+      return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now, ctx.user.id).today;
     }),
     // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
     // tier and, on a shared wheel, notifies the rest of the team. Idempotent:

@@ -17,6 +17,11 @@ interface WinnerSurfaceProps {
   children?: ReactNode;
   onAccept: () => void;
   acceptLabel?: string;
+  /** A replay of someone else's spin: the result is theirs, so there is
+   *  nothing to accept or respin — directions only. */
+  readOnly?: boolean;
+  /** Replaces "Today's lunch" above the name (a replay names whose pick it is). */
+  eyebrow?: string;
   onRespin: () => void;
   respinDisabled?: boolean;
   onDirections: () => void;
@@ -69,6 +74,8 @@ export default function WinnerSurface({
   children,
   onAccept,
   acceptLabel,
+  readOnly = false,
+  eyebrow,
   onRespin,
   respinDisabled = false,
   onDirections,
@@ -204,7 +211,7 @@ export default function WinnerSurface({
         />
         <div className="w-full">
           <p className="type-eyebrow mb-3" style={{ color: "var(--ink-warm)" }}>
-            {t("wheel.result.today")}
+            {eyebrow ?? t("wheel.result.today")}
           </p>
           {/* Full bleed, no frame. --accent-ink is the accent tuned for text on
               light glass; in dark it resolves to the accent itself.
@@ -267,23 +274,28 @@ export default function WinnerSurface({
         <div className="flex flex-col gap-2.5 w-full">
           {/* The one action the whole app exists for, set a rung above every
               other primary: 17px semibold on the body rung, no tracking. */}
-          <Button
-            autoFocus
-            onClick={onAccept}
-            className="w-full text-[1.0625rem] font-semibold tracking-normal"
-          >
-            <Check size={18} /> {acceptLabel ?? t("wheel.result.accept")}
-          </Button>
-          <div className="flex gap-2.5">
-            <button
-              onClick={onRespin}
-              disabled={respinDisabled}
-              className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40"
-              style={GHOST_ON_GLASS}
+          {!readOnly && (
+            <Button
+              autoFocus
+              onClick={onAccept}
+              className="w-full text-[1.0625rem] font-semibold tracking-normal"
             >
-              <RotateCw size={16} /> {t("wheel.result.respin")}
-            </button>
+              <Check size={18} /> {acceptLabel ?? t("wheel.result.accept")}
+            </Button>
+          )}
+          <div className="flex gap-2.5">
+            {!readOnly && (
+              <button
+                onClick={onRespin}
+                disabled={respinDisabled}
+                className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)] disabled:opacity-40"
+                style={GHOST_ON_GLASS}
+              >
+                <RotateCw size={16} /> {t("wheel.result.respin")}
+              </button>
+            )}
             <button
+              autoFocus={readOnly}
               onClick={onDirections}
               className="flex-1 flex items-center justify-center gap-2 font-semibold transition-transform active:scale-[var(--press-scale)]"
               style={GHOST_ON_GLASS}
