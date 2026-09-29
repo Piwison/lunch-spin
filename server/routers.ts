@@ -26,6 +26,7 @@ import { mergeExtraNames } from "@shared/demoDraft";
 import { addProviderRestaurants, copyWheelRestaurants } from "./db";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
+import { guessCuisine } from "@shared/cuisineGuess";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
 import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, searchPlacesByText, walkingMatrix } from "./places";
 import { computeDistancesFor, maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
@@ -187,7 +188,9 @@ async function addNearbyPlaces(
     wheelId,
     userId,
     fresh.map((place) => {
-      const cuisineTag = matchCuisineTag(place.cuisine, wheelTags);
+      // Google's cuisine when it gave one, else the name's (a suggested tag the
+      // team can change) — "restaurant" is all Google says for most places.
+      const cuisineTag = matchCuisineTag(place.cuisine ?? guessCuisine(place.name), wheelTags);
       return {
         name: place.name,
         mapUrl: place.mapUrl ?? null,
@@ -1125,7 +1128,7 @@ export const appRouter = router({
         // placeMapping emits). The matched tag becomes the primary tag, so the
         // place gets its wheel-segment color and joins cuisine rotation.
         const wheelTags = await getTagsForWheel(input.wheelId);
-        const cuisineTag = matchCuisineTag(input.place.cuisine, wheelTags);
+        const cuisineTag = matchCuisineTag(input.place.cuisine ?? guessCuisine(input.place.name), wheelTags);
         const id = await addRestaurant(
           input.wheelId,
           ctx.user.id,

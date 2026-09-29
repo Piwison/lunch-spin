@@ -2311,6 +2311,44 @@ function matchCuisineTag(label, tags2) {
   return foodType;
 }
 
+// shared/cuisineGuess.ts
+var RULES = [
+  { cuisine: "Brunch", han: ["\u65E9\u5348\u9910"], latin: ["brunch"] },
+  { cuisine: "Bakery", han: ["\u9EB5\u5305", "\u70D8\u7119"], latin: ["bakery", "boulangerie"] },
+  { cuisine: "Korean", han: ["\u97D3\u5F0F", "\u97D3\u570B", "\u97D3"], latin: ["korean", "seoul", "bibimbap"] },
+  {
+    cuisine: "Japanese",
+    han: ["\u62C9\u9EB5", "\u58FD\u53F8", "\u65E5\u5F0F", "\u65E5\u672C", "\u4E3C", "\u5C45\u9152\u5C4B", "\u70CF\u9F8D\u9EB5", "\u5B9A\u98DF"],
+    latin: ["japanese", "sushi", "sushiro", "ramen", "udon", "izakaya", "donburi", "yoshinoya"]
+  },
+  { cuisine: "Thai", han: ["\u6CF0\u5F0F", "\u6CF0\u570B"], latin: ["thai"] },
+  { cuisine: "Vietnamese", han: ["\u8D8A\u5357", "\u6CB3\u7C89"], latin: ["vietnamese", "pho", "banh"] },
+  { cuisine: "Italian", han: ["\u7FA9\u5927\u5229", "\u7FA9\u5F0F"], latin: ["italian", "pasta", "trattoria"] },
+  { cuisine: "Pizza", han: ["\u62AB\u85A9", "\u6BD4\u85A9"], latin: ["pizza", "pizzeria"] },
+  { cuisine: "Burgers", han: ["\u6F22\u5821"], latin: ["burger", "burgers"] },
+  { cuisine: "Indian", han: ["\u5370\u5EA6"], latin: ["indian"] },
+  { cuisine: "Mexican", han: ["\u58A8\u897F\u54E5"], latin: ["mexican", "taco", "tacos", "burrito"] },
+  { cuisine: "Steakhouse", han: ["\u725B\u6392"], latin: ["steak", "steakhouse"] },
+  { cuisine: "Seafood", han: ["\u6D77\u9BAE"], latin: ["seafood"] },
+  { cuisine: "Vegetarian", han: ["\u7D20\u98DF", "\u852C\u98DF"], latin: ["vegetarian"] },
+  { cuisine: "Vegan", latin: ["vegan"] },
+  { cuisine: "Salad", han: ["\u6C99\u62C9"], latin: ["salad", "salads"] },
+  { cuisine: "Sandwiches", han: ["\u4E09\u660E\u6CBB"], latin: ["sandwich", "sandwiches", "subway"] },
+  { cuisine: "Dessert", han: ["\u751C\u9EDE", "\u751C\u54C1"], latin: ["dessert", "desserts"] },
+  { cuisine: "Cafe", han: ["\u5496\u5561"], latin: ["cafe", "caf\xE9", "coffee"] },
+  { cuisine: "Breakfast", han: ["\u65E9\u9910"], latin: ["breakfast"] },
+  { cuisine: "Noodles", han: ["\u9EB5"], latin: ["noodle", "noodles"] }
+];
+function guessCuisine(name) {
+  const text2 = name.normalize("NFKC");
+  const words = new Set(text2.toLowerCase().split(/[^a-zé]+/).filter(Boolean));
+  for (const rule of RULES) {
+    if (rule.han?.some((k) => text2.includes(k))) return rule.cuisine;
+    if (rule.latin?.some((k) => words.has(k))) return rule.cuisine;
+  }
+  return null;
+}
+
 // shared/walkTime.ts
 var hasCoords = (p) => p.lat != null && p.lng != null;
 function routableCoords(places) {
@@ -2849,7 +2887,7 @@ async function addNearbyPlaces(wheelId, userId, places) {
     wheelId,
     userId,
     fresh.map((place) => {
-      const cuisineTag = matchCuisineTag(place.cuisine, wheelTags);
+      const cuisineTag = matchCuisineTag(place.cuisine ?? guessCuisine(place.name), wheelTags);
       return {
         name: place.name,
         mapUrl: place.mapUrl ?? null,
@@ -3578,7 +3616,7 @@ var appRouter = router({
         return { id: null, duplicate: true };
       }
       const wheelTags = await getTagsForWheel(input.wheelId);
-      const cuisineTag = matchCuisineTag(input.place.cuisine, wheelTags);
+      const cuisineTag = matchCuisineTag(input.place.cuisine ?? guessCuisine(input.place.name), wheelTags);
       const id = await addRestaurant(
         input.wheelId,
         ctx.user.id,

@@ -1528,10 +1528,15 @@ export default function WheelApp() {
                     {isShared && (
                       <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <RoundPanel
-                          restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
+                          restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name, tagIds: r.tags.map((tag) => tag.id) }))}
                           tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color, category: t.category }))}
                           session={session}
                           currentUserId={user.id}
+                          people={[
+                            ...(wheelData?.owner ? [{ userId: wheelData.owner.id, name: wheelData.owner.name, email: wheelData.owner.email }] : []),
+                            ...(realtimeQuery.data?.members ?? wheelData?.members ?? []),
+                          ]}
+                          onAddCuisines={() => setActiveTab("restaurants")}
                           onVote={(id) => selectedWheelId && voteMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
                           onVeto={(id) => selectedWheelId && vetoMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
                           onDietary={(tagId) => selectedWheelId && dietaryMutation.mutate({ wheelId: selectedWheelId, tagId })}

@@ -1,12 +1,17 @@
-import { ThumbsUp, Ban, RotateCcw, Salad, ChevronDown } from "lucide-react";
+import { RotateCcw, Salad, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { excludedDietaryTagIds, voteCounts, type SessionState } from "@shared/session";
 import { useLang } from "@/i18n";
 import { tagLabel } from "@/lib/tagLabel";
+import { initials } from "@/lib/initials";
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 
 interface RoundRestaurant {
   id: number;
   name: string;
+  /** The place's tags — which cuisines are on the wheel at all. */
+  tagIds: number[];
 }
 
 interface RoundTag {
@@ -16,34 +21,79 @@ interface RoundTag {
   category?: string | null;
 }
 
+interface RoundPerson {
+  userId: number;
+  name: string | null;
+  email: string | null;
+}
+
 interface RoundPanelProps {
-  // Tag-filtered, non-excluded restaurants for this round (including vetoed ones
-  // so they can be un-vetoed).
+  // Tag-filtered, open restaurants for today (including vetoed ones so they can
+  // be un-vetoed, and ones a cuisine avoid has taken off, so it can be undone).
   restaurants: RoundRestaurant[];
   tags: RoundTag[];
   session: SessionState;
   currentUserId: number;
+  /** Everyone on the wheel, owner included — to put initials on a vote. */
+  people: RoundPerson[];
   onVote: (restaurantId: number) => void;
   onVeto: (restaurantId: number) => void;
   onDietary: (tagId: number) => void;
   onClear: () => void;
-  /** When true, the round body collapses behind its header (collapsed by default). */
+  /** Where "tag places with a cuisine" goes — the Places tab. */
+  onAddCuisines?: () => void;
+  /** When true, the body collapses behind its header (collapsed by default). */
   collapsible?: boolean;
 }
 
-export default function RoundPanel({ restaurants, tags, session, currentUserId, onVote, onVeto, onDietary, onClear, collapsible = false }: RoundPanelProps) {
+/**
+ * Today's votes: "want it" and "not today" per place, and the cuisines nobody
+ * is in the mood for. Both are text buttons at the 44px control height — the
+ * old thumb and ban glyphs were 24px pills whose meaning you had to hover for.
+ * Only cuisines some place on the wheel actually carries are offered: the full
+ * 31-tag catalogue offered "Korean" on wheels with no Korean place, where
+ * tapping it did nothing.
+ */
+export default function RoundPanel({
+  restaurants,
+  tags,
+  session,
+  currentUserId,
+  people,
+  onVote,
+  onVeto,
+  onDietary,
+  onClear,
+  onAddCuisines,
+  collapsible = false,
+}: RoundPanelProps) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   if (restaurants.length === 0) return null;
 
+  const who = new Map(people.map((p) => [p.userId, p]));
+  const monogram = (userId: number) => {
+    const p = who.get(userId);
+    return initials(p?.name ?? null, p?.email ?? null);
+  };
+  const fullName = (userId: number) => {
+    if (userId === currentUserId) return t("wheel.members.you");
+    const p = who.get(userId);
+    return p?.name?.trim() || p?.email?.split("@")[0] || t("app.teammate");
+  };
+
   const counts = voteCounts(session);
   const avoidedTags = new Set(excludedDietaryTagIds(session));
-  const myDietary = new Set(session.dietary.find((m) => m.userId === currentUserId)?.tagIds ?? []);
-  const myVotes = new Set(
-    session.votes.filter((m) => m.userIds.includes(currentUserId)).map((m) => m.restaurantId),
-  );
-  const vetoedBy = new Map(session.vetoes.filter((m) => m.userIds.length > 0).map((m) => [m.restaurantId, m.userIds]));
-  const hasMarks = counts.size > 0 || vetoedBy.size > 0 || avoidedTags.size > 0;
+  const avoidersOf = new Map<number, number[]>();
+  for (const m of session.dietary) for (const id of m.tagIds) avoidersOf.set(id, [...(avoidersOf.get(id) ?? []), m.userId]);
+  const votersOf = new Map(session.votes.filter((m) => m.userIds.length > 0).map((m) => [m.restaurantId, m.userIds]));
+  const vetoersOf = new Map(session.vetoes.filter((m) => m.userIds.length > 0).map((m) => [m.restaurantId, m.userIds]));
+  const hasMarks = counts.size > 0 || vetoersOf.size > 0 || avoidedTags.size > 0;
+
+  // Cuisines on the wheel today, plus any already avoided (its places left the
+  // list above, and the chip has to stay to be undone).
+  const onWheel = new Set(restaurants.flatMap((r) => r.tagIds));
+  const cuisineTags = tags.filter((tag) => onWheel.has(tag.id) || avoidedTags.has(tag.id));
 
   // Most-voted first, then alphabetical, so the group's lean is visible at a glance.
   const ordered = [...restaurants].sort((a, b) => {
@@ -61,14 +111,14 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
         <button
           type="button"
           onClick={() => collapsible && setOpen((o) => !o)}
-          className={`flex items-center gap-1.5 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
+          aria-expanded={collapsible ? open : undefined}
+          className={`flex items-center gap-1.5 min-h-11 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
         >
           <span className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
             {t("wheel.round.title")}
           </span>
-          <span className="type-meta font-normal text-muted-foreground/70">· {restaurants.length}</span>
           {hasMarks && (
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "oklch(0.70 0.18 150)" }} title={t("wheel.round.marks")} />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--ok)" }} title={t("wheel.round.marks")} />
           )}
           {collapsible && (
             <ChevronDown
@@ -79,98 +129,114 @@ export default function RoundPanel({ restaurants, tags, session, currentUserId, 
           )}
         </button>
         {hasMarks && showBody && (
-          <button
-            onClick={onClear}
-            className="type-meta text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            <RotateCcw size={12} /> {t("wheel.round.clear")}
-          </button>
+          <Button variant="ghost" size="md" onClick={onClear}>
+            <RotateCcw size={14} /> {t("wheel.round.clear")}
+          </Button>
         )}
       </div>
 
-      {/* Dietary constraints — avoid tags for the round */}
-      {showBody && tags.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="type-meta text-muted-foreground flex items-center gap-1">
-            <Salad size={12} /> {t("wheel.round.avoid")}
-          </span>
-          {tags.map((tag) => {
-            const avoided = avoidedTags.has(tag.id);
-            const mine = myDietary.has(tag.id);
+      {/* Cuisines nobody is in the mood for today. */}
+      {showBody &&
+        (cuisineTags.length > 0 ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="type-meta text-muted-foreground flex items-center gap-1">
+              <Salad size={13} /> {t("wheel.round.avoid")}
+            </span>
+            {cuisineTags.map((tag) => {
+              const avoiders = avoidersOf.get(tag.id) ?? [];
+              const mine = avoiders.includes(currentUserId);
+              const others = avoiders.filter((id) => id !== currentUserId);
+              return (
+                <Chip
+                  key={tag.id}
+                  pressed={mine}
+                  onClick={() => onDietary(tag.id)}
+                  title={mine ? t("wheel.round.allow") : t("wheel.round.avoidTitle")}
+                >
+                  {tagLabel(tag.name, t, tag.category)}
+                  {others.length > 0 && (
+                    <span className="type-meta" aria-label={t("wheel.round.by", { names: others.map(fullName).join(t("wheel.round.listSep")) })}>
+                      {others.map(monogram).join(" ")}
+                    </span>
+                  )}
+                </Chip>
+              );
+            })}
+          </div>
+        ) : (
+          onAddCuisines && (
+            <Button variant="link" size="md" className="self-start px-0" onClick={onAddCuisines}>
+              <Salad size={14} /> {t("wheel.round.addCuisines")}
+            </Button>
+          )
+        ))}
+
+      {showBody && (
+        <div className="flex flex-col gap-1.5">
+          {ordered.map((r) => {
+            const voters = votersOf.get(r.id) ?? [];
+            const vetoers = vetoersOf.get(r.id) ?? [];
+            const isVetoed = vetoers.length > 0;
+            const iVetoed = vetoers.includes(currentUserId);
+            const iVoted = voters.includes(currentUserId);
+            // Off the wheel because nobody's in the mood for its cuisine — say
+            // which, or the row looks spinnable while the wheel lacks it.
+            const skippedCuisine = tags.find((tag) => avoidedTags.has(tag.id) && r.tagIds.includes(tag.id));
+            const isOff = isVetoed || !!skippedCuisine;
             return (
-              <button
-                key={tag.id}
-                onClick={() => onDietary(tag.id)}
-                title={mine ? t("wheel.round.allow") : t("wheel.round.avoidTitle")}
-                className="px-2.5 py-0.5 rounded-full type-meta font-medium transition-all active:scale-95"
+              <div
+                key={r.id}
+                className="flex items-center gap-2 px-3 py-2"
                 style={{
-                  background: avoided ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
-                  border: `1px solid ${avoided ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
-                  color: avoided ? "var(--brand-text)" : "var(--muted-foreground)",
-                  textDecoration: avoided ? "line-through" : "none",
+                  borderRadius: "var(--radius-card)",
+                  background: "var(--paper)",
+                  border: "1px solid var(--border)",
                 }}
               >
-                {tagLabel(tag.name, t, tag.category)}
-              </button>
+                <div className="flex-1 min-w-0" style={{ opacity: isOff ? 0.55 : 1 }}>
+                  <p className={`text-sm font-medium break-words ${isOff ? "line-through" : ""}`} style={{ color: "var(--ink-warm)" }}>
+                    {r.name}
+                  </p>
+                  {skippedCuisine && (
+                    <p className="type-meta" style={{ color: "var(--body)" }}>
+                      {t("wheel.round.offByCuisine", { name: tagLabel(skippedCuisine.name, t, skippedCuisine.category) })}
+                    </p>
+                  )}
+                  {(voters.length > 0 || vetoers.length > 0) && (
+                    <p className="type-meta" style={{ color: "var(--body)" }}>
+                      {voters.length > 0 && (
+                        <span title={voters.map(fullName).join(t("wheel.round.listSep"))}>
+                          {t("wheel.round.wantBy", { names: voters.map(monogram).join(" ") })}
+                        </span>
+                      )}
+                      {voters.length > 0 && vetoers.length > 0 && " · "}
+                      {vetoers.length > 0 && (
+                        <span title={vetoers.map(fullName).join(t("wheel.round.listSep"))}>
+                          {t("wheel.round.vetoBy", { names: vetoers.map(monogram).join(" ") })}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <Chip
+                  pressed={iVoted}
+                  disabled={isOff}
+                  onClick={() => onVote(r.id)}
+                  aria-label={t(iVoted ? "wheel.round.removeVote" : "wheel.round.vote", { name: r.name })}
+                >
+                  {t("wheel.round.want")}
+                </Chip>
+                <Chip
+                  pressed={iVetoed}
+                  onClick={() => onVeto(r.id)}
+                  aria-label={t(iVetoed ? "wheel.round.undoVeto" : "wheel.round.veto", { name: r.name })}
+                >
+                  {t("wheel.round.notToday")}
+                </Chip>
+              </div>
             );
           })}
         </div>
-      )}
-
-      {showBody && (
-      <div className="flex flex-col gap-1.5">
-        {ordered.map((r) => {
-          const votes = counts.get(r.id) ?? 0;
-          const isVetoed = vetoedBy.has(r.id);
-          const iVetoed = (vetoedBy.get(r.id) ?? []).includes(currentUserId);
-          const iVoted = myVotes.has(r.id);
-          return (
-            <div
-              key={r.id}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg"
-              style={{
-                background: "var(--card)",
-                border: "1px solid var(--border)",
-                opacity: isVetoed ? 0.5 : 1,
-              }}
-            >
-              <span className={`flex-1 min-w-0 truncate text-sm ${isVetoed ? "line-through" : ""}`}>
-                {r.name}
-              </span>
-
-              {/* Vote */}
-              <button
-                onClick={() => onVote(r.id)}
-                disabled={isVetoed}
-                title={iVoted ? t("wheel.round.removeVote") : t("wheel.round.vote")}
-                className="flex items-center gap-1 px-2 py-1 rounded-full type-meta font-medium transition-all active:scale-95 disabled:opacity-40"
-                style={{
-                  background: iVoted ? "oklch(0.70 0.18 150 / 0.2)" : "var(--muted)",
-                  border: `1px solid ${iVoted ? "oklch(0.70 0.18 150 / 0.5)" : "var(--border)"}`,
-                  color: iVoted ? "oklch(0.80 0.16 155)" : "var(--muted-foreground)",
-                }}
-              >
-                <ThumbsUp size={12} />
-                {votes > 0 && <span>{votes}</span>}
-              </button>
-
-              {/* Veto */}
-              <button
-                onClick={() => onVeto(r.id)}
-                title={iVetoed ? t("wheel.round.undoVeto") : t("wheel.round.veto")}
-                className="flex items-center gap-1 px-2 py-1 rounded-full type-meta font-medium transition-all active:scale-95"
-                style={{
-                  background: iVetoed ? "oklch(from var(--destructive) l c h / 0.2)" : "var(--muted)",
-                  border: `1px solid ${iVetoed ? "oklch(from var(--destructive) l c h / 0.5)" : "var(--border)"}`,
-                  color: iVetoed ? "var(--brand-text)" : "var(--muted-foreground)",
-                }}
-              >
-                <Ban size={12} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
       )}
     </div>
   );
