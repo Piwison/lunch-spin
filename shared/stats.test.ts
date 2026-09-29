@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   averagePicks,
   daysSinceLastPick,
-  normalizeStatRow,
   overdueRestaurants,
   picksByPerson,
   rankStats,
+  statsFromLunches,
   type RestaurantStat,
   topRestaurants,
   totalPicks,
@@ -20,25 +20,24 @@ const sample: RestaurantStat[] = [
   { id: 4, name: "Pizza Palace", pickCount: 0, lastPickedAt: null },
 ];
 
-describe("normalizeStatRow", () => {
-  it("coerces a string COUNT and date string into typed values", () => {
-    const row = normalizeStatRow({ id: 1, name: "X", pickCount: "7", lastPickedAt: "2026-06-01" });
-    expect(row.pickCount).toBe(7);
-    expect(row.lastPickedAt).toBeInstanceOf(Date);
+describe("daysSinceLastPick", () => {
+  it("never goes negative when the viewer's clock runs behind the server's", () => {
+    const now = new Date("2026-09-24T04:05:00Z");
+    expect(daysSinceLastPick(new Date(now.getTime() + 2000), now)).toBe(0);
   });
+});
 
-  it("defaults a missing count to 0 and null date to null", () => {
-    const row = normalizeStatRow({ id: 1, name: "X", pickCount: null, lastPickedAt: null });
-    expect(row.pickCount).toBe(0);
-    expect(row.lastPickedAt).toBeNull();
-  });
-
-  it("always yields a string name, even from a malformed row", () => {
-    // A driver/tuple mishap can hand us a row with no name; the stats UI calls
-    // name.length, so this must never be null/undefined.
-    const row = normalizeStatRow({ id: 1, name: undefined as unknown as string, pickCount: 0, lastPickedAt: null });
-    expect(row.name).toBe("");
-    expect(typeof row.name).toBe("string");
+describe("statsFromLunches", () => {
+  it("lists every place, with zero lunches for the ones never eaten at", () => {
+    const lunches = {
+      byRestaurant: new Map([[1, { lunchCount: 2, lastLunchAt: d("2026-06-08") }]]),
+      lunchDays: 2,
+      placesEaten: 1,
+    };
+    expect(statsFromLunches([{ id: 1, name: "A" }, { id: 2, name: "B" }], lunches)).toEqual([
+      { id: 1, name: "A", pickCount: 2, lastPickedAt: d("2026-06-08") },
+      { id: 2, name: "B", pickCount: 0, lastPickedAt: null },
+    ]);
   });
 });
 

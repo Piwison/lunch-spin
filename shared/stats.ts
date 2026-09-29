@@ -2,6 +2,10 @@
  * Pure restaurant-stats shaping. Shared by the stats UI and its tests.
  */
 
+import type { LunchStats } from "./lunch";
+
+/** One place on the wheel. Counts lunches (shared/lunch.ts), never raw spins:
+ *  a respun or skipped spin is not a visit. */
 export interface RestaurantStat {
   id: number;
   name: string;
@@ -9,24 +13,12 @@ export interface RestaurantStat {
   lastPickedAt: Date | null;
 }
 
-/**
- * Coerce a raw stats row (MySQL returns COUNT as a string in some drivers) into
- * a well-typed stat.
- */
-export function normalizeStatRow(row: {
-  id: number;
-  name: string;
-  pickCount: unknown;
-  lastPickedAt: unknown;
-}): RestaurantStat {
-  return {
-    id: Number(row.id),
-    // Defensive: a stray/malformed row must never produce a non-string name,
-    // or the stats UI (which calls name.length) crashes the whole History tab.
-    name: typeof row.name === "string" ? row.name : String(row.name ?? ""),
-    pickCount: Number(row.pickCount ?? 0) || 0,
-    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt as string) : null,
-  };
+/** Every place on the wheel, eaten at or not, with its lunch count. */
+export function statsFromLunches(rests: { id: number; name: string }[], lunches: LunchStats): RestaurantStat[] {
+  return rests.map((r) => {
+    const l = lunches.byRestaurant.get(r.id);
+    return { id: r.id, name: r.name, pickCount: l?.lunchCount ?? 0, lastPickedAt: l?.lastLunchAt ?? null };
+  });
 }
 
 /** Most-picked first; ties broken by most-recently picked. */
@@ -51,10 +43,12 @@ export function averagePicks(stats: RestaurantStat[]): number {
   return stats.length > 0 ? totalPicks(stats) / stats.length : 0;
 }
 
-/** Whole days since a restaurant was last picked; null if it never has been. */
+/** Whole days since a restaurant was last picked; null if it never has been.
+ *  Never negative: a viewer whose clock runs a little behind the server's would
+ *  otherwise see "-1d". */
 export function daysSinceLastPick(lastPickedAt: Date | null, now: Date = new Date()): number | null {
   if (!lastPickedAt) return null;
-  return Math.floor((now.getTime() - lastPickedAt.getTime()) / 86400000);
+  return Math.max(0, Math.floor((now.getTime() - lastPickedAt.getTime()) / 86400000));
 }
 
 export interface OverdueEntry {

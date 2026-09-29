@@ -19,7 +19,8 @@ import {
 import type { MarkKind, RoundMarkRow } from "@shared/realtimeState";
 import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
-import { normalizeStatRow } from "@shared/stats";
+import { statsFromLunches, type RestaurantStat } from "@shared/stats";
+import { lunchStats, type SpinFacts } from "@shared/lunch";
 import { rankPopularWheels } from "@shared/publicWheel";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -923,37 +924,34 @@ export async function markNotificationsRead(userId: number) {
 
 // ─── Statistics ───────────────────────────────────────────────────────────────
 
-export async function getRestaurantStats(wheelId: number) {
+/** Every spin on a wheel with just what shared/lunch.ts needs to classify it.
+ *  One indexed read (wheelId), no joins. */
+export async function getSpinFacts(wheelId: number): Promise<SpinFacts[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: spinHistory.id,
+      restaurantId: spinHistory.restaurantId,
+      spunBy: spinHistory.spunBy,
+      spunAt: spinHistory.spunAt,
+      accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
+    })
+    .from(spinHistory)
+    .where(eq(spinHistory.wheelId, wheelId));
+}
+
+/** Lunches per place on the wheel (shared/lunch.ts), places never eaten at
+ *  included with zero. */
+export async function getRestaurantStats(wheelId: number): Promise<RestaurantStat[]> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  
-  // Get pick count and last picked date for each restaurant in the wheel
-  const result = await db.execute(sql`
-    SELECT
-      r.id,
-      r.name,
-      COUNT(sh.id) as pickCount,
-      MAX(sh.spunAt) as lastPickedAt
-    FROM ${restaurants} r
-    LEFT JOIN ${spinHistory} sh ON r.id = sh.restaurantId
-    WHERE r.wheelId = ${wheelId}
-    GROUP BY r.id, r.name
-    ORDER BY pickCount DESC, lastPickedAt DESC
-  `);
-
-  // mysql2's `execute` resolves to a `[rows, fields]` tuple; unwrap to the rows
-  // array. (Mapping over the tuple itself yielded malformed rows with no name,
-  // which crashed the stats UI.) Tolerate a driver that already returns rows.
-  // `normalizeStatRow` coerces each field, so the row type only needs to name
-  // the columns the SELECT produces — no `any`.
-  type StatRow = { id: number; name: string; pickCount: unknown; lastPickedAt: unknown };
-  const raw: unknown = result;
-  const rows: StatRow[] = Array.isArray(raw)
-    ? Array.isArray(raw[0])
-      ? (raw[0] as StatRow[])
-      : (raw as StatRow[])
-    : [];
-  return rows.map(normalizeStatRow);
+  const [rests, spins] = await Promise.all([
+    db.select({ id: restaurants.id, name: restaurants.name }).from(restaurants).where(eq(restaurants.wheelId, wheelId)),
+    getSpinFacts(wheelId),
+  ]);
+  return statsFromLunches(rests, lunchStats(spins));
 }
 
 // ─── Serverless realtime (polling-backed) ────────────────────────────────────

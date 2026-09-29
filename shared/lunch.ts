@@ -68,3 +68,35 @@ export function classifySpins(rows: readonly SpinFacts[]): Map<number, SpinKind>
   }
   return kinds;
 }
+
+export interface PlaceLunches {
+  lunchCount: number;
+  lastLunchAt: Date;
+}
+
+export interface LunchStats {
+  /** Only places with at least one lunch appear. */
+  byRestaurant: Map<number, PlaceLunches>;
+  /** Taipei days with at least one lunch. */
+  lunchDays: number;
+  placesEaten: number;
+}
+
+/** Lunches per place and in total — the only thing History, fairness and cuisine
+ *  rotation count. A spin that was respun or skipped is not a visit. */
+export function lunchStats(rows: readonly SpinFacts[]): LunchStats {
+  const kinds = classifySpins(rows);
+  const byRestaurant = new Map<number, PlaceLunches>();
+  const days = new Set<number>();
+  for (const row of rows) {
+    if (kinds.get(row.id) !== "lunch") continue;
+    days.add(taipeiDayIndex(row.spunAt));
+    const cur = byRestaurant.get(row.restaurantId);
+    if (!cur) byRestaurant.set(row.restaurantId, { lunchCount: 1, lastLunchAt: row.spunAt });
+    else {
+      cur.lunchCount++;
+      if (row.spunAt > cur.lastLunchAt) cur.lastLunchAt = row.spunAt;
+    }
+  }
+  return { byRestaurant, lunchDays: days.size, placesEaten: byRestaurant.size };
+}

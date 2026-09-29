@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifySpins, endOfTaipeiDay, startOfTaipeiDay, taipeiDayIndex, type SpinFacts } from "./lunch";
+import { classifySpins, endOfTaipeiDay, lunchStats, startOfTaipeiDay, taipeiDayIndex, type SpinFacts } from "./lunch";
 
 const AMY = 1;
 const BEN = 2;
@@ -109,5 +109,55 @@ describe("classifySpins — what counts as lunch (plan §1)", () => {
       "respun",
       "skipped",
     ]);
+  });
+});
+
+describe("lunchStats — R3 seed data (three weeks, 20 spins)", () => {
+  // scripts/replica/seed.mjs, dumped from the replica: [restaurantId, spunBy, spunAt, accepted].
+  // Restaurant ids 1–12 in menu order; 11 = Bafang Dumpling Neihu. 1 = Amy, 2 = Ben.
+  const R3: [number, number, string, boolean][] = [
+    [9, 2, "2026-09-03T03:48:10Z", false], [6, 2, "2026-09-03T03:49:05Z", true],
+    [7, 2, "2026-09-04T03:54:30Z", false], [3, 2, "2026-09-07T03:54:30Z", true],
+    [1, 2, "2026-09-08T03:53:30Z", false], [10, 1, "2026-09-09T03:56:30Z", true],
+    [8, 1, "2026-09-10T03:56:10Z", false], [6, 1, "2026-09-10T03:56:30Z", false],
+    [12, 1, "2026-09-10T03:57:05Z", true], [9, 1, "2026-09-11T03:49:30Z", true],
+    [5, 1, "2026-09-14T03:48:30Z", false], [11, 2, "2026-09-15T03:51:10Z", false],
+    [1, 2, "2026-09-15T03:51:30Z", false], [4, 2, "2026-09-15T03:52:05Z", true],
+    [3, 1, "2026-09-16T03:50:30Z", true], [6, 1, "2026-09-17T03:49:30Z", true],
+    [2, 2, "2026-09-18T03:51:30Z", true], [7, 1, "2026-09-21T03:49:30Z", false],
+    [4, 1, "2026-09-22T03:52:30Z", false], [8, 1, "2026-09-23T03:55:30Z", true],
+  ];
+  const rows: SpinFacts[] = R3.map(([restaurantId, spunBy, at, accepted], i) => ({
+    id: i + 1,
+    restaurantId,
+    spunBy,
+    spunAt: new Date(at),
+    accepted,
+    skipped: false,
+  }));
+
+  it("counts 15 days with a lunch and 11 of 12 places eaten", () => {
+    const s = lunchStats(rows);
+    expect(s.lunchDays).toBe(15);
+    expect(s.placesEaten).toBe(11);
+  });
+
+  it("a place that was only ever respun has no lunch", () => {
+    expect(lunchStats(rows).byRestaurant.has(11)).toBe(false);
+  });
+
+  it("counts lunches, not spins, per place", () => {
+    // 首爾韓式小館 (6): lunch 9/03 and 9/17, respun 9/10.
+    expect(lunchStats(rows).byRestaurant.get(6)).toEqual({ lunchCount: 2, lastLunchAt: new Date("2026-09-17T03:49:30Z") });
+    // Goose Meat Dan (1): lunch 9/08, respun 9/15.
+    expect(lunchStats(rows).byRestaurant.get(1)).toEqual({ lunchCount: 1, lastLunchAt: new Date("2026-09-08T03:53:30Z") });
+  });
+
+  it("skipped spins drop out of every figure", () => {
+    const skipped = rows.map((r) => (r.id === 17 ? { ...r, skipped: true } : r)); // 9/18 Shian Ming Tea
+    const s = lunchStats(skipped);
+    expect(s.lunchDays).toBe(14);
+    expect(s.placesEaten).toBe(10);
+    expect(s.byRestaurant.has(2)).toBe(false);
   });
 });

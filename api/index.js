@@ -286,6 +286,22 @@ function classifySpins(rows) {
   }
   return kinds;
 }
+function lunchStats(rows) {
+  const kinds = classifySpins(rows);
+  const byRestaurant = /* @__PURE__ */ new Map();
+  const days = /* @__PURE__ */ new Set();
+  for (const row of rows) {
+    if (kinds.get(row.id) !== "lunch") continue;
+    days.add(taipeiDayIndex(row.spunAt));
+    const cur = byRestaurant.get(row.restaurantId);
+    if (!cur) byRestaurant.set(row.restaurantId, { lunchCount: 1, lastLunchAt: row.spunAt });
+    else {
+      cur.lunchCount++;
+      if (row.spunAt > cur.lastLunchAt) cur.lastLunchAt = row.spunAt;
+    }
+  }
+  return { byRestaurant, lunchDays: days.size, placesEaten: byRestaurant.size };
+}
 
 // shared/exclusion.ts
 var DEFAULT_EXCLUSION_DAYS = 3;
@@ -315,15 +331,11 @@ function computeExclusions(spins, opts = {}) {
 }
 
 // shared/stats.ts
-function normalizeStatRow(row) {
-  return {
-    id: Number(row.id),
-    // Defensive: a stray/malformed row must never produce a non-string name,
-    // or the stats UI (which calls name.length) crashes the whole History tab.
-    name: typeof row.name === "string" ? row.name : String(row.name ?? ""),
-    pickCount: Number(row.pickCount ?? 0) || 0,
-    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt) : null
-  };
+function statsFromLunches(rests, lunches) {
+  return rests.map((r) => {
+    const l = lunches.byRestaurant.get(r.id);
+    return { id: r.id, name: r.name, pickCount: l?.lunchCount ?? 0, lastPickedAt: l?.lastLunchAt ?? null };
+  });
 }
 
 // shared/publicWheel.ts
@@ -864,24 +876,26 @@ async function markNotificationsRead(userId) {
   if (!db) throw new Error("DB unavailable");
   await db.update(users).set({ lastReadNotificationAt: /* @__PURE__ */ new Date() }).where(eq(users.id, userId));
 }
+async function getSpinFacts(wheelId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: spinHistory.id,
+    restaurantId: spinHistory.restaurantId,
+    spunBy: spinHistory.spunBy,
+    spunAt: spinHistory.spunAt,
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped
+  }).from(spinHistory).where(eq(spinHistory.wheelId, wheelId));
+}
 async function getRestaurantStats(wheelId) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.execute(sql`
-    SELECT
-      r.id,
-      r.name,
-      COUNT(sh.id) as pickCount,
-      MAX(sh.spunAt) as lastPickedAt
-    FROM ${restaurants} r
-    LEFT JOIN ${spinHistory} sh ON r.id = sh.restaurantId
-    WHERE r.wheelId = ${wheelId}
-    GROUP BY r.id, r.name
-    ORDER BY pickCount DESC, lastPickedAt DESC
-  `);
-  const raw = result;
-  const rows = Array.isArray(raw) ? Array.isArray(raw[0]) ? raw[0] : raw : [];
-  return rows.map(normalizeStatRow);
+  const [rests, spins] = await Promise.all([
+    db.select({ id: restaurants.id, name: restaurants.name }).from(restaurants).where(eq(restaurants.wheelId, wheelId)),
+    getSpinFacts(wheelId)
+  ]);
+  return statsFromLunches(rests, lunchStats(spins));
 }
 async function pingPresence(wheelId, userId, name) {
   const db = await getDb();
@@ -3505,13 +3519,12 @@ var appRouter = router({
       ]);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const [rests, exclusions, roundMarks2, ratingRows, spinStats, history] = await Promise.all([
+      const [rests, exclusions, roundMarks2, ratingRows, spinFacts] = await Promise.all([
         getRestaurantsByWheel(input.wheelId),
         getExclusions(input.wheelId, wheel.exclusionDays),
         getRoundMarks(input.wheelId),
         getWheelRatingRows(input.wheelId),
-        wheel.fairnessMode ? getRestaurantStats(input.wheelId) : void 0,
-        wheel.rotateCuisines ? getSpinHistory(input.wheelId) : void 0
+        wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : void 0
       ]);
       const valid = new Set(rests.map((r) => r.id));
       const session = buildSessionState(roundMarks2);
@@ -3541,23 +3554,24 @@ var appRouter = router({
       const hasRatings = ratings.size > 0;
       let restaurantId;
       if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
+        const lunches = spinFacts ? lunchStats(spinFacts).byRestaurant : /* @__PURE__ */ new Map();
         let base;
         if (wheel.fairnessMode) {
-          const lastPicked = new Map((spinStats ?? []).map((s) => [s.id, s.lastPickedAt]));
-          base = computeWeights(eligible.map((id2) => ({ restaurantId: id2, lastPickedAt: lastPicked.get(id2) ?? null })));
+          base = computeWeights(
+            eligible.map((id2) => ({ restaurantId: id2, lastPickedAt: lunches.get(id2)?.lastLunchAt ?? null }))
+          );
         } else {
           base = eligible.map((id2) => ({ restaurantId: id2, weight: 1 }));
         }
         if (wheel.rotateCuisines) {
           const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t2) => t2.category === "cuisine")?.id ?? null]));
           const cuisineLastPicked = /* @__PURE__ */ new Map();
-          for (const h of history ?? []) {
-            const c = cuisineOf.get(h.restaurantId);
-            if (c == null) continue;
-            const at = new Date(h.spunAt);
+          lunches.forEach(({ lastLunchAt }, restaurantId2) => {
+            const c = cuisineOf.get(restaurantId2);
+            if (c == null) return;
             const cur = cuisineLastPicked.get(c);
-            if (!cur || at > cur) cuisineLastPicked.set(c, at);
-          }
+            if (!cur || lastLunchAt > cur) cuisineLastPicked.set(c, lastLunchAt);
+          });
           base = applyCuisineRotation(
             base,
             eligible.map((id2) => ({ restaurantId: id2, cuisineId: cuisineOf.get(id2) ?? null })),

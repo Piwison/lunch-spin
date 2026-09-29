@@ -18,6 +18,7 @@ import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
 import { classifyPlacesStatus } from "@shared/placesError";
 import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
+import { lunchStats, type PlaceLunches } from "@shared/lunch";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { CANDIDATE_POOL, isCandidate } from "@shared/candidates";
 import { mergeExtraNames } from "@shared/demoDraft";
@@ -55,6 +56,7 @@ import {
   getRestaurantsByWheel,
   getWheelCopyCount,
   getRestaurantStats,
+  getSpinFacts,
   getSpinHistory,
   markNotificationsRead,
   getTagsForWheel,
@@ -1239,13 +1241,14 @@ export const appRouter = router({
         // here rather than inside the branch below because the settings that
         // decide whether they are used are already known — waiting to ask until
         // the branch is reached is what made them a ninth and tenth hop.
-        const [rests, exclusions, roundMarks, ratingRows, spinStats, history] = await Promise.all([
+        // Fairness and cuisine rotation both read the wheel's spins, and both
+        // count only lunches (shared/lunch.ts), so one read serves the two.
+        const [rests, exclusions, roundMarks, ratingRows, spinFacts] = await Promise.all([
           getRestaurantsByWheel(input.wheelId),
           getExclusions(input.wheelId, wheel.exclusionDays),
           getRoundMarks(input.wheelId),
           getWheelRatingRows(input.wheelId),
-          wheel.fairnessMode ? getRestaurantStats(input.wheelId) : undefined,
-          wheel.rotateCuisines ? getSpinHistory(input.wheelId) : undefined,
+          wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : undefined,
         ]);
         const valid = new Set(rests.map((r) => r.id));
         // Server reads the live session itself (anti-tamper): vetoed restaurants
@@ -1295,24 +1298,25 @@ export const appRouter = router({
         const hasRatings = ratings.size > 0;
         let restaurantId: number;
         if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
+          const lunches = spinFacts ? lunchStats(spinFacts).byRestaurant : new Map<number, PlaceLunches>();
           let base: Weighted[];
           if (wheel.fairnessMode) {
-            const lastPicked = new Map((spinStats ?? []).map((s) => [s.id, s.lastPickedAt]));
-            base = computeWeights(eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })));
+            base = computeWeights(
+              eligible.map((id) => ({ restaurantId: id, lastPickedAt: lunches.get(id)?.lastLunchAt ?? null })),
+            );
           } else {
             base = eligible.map((id) => ({ restaurantId: id, weight: 1 }));
           }
           if (wheel.rotateCuisines) {
-            // Each restaurant's cuisine, and when that cuisine was last picked.
+            // Each restaurant's cuisine, and when the team last had lunch in it.
             const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t) => t.category === "cuisine")?.id ?? null]));
             const cuisineLastPicked = new Map<number, Date>();
-            for (const h of history ?? []) {
-              const c = cuisineOf.get(h.restaurantId);
-              if (c == null) continue;
-              const at = new Date(h.spunAt);
+            lunches.forEach(({ lastLunchAt }, restaurantId) => {
+              const c = cuisineOf.get(restaurantId);
+              if (c == null) return;
               const cur = cuisineLastPicked.get(c);
-              if (!cur || at > cur) cuisineLastPicked.set(c, at);
-            }
+              if (!cur || lastLunchAt > cur) cuisineLastPicked.set(c, lastLunchAt);
+            });
             base = applyCuisineRotation(
               base,
               eligible.map((id) => ({ restaurantId: id, cuisineId: cuisineOf.get(id) ?? null })),
