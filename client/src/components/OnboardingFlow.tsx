@@ -19,13 +19,16 @@
  *     it or typing it again costs nothing.
  *   - Judged Google ratings under 3.0 are hidden, and the screen says how many
  *     and brings them back in one tap.
- *   - The wheel is exactly the ticked places that are VISIBLE. A tick hidden
- *     behind a chip does not ride along, so the count on the button always
- *     matches what is on screen (failure modes 38/54).
- *   - Each craving is its own list with its OWN ticks. Ticks used to be one
- *     set across every query, so searching 麵 auto-ticked three noodle shops
- *     and "back to all" came back with 11 ticked where the person had left 8 —
- *     ticks nobody chose, leaking out of a search they had already abandoned.
+ *   - One selection across every list (shared/candidates `nextSelection`): a
+ *     place ticked while searching "noodle" is still on the wheel after "back
+ *     to all". Searching ADDS; it never replaces what was chosen.
+ *   - Only the plain nearby list ticks anything by itself, once, when it first
+ *     arrives. A search's results are never ticked for you — that is what once
+ *     leaked three noodle shops nobody chose into the wheel (failure mode 65).
+ *   - Every selected place sits in the "Selected" row above the button, whether
+ *     or not its list is the one showing, and can be removed there. So the
+ *     number on the button always matches something on screen (failure modes
+ *     38/54), even when a filter or a search hides the card it came from.
  *
  * The motion follows the product's one rule — it answers the person, nothing
  * idles. See the "First run" block in index.css.
@@ -55,7 +58,7 @@ import {
   arrivalTicks,
   filterCandidates,
   mergeCandidatePages,
-  onWheel,
+  nextSelection,
   relaxations,
   walkBand,
   type CandidateFilters,
@@ -116,8 +119,8 @@ export default function OnboardingFlow({
   const [query, setQuery] = useState(""); // the keyword whose pool is showing
   const [draft, setDraft] = useState(""); // what is typed in the craving box
   const [filters, setFilters] = useState<CandidateFilters>({});
-  // Ticks per query key, like `pools`: "" is the plain nearby list.
-  const [ticks, setTicks] = useState<Record<string, Set<string>>>({});
+  // One ordered selection across every list (see the header).
+  const [selection, setSelection] = useState<string[]>([]);
   const [initialTicks, setInitialTicks] = useState(0);
   // How many of those arrival ticks are places reported closed. Non-zero only
   // in a quiet hour (see preselectPlaceIds), and then the copy has to say so.
@@ -162,21 +165,19 @@ export default function OnboardingFlow({
   const createWheel = trpc.wheels.createFromNearby.useMutation();
 
   const pool = pools[query] ?? null;
-  const selected = useMemo(
-    () => ticks[query] ?? new Set<string>(),
-    [ticks, query]
-  );
-  const updateTicks = (key: string, fn: (prev: Set<string>) => Set<string>) =>
-    setTicks(all => {
-      const prev = all[key] ?? new Set<string>();
-      const next = fn(prev);
-      return next === prev ? all : { ...all, [key]: next };
-    });
+  const selected = useMemo(() => new Set(selection), [selection]);
   const rows = useMemo(() => pool?.rows ?? [], [pool]);
   const view = useMemo(() => filterCandidates(rows, filters), [rows, filters]);
+  // Every row any list has returned, so a place chosen in one search can still
+  // be shown and built after the list on screen has changed.
+  const known = useMemo(() => {
+    const m = new Map<string, NearbyRow>();
+    for (const p of Object.values(pools)) for (const r of p.rows) if (!m.has(r.placeId)) m.set(r.placeId, r);
+    return m;
+  }, [pools]);
   const wheel = useMemo(
-    () => onWheel(view.visible, selected),
-    [view.visible, selected]
+    () => selection.map(id => known.get(id)).filter((r): r is NearbyRow => !!r),
+    [selection, known]
   );
   const lifts = useMemo(() => relaxations(rows, filters), [rows, filters]);
   const typedOnWheel = typed.filter(n => typedOn.has(n));
@@ -212,7 +213,7 @@ export default function OnboardingFlow({
         setQuery("");
         setDraft("");
         setFilters({});
-        setTicks({ "": new Set(preset) });
+        setSelection(nextSelection([], { type: "arrive", list: "base", ticked: preset }));
         setInitialTicks(preset.length);
         const presetIds = new Set(preset);
         setInitialClosed(
@@ -243,25 +244,6 @@ export default function OnboardingFlow({
     });
   };
 
-  /** Tick newly arrived places in one query's list, up to the default size. */
-  const tickArrivals = (
-    key: string,
-    arrivals: NearbyRow[],
-    held: NearbyRow[]
-  ) => {
-    const visibleArrivals = filterCandidates(arrivals, filters).visible;
-    updateTicks(key, prev => {
-      const current =
-        onWheel(filterCandidates(held, filters).visible, prev).length +
-        typedOnWheel.length;
-      const add = arrivalTicks(visibleArrivals, current);
-      if (add.length === 0) return prev;
-      const next = new Set(prev);
-      for (const id of add) next.add(id);
-      return next;
-    });
-  };
-
   const runCraving = () => {
     const q = draft.trim();
     if (q === query) return;
@@ -279,7 +261,8 @@ export default function OnboardingFlow({
           const fresh = toPool(data);
           setPools(prev => ({ ...prev, [q]: fresh }));
           setQuery(q);
-          tickArrivals(q, fresh.rows, []);
+          // Nothing ticked: a search adds places to choose from, not choices.
+          setSelection(prev => nextSelection(prev, { type: "arrive", list: "search", ticked: [] }));
         },
         onSettled: () => setPending(null),
       }
@@ -299,8 +282,6 @@ export default function OnboardingFlow({
       },
       {
         onSuccess: data => {
-          const heldIds = new Set(held.map(r => r.placeId));
-          const arrivals = data.places.filter(r => !heldIds.has(r.placeId));
           setPools(prev => ({
             ...prev,
             [key]: {
@@ -308,7 +289,6 @@ export default function OnboardingFlow({
               nextPageToken: data.nextPageToken ?? null,
             },
           }));
-          tickArrivals(key, arrivals, held);
         },
         onSettled: () => setPending(null),
       }
@@ -318,19 +298,8 @@ export default function OnboardingFlow({
   // ── Instant: never a request ─────────────────────────────────────────────
 
   const toggle = (placeId: string) => {
-    if (selected.has(placeId)) {
-      updateTicks(query, prev => {
-        const next = new Set(prev);
-        next.delete(placeId);
-        return next;
-      });
-      return;
-    }
-    if (atCap) {
-      setCapAt(Date.now());
-      return;
-    }
-    updateTicks(query, prev => new Set(prev).add(placeId));
+    if (!selected.has(placeId) && atCap) setCapAt(Date.now());
+    setSelection(prev => nextSelection(prev, { type: "toggle", id: placeId, atCap }));
   };
 
   const lift = (kind: RelaxationKind) =>
@@ -809,6 +778,61 @@ export default function OnboardingFlow({
               >
                 {t("onb.cap", { n: MAX_SEGMENTS })}
               </p>
+            )}
+            {/* Everything on the wheel, whichever list it was chosen from —
+                the one place the button's number can always be checked
+                against, and the way to drop a place whose card is not the
+                one showing. */}
+            {/* Solid paper: it floats over the scrolling list, and anything
+                less than opaque would put two layers of names on top of each
+                other. Each item is a remove BUTTON, not a toggle chip — its
+                one job is taking the place off. */}
+            {total > 0 && (
+              <div
+                role="group"
+                aria-label={t("onb.selected", { n: total })}
+                className="pointer-events-auto onb-chips w-full flex items-center gap-2 overflow-x-auto px-3 py-2"
+                style={{
+                  borderRadius: "var(--radius-card)",
+                  background: "var(--paper)",
+                  border: "1px solid var(--border)",
+                  boxShadow: "var(--glass-card-shadow)",
+                }}
+              >
+                <span className="type-eyebrow flex-none pl-1" style={{ color: "var(--ink-warm)" }}>
+                  {t("onb.selected", { n: total })}
+                </span>
+                {typedOnWheel.map(name => (
+                  <Button
+                    key={`typed:${name}`}
+                    variant="secondary"
+                    size="md"
+                    className="flex-none whitespace-nowrap"
+                    aria-label={t("onb.selected.remove", { name })}
+                    onClick={() =>
+                      setTypedOn(prev => {
+                        const next = new Set(prev);
+                        next.delete(name);
+                        return next;
+                      })
+                    }
+                  >
+                    {name} <X size={14} />
+                  </Button>
+                ))}
+                {wheel.map(p => (
+                  <Button
+                    key={p.placeId}
+                    variant="secondary"
+                    size="md"
+                    className="flex-none whitespace-nowrap"
+                    aria-label={t("onb.selected.remove", { name: p.name })}
+                    onClick={() => setSelection(prev => nextSelection(prev, { type: "remove", id: p.placeId }))}
+                  >
+                    {p.name} <X size={14} />
+                  </Button>
+                ))}
+              </div>
             )}
             <button
               type="button"

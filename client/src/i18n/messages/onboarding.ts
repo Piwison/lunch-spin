@@ -74,6 +74,8 @@ export const zh = {
   "onb.err.create": "輪盤沒有建成，請再按一次。",
   "onb.cta.tooMany": "最多 {max} 家，請先取消 {n} 家",
   "onb.cap": "輪盤最多 {n} 家，先取消一家再加",
+  "onb.selected": "已選 {n}",
+  "onb.selected.remove": "把「{name}」移出輪盤",
 
   // ── First run: building ─────────────────────────────────────────────────
   "onb.building.title": "正在組裝你的輪盤",
@@ -164,6 +166,8 @@ export const en: Record<keyof typeof zh, string> = {
   "onb.err.create": "Couldn't build the wheel. Try again.",
   "onb.cta.tooMany": "{max} at most — untick {n}",
   "onb.cap": "A wheel holds {n} at most — untick one first",
+  "onb.selected": "Selected {n}",
+  "onb.selected.remove": "Take {name} off the wheel",
   "onb.building.title": "Building your wheel",
   "onb.building.desc": "Adding {n} places and checking their hours…",
 

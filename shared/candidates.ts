@@ -193,3 +193,29 @@ export function arrivalTicks(
   const room = Math.min(target, MAX_SEGMENTS) - currentOnWheel;
   return room > 0 ? preselectPlaceIds(arrivals, room, currentOnWheel) : [];
 }
+
+/**
+ * What changes the first run's selection. One ordered list of place ids across
+ * every search, so a place ticked in "noodle" is still on the wheel after
+ * "back to all" — and the only automatic ticks come from the plain nearby
+ * list's first arrival. A search's results are never ticked for you: that is
+ * what leaked three noodle shops into a wheel nobody asked for (failure mode
+ * 65), which per-query ticks had fixed by making ticks vanish with the query.
+ */
+export type SelectionEvent =
+  | { type: "arrive"; list: "base" | "search"; ticked: string[] }
+  | { type: "toggle"; id: string; atCap: boolean }
+  | { type: "remove"; id: string };
+
+export function nextSelection(selection: readonly string[], e: SelectionEvent): string[] {
+  switch (e.type) {
+    case "arrive":
+      // A fresh plain list (a new location) starts the selection over.
+      return e.list === "base" ? [...e.ticked] : [...selection];
+    case "toggle":
+      if (selection.includes(e.id)) return selection.filter((id) => id !== e.id);
+      return e.atCap ? [...selection] : [...selection, e.id];
+    case "remove":
+      return selection.filter((id) => id !== e.id);
+  }
+}

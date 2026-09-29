@@ -1169,7 +1169,9 @@
   }
   /* The list's end clears the commit bar; the scroller's own pb-dock already
      clears the dock beneath it. */
-  .onb-list-end { padding-bottom: calc(64px + 2rem); }
+  /* Clears the floating commit bar: the 64px button, the "Selected" strip above
+     it (a 44px control row plus padding, border and gap, ~70px), and air. */
+  .onb-list-end { padding-bottom: calc(64px + 70px + 2rem); }
   @media (min-width: 768px) {
     .onb-commit { bottom: 1.5rem; }
   }
