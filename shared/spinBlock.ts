@@ -1,9 +1,10 @@
 /**
  * Why the wheel has nothing on it — and which single constraint to lift.
  *
- * Six independent things can empty the wheel: the wheel is genuinely empty,
+ * Seven independent things can empty the wheel: the wheel is genuinely empty,
  * everything was recently spun (excluded), a tag filter, a walk-time limit,
- * closing hours, or this round's vetoes and dietary avoids. The Wheel tab used
+ * closing hours, closing before you could get there, or this round's vetoes
+ * and dietary avoids. The Wheel tab used
  * to answer with one fixed sentence — "every restaurant is excluded or vetoed",
  * with "filtered out or" spliced in only when a TAG was set — so a user who had
  * merely set a 5-minute walk limit was told their places were excluded and
@@ -27,6 +28,9 @@ export interface SpinBlockRestaurant {
    *  (most wheels are hand-typed places with no provider hours), which is the
    *  same rule `isSpinnableNow` applies server-side. */
   openStatus: string | null;
+  /** Server-computed (`tooLateToGo`): open, but closes within the walk plus a
+   *  buffer. Off the wheel like a closed place, reported separately. */
+  tooLate?: boolean;
   walkSeconds: number | null;
   tags: { id: number }[];
 }
@@ -40,22 +44,23 @@ export interface SpinBlockInput {
   dietaryTagIds: number[];
 }
 
-export type SpinBlockReason = "none" | "empty" | "round" | "filters" | "closed" | "excluded";
+export type SpinBlockReason = "none" | "empty" | "round" | "filters" | "closed" | "closingSoon" | "excluded";
 
 export interface SpinBlock {
   reason: SpinBlockReason;
   /** How many places each stage removed, for copy that can quote a number. */
-  counts: { excluded: number; filtered: number; closed: number; round: number };
+  counts: { excluded: number; filtered: number; closed: number; closingSoon: number; round: number };
 }
 
 interface Stages {
   excluded: boolean;
   filters: boolean;
   closed: boolean;
+  closingSoon: boolean;
   round: boolean;
 }
 
-const ALL: Stages = { excluded: true, filters: true, closed: true, round: true };
+const ALL: Stages = { excluded: true, filters: true, closed: true, closingSoon: true, round: true };
 
 /** The wheel's own pipeline, with any stage switched off. */
 function survivors(input: SpinBlockInput, on: Stages): SpinBlockRestaurant[] {
@@ -72,6 +77,7 @@ function survivors(input: SpinBlockInput, on: Stages): SpinBlockRestaurant[] {
       if (maxSeconds != null && (r.walkSeconds == null || r.walkSeconds > maxSeconds)) return false;
     }
     if (on.closed && r.openStatus === "closed") return false;
+    if (on.closingSoon && r.tooLate) return false;
     if (on.round) {
       if (vetoed.has(r.id)) return false;
       if (avoided.size > 0 && r.tags.some((t) => avoided.has(t.id))) return false;
@@ -86,9 +92,10 @@ export function diagnoseSpinBlock(input: SpinBlockInput): SpinBlock {
     // What the filters alone remove, counted on the places they could apply to,
     // so a tag filter and a walk limit don't double-count the same place.
     filtered:
-      survivors(input, { ...ALL, filters: false, closed: false, round: false }).length -
-      survivors(input, { ...ALL, closed: false, round: false }).length,
+      survivors(input, { ...ALL, filters: false, closed: false, closingSoon: false, round: false }).length -
+      survivors(input, { ...ALL, closed: false, closingSoon: false, round: false }).length,
     closed: input.restaurants.filter((r) => r.openStatus === "closed").length,
+    closingSoon: input.restaurants.filter((r) => r.openStatus !== "closed" && r.tooLate).length,
     round:
       survivors(input, { ...ALL, round: false }).length - survivors(input, ALL).length,
   };
@@ -101,6 +108,7 @@ export function diagnoseSpinBlock(input: SpinBlockInput): SpinBlock {
     ["round", { ...ALL, round: false }],
     ["filters", { ...ALL, filters: false }],
     ["closed", { ...ALL, closed: false }],
+    ["closingSoon", { ...ALL, closingSoon: false }],
     ["excluded", { ...ALL, excluded: false }],
   ];
   for (const [reason, on] of lifts) {
@@ -113,6 +121,7 @@ export function diagnoseSpinBlock(input: SpinBlockInput): SpinBlock {
     ["round", counts.round],
     ["filters", counts.filtered],
     ["closed", counts.closed],
+    ["closingSoon", counts.closingSoon],
     ["excluded", counts.excluded],
   ];
   const worst = byReason.reduce((a, b) => (b[1] > a[1] ? b : a))[0];

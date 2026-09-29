@@ -669,14 +669,15 @@ export default function WheelApp() {
     onError: (e) => toast.error(userError(e, t)),
   });
 
-  // Closed-right-now restaurants come off the wheel entirely (the server enforces
-  // the same rule in spins.create — this just keeps the visual honest). Unknown
-  // hours stay on: most wheels have hand-typed places with no provider hours.
+  // Closed-right-now restaurants, and ones that close before you'd get there with
+  // time to eat, come off the wheel entirely (the server enforces the same rule
+  // in spins.create — this just keeps the visual honest). Unknown hours stay on:
+  // most wheels have hand-typed places with no provider hours.
   const roundCandidates = useMemo(
     () => filterRestaurantsByDistance(
       filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
       maxWalkMinutes,
-    ).filter((r) => r.openStatus !== "closed"),
+    ).filter((r) => r.openStatus !== "closed" && !r.tooLate),
     [restaurants, selectedTagIds, maxWalkMinutes]
   );
 
@@ -685,6 +686,11 @@ export default function WheelApp() {
   const closedCount = useMemo(
     () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds)
       .filter((r) => r.openStatus === "closed").length,
+    [restaurants, selectedTagIds]
+  );
+  const closingSoonCount = useMemo(
+    () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds)
+      .filter((r) => r.openStatus !== "closed" && r.tooLate).length,
     [restaurants, selectedTagIds]
   );
 
@@ -876,6 +882,8 @@ export default function WheelApp() {
           : t("app.block.filters");
       case "closed":
         return t("app.block.closed", { n: counts.closed });
+      case "closingSoon":
+        return t("app.block.closingSoon", { n: counts.closingSoon });
       case "excluded":
         return t("app.block.excluded", { n: counts.excluded });
       default:
@@ -1454,6 +1462,15 @@ export default function WheelApp() {
                                     <span className="inline-flex items-center gap-1">
                                       <Clock3 size={12} className="flex-shrink-0" />
                                       {t("app.wheel.closed", { n: closedCount })}
+                                    </span>
+                                  </>
+                                )}
+                                {closingSoonCount > 0 && (
+                                  <>
+                                    {" · "}
+                                    <span className="inline-flex items-center gap-1">
+                                      <Clock3 size={12} className="flex-shrink-0" />
+                                      {t("app.wheel.closingSoon", { n: closingSoonCount })}
                                     </span>
                                   </>
                                 )}

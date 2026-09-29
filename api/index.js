@@ -1799,9 +1799,37 @@ function openState(periods, now, utcOffsetMinutes) {
   }
   return { status: "open", minutesUntilClose: left };
 }
-function isSpinnableNow(rawOpenHours, utcOffsetMinutes, now = /* @__PURE__ */ new Date()) {
-  const state = openState(parsePeriods(rawOpenHours), now, utcOffsetMinutes ?? 0);
-  return state.status !== "closed";
+var TOO_LATE_BUFFER_MINUTES = 20;
+function tooLateToGo({ minutesUntilClose: minutesUntilClose2, walkSeconds }, bufferMin = TOO_LATE_BUFFER_MINUTES) {
+  if (minutesUntilClose2 == null) return false;
+  return minutesUntilClose2 < (walkSeconds ?? 0) / 60 + bufferMin;
+}
+function closesAtLabel(periods, now, utcOffsetMinutes) {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  let best = null;
+  let bestLeft = Number.POSITIVE_INFINITY;
+  for (const p of periods) {
+    const left = activeMinutesLeft(p, nowMinutes);
+    if (left === null || !Number.isFinite(left)) continue;
+    if (left < bestLeft) {
+      bestLeft = left;
+      best = p;
+    }
+  }
+  if (!best?.close) return null;
+  return `${best.close.time.slice(0, 2)}:${best.close.time.slice(2, 4)}`;
+}
+function hoursView(rawOpenHours, utcOffsetMinutes, walkSeconds, now = /* @__PURE__ */ new Date()) {
+  const periods = parsePeriods(rawOpenHours);
+  const offset = utcOffsetMinutes ?? 0;
+  const state = openState(periods, now, offset);
+  return {
+    openStatus: state.status,
+    minutesUntilClose: state.minutesUntilClose,
+    tooLate: state.status !== "closed" && tooLateToGo({ minutesUntilClose: state.minutesUntilClose, walkSeconds }),
+    closesAt: closesAtLabel(periods, now, offset)
+  };
 }
 
 // shared/bootstrap.ts
@@ -2753,16 +2781,12 @@ var appRouter = router({
         getExclusions(wheelId, wheel.exclusionDays)
       ]);
       const now = /* @__PURE__ */ new Date();
-      const restaurants2 = rests.map((r) => {
-        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-        return {
-          ...r,
-          isExcluded: exclusions.has(r.id),
-          excludedUntil: exclusions.get(r.id) ?? null,
-          openStatus: hours.status,
-          minutesUntilClose: hours.minutesUntilClose
-        };
-      });
+      const restaurants2 = rests.map((r) => ({
+        ...r,
+        isExcluded: exclusions.has(r.id),
+        excludedUntil: exclusions.get(r.id) ?? null,
+        ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now)
+      }));
       return {
         user,
         wheels: wheels2,
@@ -3130,16 +3154,12 @@ var appRouter = router({
       const rests = await getRestaurantsByWheel(input.wheelId);
       const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
       const now = /* @__PURE__ */ new Date();
-      return rests.map((r) => {
-        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-        return {
-          ...r,
-          isExcluded: exclusions.has(r.id),
-          excludedUntil: exclusions.get(r.id) ?? null,
-          openStatus: hours.status,
-          minutesUntilClose: hours.minutesUntilClose
-        };
-      });
+      return rests.map((r) => ({
+        ...r,
+        isExcluded: exclusions.has(r.id),
+        excludedUntil: exclusions.get(r.id) ?? null,
+        ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now)
+      }));
     }),
     // The restaurant half of a public wheel (guests spin everything — no exclusion
     // state), public-safe fields only. The /w/:id page reads both halves through
@@ -3537,8 +3557,12 @@ var appRouter = router({
       const dietaryBlocked = new Set(
         avoidedTags.size === 0 ? [] : rests.filter((r) => r.tags.some((t2) => avoidedTags.has(t2.id))).map((r) => r.id)
       );
+      const now = /* @__PURE__ */ new Date();
       const closedNow = new Set(
-        rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id)
+        rests.filter((r) => {
+          const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+          return h.openStatus === "closed" || h.tooLate;
+        }).map((r) => r.id)
       );
       const eligible = input.candidateIds.filter(
         (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2) && !closedNow.has(id2)

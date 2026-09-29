@@ -71,6 +71,23 @@ describe("diagnoseSpinBlock", () => {
     expect(d.counts.closed).toBe(2);
   });
 
+  it("names closing soon when the rest close before you'd get there", () => {
+    const d = diagnoseSpinBlock({
+      ...base,
+      restaurants: [place(1, { openStatus: "closing_soon", tooLate: true }), place(2, { tooLate: true })],
+    });
+    expect(d.reason).toBe("closingSoon");
+    expect(d.counts.closingSoon).toBe(2);
+  });
+
+  it("keeps closed and closing-soon apart", () => {
+    const d = diagnoseSpinBlock({
+      ...base,
+      restaurants: [place(1, { openStatus: "closed" }), place(2, { openStatus: "closed" }), place(3, { tooLate: true })],
+    });
+    expect(d.counts).toMatchObject({ closed: 2, closingSoon: 1 });
+  });
+
   it("treats unknown hours as spinnable, matching the server", () => {
     const d = diagnoseSpinBlock({ ...base, restaurants: [place(1, { openStatus: "unknown" })] });
     expect(d.reason).toBe("none");
@@ -122,6 +139,6 @@ describe("diagnoseSpinBlock", () => {
       ],
       vetoedIds: [3],
     });
-    expect(d.counts).toEqual({ excluded: 1, filtered: 0, closed: 1, round: 1 });
+    expect(d.counts).toEqual({ excluded: 1, filtered: 0, closed: 1, closingSoon: 0, round: 1 });
   });
 });

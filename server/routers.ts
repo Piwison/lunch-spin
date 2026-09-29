@@ -12,7 +12,7 @@ import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } fro
 import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
-import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
+import { hoursView } from "@shared/openHours";
 import { resolveBootstrapWheelId, speculativeWheelId } from "@shared/bootstrap";
 import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
 import { classifyPlacesStatus } from "@shared/placesError";
@@ -280,16 +280,12 @@ export const appRouter = router({
         ]);
         const now = new Date();
         // Same shape as restaurants.list — the client seeds that cache with it.
-        const restaurants = rests.map((r) => {
-          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-          return {
-            ...r,
-            isExcluded: exclusions.has(r.id),
-            excludedUntil: exclusions.get(r.id) ?? null,
-            openStatus: hours.status,
-            minutesUntilClose: hours.minutesUntilClose,
-          };
-        });
+        const restaurants = rests.map((r) => ({
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now),
+        }));
 
         return {
           user,
@@ -750,18 +746,14 @@ export const appRouter = router({
         const rests = await getRestaurantsByWheel(input.wheelId);
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
         const now = new Date();
-        return rests.map((r) => {
-          // Computed server-side so every client agrees on "open now" — and so the
-          // wheel the user sees matches what spins.create will actually allow.
-          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-          return {
-            ...r,
-            isExcluded: exclusions.has(r.id),
-            excludedUntil: exclusions.get(r.id) ?? null,
-            openStatus: hours.status,
-            minutesUntilClose: hours.minutesUntilClose,
-          };
-        });
+        // Computed server-side so every client agrees on "open now" — and so the
+        // wheel the user sees matches what spins.create will actually allow.
+        return rests.map((r) => ({
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now),
+        }));
       }),
 
     // The restaurant half of a public wheel (guests spin everything — no exclusion
@@ -1263,12 +1255,18 @@ export const appRouter = router({
             ? []
             : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
         );
-        // Closed right now? Hard filter, decided server-side so a tampered
-        // candidate list can't spin a closed restaurant. Restaurants with unknown
-        // hours are spinnable (isSpinnableNow) — most wheels have hand-typed
+        // Closed right now, or closing before you'd get there with time to eat?
+        // Hard filter, decided server-side so a tampered candidate list can't
+        // spin one. Unknown hours are spinnable — most wheels have hand-typed
         // places with no provider hours, and dropping those would gut the wheel.
+        const now = new Date();
         const closedNow = new Set(
-          rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id),
+          rests
+            .filter((r) => {
+              const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+              return h.openStatus === "closed" || h.tooLate;
+            })
+            .map((r) => r.id),
         );
         const eligible = input.candidateIds.filter(
           (id) =>

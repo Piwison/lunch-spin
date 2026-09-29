@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  closesAtLabel,
+  hoursView,
   isOpenAt,
   minutesUntilClose,
   openState,
   parsePeriods,
+  tooLateToGo,
   CLOSING_SOON_MINUTES,
   type OpenPeriod,
 } from "./openHours";
@@ -102,5 +105,70 @@ describe("openState — what the UI and the spin filter consume", () => {
     expect(openState(mon9to5, at(1, 17 - 1, 60 - CLOSING_SOON_MINUTES), 0).status).toBe("closing_soon");
     // One minute earlier is plain open.
     expect(openState(mon9to5, at(1, 16, 59 - CLOSING_SOON_MINUTES), 0).status).toBe("open");
+  });
+});
+
+describe("tooLateToGo — closes before you'd get there with time to eat", () => {
+  it("5 minutes left and a 7-minute walk is too late", () => {
+    expect(tooLateToGo({ minutesUntilClose: 5, walkSeconds: 7 * 60 })).toBe(true);
+  });
+  it("60 minutes left and a 7-minute walk is fine", () => {
+    expect(tooLateToGo({ minutesUntilClose: 60, walkSeconds: 7 * 60 })).toBe(false);
+  });
+  it("unknown hours are never too late", () => {
+    expect(tooLateToGo({ minutesUntilClose: null, walkSeconds: 7 * 60 })).toBe(false);
+  });
+  it("unknown walk time falls back to the buffer alone", () => {
+    expect(tooLateToGo({ minutesUntilClose: 19, walkSeconds: null })).toBe(true);
+    expect(tooLateToGo({ minutesUntilClose: 20, walkSeconds: null })).toBe(false);
+  });
+  it("the buffer is a parameter", () => {
+    expect(tooLateToGo({ minutesUntilClose: 12, walkSeconds: 5 * 60 }, 5)).toBe(false);
+  });
+});
+
+describe("closesAtLabel — when the current opening ends, in the place's own time", () => {
+  it("an ordinary day", () => {
+    expect(closesAtLabel(mon9to5, at(1, 12), 0)).toBe("17:00");
+  });
+  it("a day with two openings reports the one you are in", () => {
+    const split: OpenPeriod[] = [
+      { open: { day: 1, time: "1100" }, close: { day: 1, time: "1430" } },
+      { open: { day: 1, time: "1700" }, close: { day: 1, time: "2100" } },
+    ];
+    expect(closesAtLabel(split, at(1, 12), 0)).toBe("14:30");
+    expect(closesAtLabel(split, at(1, 18), 0)).toBe("21:00");
+  });
+  it("an opening that runs past midnight", () => {
+    expect(closesAtLabel(friNight, at(5, 23), 0)).toBe("02:00");
+  });
+  it("uses the place's UTC offset", () => {
+    // 04:00Z is 12:00 at +08:00.
+    expect(closesAtLabel(mon9to5, new Date(Date.UTC(2026, 6, 6, 4, 0)), 480)).toBe("17:00");
+  });
+  it("is null when closed, open around the clock, or hours are unknown", () => {
+    expect(closesAtLabel(mon9to5, at(1, 20), 0)).toBeNull();
+    expect(closesAtLabel(always, at(3, 12), 0)).toBeNull();
+    expect(closesAtLabel(null, at(1, 12), 0)).toBeNull();
+  });
+});
+
+describe("hoursView — what restaurants.list reports per place", () => {
+  it("marks a place that closes before the walk + buffer as too late", () => {
+    // Monday 16:50, closes 17:00, 7-minute walk.
+    expect(hoursView(mon9to5, 0, 7 * 60, at(1, 16, 50))).toEqual({
+      openStatus: "closing_soon",
+      minutesUntilClose: 10,
+      tooLate: true,
+      closesAt: "17:00",
+    });
+  });
+  it("leaves unknown hours spinnable", () => {
+    expect(hoursView(null, null, null, at(1, 12))).toEqual({
+      openStatus: "unknown",
+      minutesUntilClose: null,
+      tooLate: false,
+      closesAt: null,
+    });
   });
 });
