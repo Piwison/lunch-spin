@@ -10,6 +10,7 @@ import {
   restaurants,
   roundMarks,
   spinHistory,
+  userDietary,
   tags,
   users,
   wheelMembers,
@@ -277,11 +278,61 @@ export async function deleteUserAccount(userId: number) {
     );
   }
   await db.delete(roundMarks).where(eq(roundMarks.userId, userId));
+  await db.delete(userDietary).where(eq(userDietary.userId, userId));
   await db.delete(wheelPresence).where(eq(wheelPresence.userId, userId));
   await db.delete(notifications).where(eq(notifications.actorUserId, userId));
   await db.delete(wheelMembers).where(eq(wheelMembers.userId, userId));
   await db.delete(users).where(eq(users.id, userId));
   return { wheelsDeleted: owned.length };
+}
+
+/**
+ * Wheels this person owns that someone else is also on — what deleting their
+ * account would take away from teammates. Each with its members, for "give it
+ * to Ben" before the delete.
+ */
+export async function getOwnedTeamWheels(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ wheelId: wheels.id, wheelName: wheels.name, memberId: users.id, memberName: users.name, memberEmail: users.email })
+    .from(wheels)
+    .innerJoin(wheelMembers, eq(wheelMembers.wheelId, wheels.id))
+    .innerJoin(users, eq(users.id, wheelMembers.userId))
+    .where(eq(wheels.ownerId, userId));
+  const byWheel = new Map<number, { id: number; name: string; members: { userId: number; name: string | null; email: string | null }[] }>();
+  for (const r of rows) {
+    let w = byWheel.get(r.wheelId);
+    if (!w) byWheel.set(r.wheelId, (w = { id: r.wheelId, name: r.wheelName, members: [] }));
+    w.members.push({ userId: r.memberId, name: r.memberName, email: r.memberEmail });
+  }
+  return Array.from(byWheel.values());
+}
+
+/**
+ * Hand a wheel to one of its members. No foreign keys here (failure modes 15,
+ * 36), so all three rows are named: the wheel's owner changes; the old owner
+ * becomes an ordinary member (a wheel_members row — owners never have one,
+ * createWheel's convention); the new owner's member row goes, for the same
+ * reason. Spin history, ratings and marks stay: the wheel is the same wheel.
+ * Returns false if `fromUserId` does not own it or `toUserId` is not on it.
+ */
+export async function transferWheelOwnership(wheelId: number, fromUserId: number, toUserId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [wheel, member] = await Promise.all([
+    getWheelById(wheelId),
+    db
+      .select({ id: wheelMembers.id })
+      .from(wheelMembers)
+      .where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId)))
+      .limit(1),
+  ]);
+  if (!wheel || wheel.ownerId !== fromUserId || member.length === 0) return false;
+  await db.update(wheels).set({ ownerId: toUserId }).where(eq(wheels.id, wheelId));
+  await db.insert(wheelMembers).values({ wheelId, userId: fromUserId });
+  await db.delete(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId)));
+  return true;
 }
 
 export async function isWheelMember(wheelId: number, userId: number) {
@@ -306,10 +357,10 @@ export async function addWheelMember(wheelId: number, userId: number) {
  * Remove one member from one wheel — the scoped sibling of `deleteUserAccount`'s
  * "their footprint on wheels they only joined".
  *
- * The owner cannot leave: this app has no ownership transfer, and an ownerless
- * wheel is unreachable for everyone still on it. The caller enforces that; this
- * returns false so a race (ownership changing under a request) cannot orphan a
- * wheel by accident.
+ * The owner cannot leave — an ownerless wheel is unreachable for everyone still
+ * on it; they hand it over first (`transferWheelOwnership`). The caller enforces
+ * that; this returns false so a race (ownership changing under a request) cannot
+ * orphan a wheel by accident.
  *
  * What goes: the membership row, and the two things that are only meaningful
  * while you are in the room — this round's veto/vote/dietary marks, and presence.

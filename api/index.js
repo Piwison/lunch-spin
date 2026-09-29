@@ -531,11 +531,37 @@ async function deleteUserAccount(userId) {
     );
   }
   await db.delete(roundMarks).where(eq(roundMarks.userId, userId));
+  await db.delete(userDietary).where(eq(userDietary.userId, userId));
   await db.delete(wheelPresence).where(eq(wheelPresence.userId, userId));
   await db.delete(notifications).where(eq(notifications.actorUserId, userId));
   await db.delete(wheelMembers).where(eq(wheelMembers.userId, userId));
   await db.delete(users).where(eq(users.id, userId));
   return { wheelsDeleted: owned.length };
+}
+async function getOwnedTeamWheels(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ wheelId: wheels.id, wheelName: wheels.name, memberId: users.id, memberName: users.name, memberEmail: users.email }).from(wheels).innerJoin(wheelMembers, eq(wheelMembers.wheelId, wheels.id)).innerJoin(users, eq(users.id, wheelMembers.userId)).where(eq(wheels.ownerId, userId));
+  const byWheel = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    let w = byWheel.get(r.wheelId);
+    if (!w) byWheel.set(r.wheelId, w = { id: r.wheelId, name: r.wheelName, members: [] });
+    w.members.push({ userId: r.memberId, name: r.memberName, email: r.memberEmail });
+  }
+  return Array.from(byWheel.values());
+}
+async function transferWheelOwnership(wheelId, fromUserId, toUserId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [wheel, member] = await Promise.all([
+    getWheelById(wheelId),
+    db.select({ id: wheelMembers.id }).from(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId))).limit(1)
+  ]);
+  if (!wheel || wheel.ownerId !== fromUserId || member.length === 0) return false;
+  await db.update(wheels).set({ ownerId: toUserId }).where(eq(wheels.id, wheelId));
+  await db.insert(wheelMembers).values({ wheelId, userId: fromUserId });
+  await db.delete(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId)));
+  return true;
 }
 async function isWheelMember(wheelId, userId) {
   const db = await getDb();
@@ -2851,8 +2877,23 @@ var appRouter = router({
       return { success: true, ...result };
     })
   }),
+  // ─── Account ────────────────────────────────────────────────────────────────
+  account: router({
+    // Team wheels deleting this account would take away from teammates.
+    ownedTeamWheels: protectedProcedure.query(async ({ ctx }) => getOwnedTeamWheels(ctx.user.id))
+  }),
   // ─── Wheels ─────────────────────────────────────────────────────────────────
   wheels: router({
+    // Give a wheel to one of its members — the owner only, and only to someone
+    // already on it. How a team keeps its wheel when the owner deletes their account.
+    transferOwnership: protectedProcedure.input(z2.object({ wheelId: z2.number(), toUserId: z2.number() })).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
+      const ok = await transferWheelOwnership(input.wheelId, ctx.user.id, input.toUserId);
+      if (!ok) throw new TRPCError3({ code: "BAD_REQUEST", message: "That person isn't on this wheel." });
+      return { success: true };
+    }),
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),

@@ -78,6 +78,8 @@ import {
   upsertRestaurantRating,
   getWheelRatingRows,
   markSpinSkipped,
+  getOwnedTeamWheels,
+  transferWheelOwnership,
 } from "./db";
 
 /** The today card's rows (one per lunch decided today) and the newest spin of
@@ -245,9 +247,29 @@ export const appRouter = router({
     }),
   }),
 
+  // ─── Account ────────────────────────────────────────────────────────────────
+
+  account: router({
+    // Team wheels deleting this account would take away from teammates.
+    ownedTeamWheels: protectedProcedure.query(async ({ ctx }) => getOwnedTeamWheels(ctx.user.id)),
+  }),
+
   // ─── Wheels ─────────────────────────────────────────────────────────────────
 
   wheels: router({
+    // Give a wheel to one of its members — the owner only, and only to someone
+    // already on it. How a team keeps its wheel when the owner deletes their account.
+    transferOwnership: protectedProcedure
+      .input(z.object({ wheelId: z.number(), toUserId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const ok = await transferWheelOwnership(input.wheelId, ctx.user.id, input.toUserId);
+        if (!ok) throw new TRPCError({ code: "BAD_REQUEST", message: "That person isn't on this wheel." });
+        return { success: true };
+      }),
+
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),

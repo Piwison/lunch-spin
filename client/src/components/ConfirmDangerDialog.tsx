@@ -38,6 +38,7 @@ export default function ConfirmDangerDialog({
   confirmWord,
   confirmLabel,
   pending = false,
+  blocked = false,
   onConfirm,
 }: {
   open: boolean;
@@ -48,6 +49,8 @@ export default function ConfirmDangerDialog({
   confirmWord?: string;
   confirmLabel: string;
   pending?: boolean;
+  /** Something in the body still needs an answer (e.g. who gets a team wheel). */
+  blocked?: boolean;
   onConfirm: () => void;
 }) {
   const { t } = useLang();
@@ -95,7 +98,7 @@ export default function ConfirmDangerDialog({
           <AlertDialogCancel disabled={pending}>{t("app.dialog.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
-            disabled={!armed || pending}
+            disabled={!armed || pending || blocked}
             onClick={(e) => {
               // Radix closes the dialog on action by default; keep it open while
               // the request is in flight so a failure can still be shown here.

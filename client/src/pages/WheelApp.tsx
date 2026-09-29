@@ -32,6 +32,7 @@ import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
+import TeamWheelHandover, { type Handover } from "@/components/TeamWheelHandover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -126,6 +127,7 @@ export default function WheelApp() {
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [handover, setHandover] = useState<Handover>({});
   // Spins completed in this browser, read once. The exclusion explainer is for
   // people who have never seen it; after a couple of spins it's noise.
   const [spinsSeen, setSpinsSeen] = useState(() => {
@@ -366,6 +368,25 @@ export default function WheelApp() {
   // leaving. A hard navigation, not navigate(): the in-memory React Query caches
   // still hold the deleted user's wheels, and the persisted boot cache would
   // otherwise seed them straight back on the landing page.
+  // Team wheels the account owns: each needs a new owner or a "delete it too"
+  // before the account can go (plan A10).
+  const teamWheelsQuery = trpc.account.ownedTeamWheels.useQuery(undefined, { enabled: confirmDeleteAccount });
+  const teamWheels = teamWheelsQuery.data ?? [];
+  const handoverPending = !teamWheelsQuery.data || teamWheels.some((w) => handover[w.id] === undefined);
+  const transferOwnership = trpc.wheels.transferOwnership.useMutation();
+  const deleteAccountWithHandover = async () => {
+    try {
+      for (const w of teamWheels) {
+        const choice = handover[w.id];
+        if (typeof choice === "number") await transferOwnership.mutateAsync({ wheelId: w.id, toUserId: choice });
+      }
+    } catch (e) {
+      toast.error(t("app.account.handoverError", { message: userError(e as Parameters<typeof userError>[0], t) }));
+      teamWheelsQuery.refetch();
+      return;
+    }
+    deleteAccount.mutate();
+  };
   const deleteAccount = trpc.auth.deleteAccount.useMutation({
     onSuccess: () => {
       clearBootCache();
@@ -1218,15 +1239,27 @@ export default function WheelApp() {
 
       <ConfirmDangerDialog
         open={confirmDeleteAccount}
-        onOpenChange={(open) => { if (!open && !deleteAccount.isPending) setConfirmDeleteAccount(false); }}
+        onOpenChange={(open) => {
+          if (!open && !deleteAccount.isPending && !transferOwnership.isPending) {
+            setConfirmDeleteAccount(false);
+            setHandover({});
+          }
+        }}
         title={t("app.account.deleteTitle")}
         confirmWord={t("app.account.deleteWord")}
         confirmLabel={t("app.account.deleteConfirm")}
-        pending={deleteAccount.isPending}
-        onConfirm={() => deleteAccount.mutate()}
+        pending={deleteAccount.isPending || transferOwnership.isPending}
+        blocked={handoverPending}
+        onConfirm={() => void deleteAccountWithHandover()}
         body={
           <>
             <p>{t("app.account.deleteBody", { account: user.email || user.name || "" })}</p>
+            <TeamWheelHandover
+              wheels={teamWheels}
+              choices={handover}
+              disabled={transferOwnership.isPending || deleteAccount.isPending}
+              onChoose={(wheelId, choice) => setHandover((h) => ({ ...h, [wheelId]: choice }))}
+            />
             <p>{t("app.account.deleteInvited")}</p>
             <p style={{ color: "var(--destructive)" }}>{t("app.irreversible")}</p>
           </>
