@@ -25,11 +25,6 @@ export class GeoError extends Error {
 
 const cache: { coords: Coords | null } = { coords: null };
 
-/** The last known position, if this session already has one. Never prompts. */
-export function cachedCoords(): Coords | null {
-  return cache.coords;
-}
-
 /**
  * Resolve the user's position, reusing this session's fix when there is one.
  * Rejects with a `GeoError` carrying why, so callers can tell "they said no"

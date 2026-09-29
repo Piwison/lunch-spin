@@ -31,16 +31,22 @@ export function placeMapUrl(placeId: string, name: string): string {
  *
  * The map link is a SIBLING of the toggle, not inside it — a link nested in a
  * button is invalid and the tap would do both.
+ *
+ * A place already on the wheel (the Places tab's Nearby) is listed, not
+ * offered: its card says so and cannot be ticked.
  */
 export default function PlaceCard({
   place,
   on,
+  onWheel = false,
   dimmed,
   index,
   onToggle,
 }: {
   place: PlaceCardData;
   on: boolean;
+  /** Already on this wheel: shown, labelled, not selectable. */
+  onWheel?: boolean;
   /** The wheel is full and this place is not on it. */
   dimmed: boolean;
   /** Position in the list, for the arrival stagger. */
@@ -62,14 +68,15 @@ export default function PlaceCard({
           ? "oklch(from var(--brand) l c h / 0.07)"
           : "var(--paper)",
         border: `1px solid ${on ? "oklch(from var(--brand) l c h / 0.5)" : "var(--border)"}`,
-        opacity: dimmed ? 0.5 : 1,
+        opacity: dimmed || onWheel ? 0.6 : 1,
       }}
     >
       <button
         type="button"
         onClick={onToggle}
-        aria-pressed={on}
-        className="flex-1 min-w-0 flex items-center gap-3.5 pl-2.5 pr-1 py-2.5 text-left active:scale-[var(--press-scale)] transition-transform"
+        disabled={onWheel}
+        aria-pressed={onWheel ? undefined : on}
+        className="flex-1 min-w-0 flex items-center gap-3.5 pl-2.5 pr-1 py-2.5 text-left active:scale-[var(--press-scale)] disabled:active:scale-100 transition-transform"
         style={{ borderRadius: "var(--radius-card)" }}
       >
         {/* Walk tile / checkbox */}
@@ -199,6 +206,14 @@ export default function PlaceCard({
                   }}
                 >
                   {t(place.open ? "onb.card.open" : place.temporarilyClosed ? "onb.card.paused" : "onb.card.closed")}
+                </span>
+              </>
+            )}
+            {onWheel && (
+              <>
+                <Dot />
+                <span className="inline-flex items-center gap-1" style={{ color: "var(--ok)", fontWeight: 600 }}>
+                  <Check size={12} strokeWidth={3} /> {t("onb.card.onWheel")}
                 </span>
               </>
             )}
