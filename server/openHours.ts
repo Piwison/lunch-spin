@@ -31,7 +31,7 @@ export interface HoursRefreshResult {
  */
 export async function refreshWheelHours(wheelId: number): Promise<HoursRefreshResult> {
   if (!isPlacesConfigured()) return { updated: 0, providerFailed: false };
-  let targets: { id: number; placeId: string | null; mapUrl: string | null }[];
+  let targets: { id: number; placeId: string | null; mapUrl: string | null; googleRating: string | null }[];
   try {
     targets = (await getRestaurantsNeedingHours(wheelId, HOURS_STALE_AFTER_MS)).slice(0, MAX_PER_RUN);
   } catch (err) {
@@ -66,10 +66,11 @@ export async function refreshWheelHours(wheelId: number): Promise<HoursRefreshRe
         await setRestaurantHours(t.id, null, null);
         continue;
       }
-      const hours = await fetchPlaceHours(placeId);
+      // Rows added before Google ratings were stored pick theirs up here, once.
+      const hours = await fetchPlaceHours(placeId, { withRating: t.googleRating == null });
       // A place with genuinely no published hours: stamp hoursUpdatedAt anyway so
       // we don't re-request it on every spin, but leave the periods null/unknown.
-      await setRestaurantHours(t.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+      await setRestaurantHours(t.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null, hours);
       updated += 1;
     } catch (err) {
       providerFailed = true;
@@ -80,11 +81,15 @@ export async function refreshWheelHours(wheelId: number): Promise<HoursRefreshRe
 }
 
 /** One restaurant, right after it's added. Never throws. */
-export async function maybeFetchOneRestaurantHours(restaurantId: number, placeId: string | null) {
+export async function maybeFetchOneRestaurantHours(
+  restaurantId: number,
+  placeId: string | null,
+  opts: { withRating?: boolean } = {},
+) {
   if (!placeId || !isPlacesConfigured()) return;
   try {
-    const hours = await fetchPlaceHours(placeId);
-    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+    const hours = await fetchPlaceHours(placeId, opts);
+    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null, hours);
   } catch (err) {
     console.error(`[openHours] initial fetch failed for restaurant ${restaurantId}`, err);
   }

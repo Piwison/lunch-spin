@@ -36,6 +36,8 @@ type NearbyResult = {
   lat: number | null;
   lng: number | null;
   address: string | null;
+  rating: number | null;
+  ratingCount: number | null;
   alreadyAdded: boolean;
 };
 
@@ -118,6 +120,8 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
         address: p.address,
         priceLevel: p.priceLevel,
         cuisine: p.cuisine,
+        rating: p.rating,
+        ratingCount: p.ratingCount,
         mapUrl: placeMapUrl(p.placeId, p.name),
       }));
     if (places.length === 0) return;

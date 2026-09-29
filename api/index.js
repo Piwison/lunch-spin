@@ -634,6 +634,9 @@ async function getRestaurantsByWheel(wheelId) {
 function shapeRestaurant(r) {
   return { ...r, tags: [] };
 }
+function googleRatingValue(rating) {
+  return rating != null && rating >= 1 && rating <= 5 ? rating.toFixed(1) : null;
+}
 async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = null, place = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -654,6 +657,8 @@ async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = nul
       priceLevel: place.priceLevel,
       cuisine: place.cuisine,
       openHours: place.openHours ?? null,
+      googleRating: googleRatingValue(place.rating),
+      googleRatingCount: place.ratingCount ?? null,
       source: "provider"
     } : {}
   });
@@ -691,6 +696,8 @@ async function addProviderRestaurants(wheelId, addedBy, rows) {
       priceLevel: r.place.priceLevel,
       cuisine: r.place.cuisine,
       openHours: r.place.openHours ?? null,
+      googleRating: googleRatingValue(r.place.rating),
+      googleRatingCount: r.place.ratingCount ?? null,
       source: "provider"
     }))
   );
@@ -791,10 +798,16 @@ async function getRestaurantById(id) {
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
 }
-async function setRestaurantHours(id, openHours, utcOffsetMinutes) {
+async function setRestaurantHours(id, openHours, utcOffsetMinutes, google) {
   const db = await getDb();
   if (!db) return;
-  await db.update(restaurants).set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: /* @__PURE__ */ new Date() }).where(eq(restaurants.id, id));
+  await db.update(restaurants).set({
+    openHours: openHours ?? null,
+    utcOffsetMinutes,
+    hoursUpdatedAt: /* @__PURE__ */ new Date(),
+    // Only when this refresh asked for them — never blanks a stored rating.
+    ...google && google.rating != null ? { googleRating: googleRatingValue(google.rating), googleRatingCount: google.ratingCount } : {}
+  }).where(eq(restaurants.id, id));
 }
 async function setRestaurantPlaceId(id, placeId) {
   const db = await getDb();
@@ -808,7 +821,8 @@ async function getRestaurantsNeedingHours(wheelId, staleAfterMs) {
     id: restaurants.id,
     placeId: restaurants.placeId,
     mapUrl: restaurants.mapUrl,
-    hoursUpdatedAt: restaurants.hoursUpdatedAt
+    hoursUpdatedAt: restaurants.hoursUpdatedAt,
+    googleRating: restaurants.googleRating
   }).from(restaurants).where(eq(restaurants.wheelId, wheelId));
   const cutoff = Date.now() - staleAfterMs;
   return rows.filter(
@@ -2535,13 +2549,13 @@ async function placeDetails(placeId, apiKey, language) {
   if (data.status !== "OK" || !data.result) return null;
   return mapGooglePlace(data.result);
 }
-async function fetchPlaceHours(placeId) {
+async function fetchPlaceHours(placeId, opts = {}) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
   const url = new URL(PLACE_DETAILS_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("place_id", placeId);
-  url.searchParams.set("fields", "opening_hours,utc_offset");
+  url.searchParams.set("fields", opts.withRating ? "opening_hours,utc_offset,rating,user_ratings_total" : "opening_hours,utc_offset");
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6e3);
   try {
@@ -2549,11 +2563,13 @@ async function fetchPlaceHours(placeId) {
     if (!res.ok) throw new Error(`Place Details (hours) failed (${res.status})`);
     const data = await res.json();
     if (data.status !== "OK" || !data.result) return null;
-    const periods = data.result.opening_hours?.periods ?? null;
-    if (!periods) return null;
+    const r = data.result;
     return {
-      periods,
-      utcOffsetMinutes: typeof data.result.utc_offset === "number" ? data.result.utc_offset : null
+      // No published hours stays null (= unknown, kept on the wheel).
+      periods: r.opening_hours?.periods ?? null,
+      utcOffsetMinutes: typeof r.utc_offset === "number" ? r.utc_offset : null,
+      rating: typeof r.rating === "number" ? r.rating : null,
+      ratingCount: typeof r.user_ratings_total === "number" ? r.user_ratings_total : null
     };
   } finally {
     clearTimeout(timer);
@@ -2747,8 +2763,8 @@ async function refreshWheelHours(wheelId) {
         await setRestaurantHours(t2.id, null, null);
         continue;
       }
-      const hours = await fetchPlaceHours(placeId);
-      await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+      const hours = await fetchPlaceHours(placeId, { withRating: t2.googleRating == null });
+      await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null, hours);
       updated += 1;
     } catch (err) {
       providerFailed = true;
@@ -2757,11 +2773,11 @@ async function refreshWheelHours(wheelId) {
   }
   return { updated, providerFailed };
 }
-async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
+async function maybeFetchOneRestaurantHours(restaurantId, placeId, opts = {}) {
   if (!placeId || !isPlacesConfigured()) return;
   try {
-    const hours = await fetchPlaceHours(placeId);
-    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+    const hours = await fetchPlaceHours(placeId, opts);
+    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null, hours);
   } catch (err) {
     console.error(`[openHours] initial fetch failed for restaurant ${restaurantId}`, err);
   }
@@ -2808,7 +2824,11 @@ var nearbyPlaceSchema = z2.object({
   address: z2.string().max(512).nullable(),
   priceLevel: z2.number().int().min(1).max(4).nullable(),
   cuisine: z2.string().max(64).nullable(),
-  mapUrl: z2.string().max(512).nullable().optional()
+  mapUrl: z2.string().max(512).nullable().optional(),
+  // Google's rating and review count from the same search result — stored for
+  // display (the team's own stars are what weight a spin).
+  rating: z2.number().min(1).max(5).nullable().optional(),
+  ratingCount: z2.number().int().min(0).nullable().optional()
 });
 async function addNearbyPlaces(wheelId, userId, places) {
   const [existing, wheelTags] = await Promise.all([
@@ -2840,13 +2860,19 @@ async function addNearbyPlaces(wheelId, userId, places) {
           lng: place.lng,
           address: place.address,
           priceLevel: place.priceLevel,
-          cuisine: place.cuisine
+          cuisine: place.cuisine,
+          rating: place.rating ?? null,
+          ratingCount: place.ratingCount ?? null
         }
       };
     })
   );
   await Promise.allSettled([
-    ...rows.map((r) => maybeFetchOneRestaurantHours(r.id, r.placeId)),
+    ...rows.map(
+      (r) => maybeFetchOneRestaurantHours(r.id, r.placeId, {
+        withRating: fresh.find((f) => f.placeId === r.placeId)?.rating == null
+      })
+    ),
     computeDistancesFor(wheelId, rows.map((r) => r.id))
   ]);
   return { added: rows.length, duplicates, ids: rows.map((r) => r.id) };
@@ -3364,7 +3390,7 @@ var appRouter = router({
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
-      await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
+      await maybeFetchOneRestaurantHours(id, input.placeId ?? null, { withRating: true });
       return { id };
     }),
     addBulk: protectedProcedure.input(z2.object({ wheelId: z2.number(), text: z2.string().max(1e4) })).mutation(async ({ ctx, input }) => {
@@ -3540,16 +3566,7 @@ var appRouter = router({
     addNearby: protectedProcedure.input(
       z2.object({
         wheelId: z2.number(),
-        place: z2.object({
-          placeId: z2.string().min(1).max(256),
-          name: z2.string().min(1).max(128),
-          lat: z2.number().min(-90).max(90).nullable(),
-          lng: z2.number().min(-180).max(180).nullable(),
-          address: z2.string().max(512).nullable(),
-          priceLevel: z2.number().int().min(1).max(4).nullable(),
-          cuisine: z2.string().max(64).nullable(),
-          mapUrl: z2.string().max(512).nullable().optional()
-        })
+        place: nearbyPlaceSchema
       })
     ).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
@@ -3575,14 +3592,16 @@ var appRouter = router({
           lng: input.place.lng,
           address: input.place.address,
           priceLevel: input.place.priceLevel,
-          cuisine: input.place.cuisine
+          cuisine: input.place.cuisine,
+          rating: input.place.rating ?? null,
+          ratingCount: input.place.ratingCount ?? null
         }
       );
       try {
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
-      await maybeFetchOneRestaurantHours(id, input.place.placeId);
+      await maybeFetchOneRestaurantHours(id, input.place.placeId, { withRating: input.place.rating == null });
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
     }),
     // Batch of the above. The dialog lets you tick several spots and add them

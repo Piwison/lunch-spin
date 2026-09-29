@@ -140,6 +140,10 @@ const nearbyPlaceSchema = z.object({
   priceLevel: z.number().int().min(1).max(4).nullable(),
   cuisine: z.string().max(64).nullable(),
   mapUrl: z.string().max(512).nullable().optional(),
+  // Google's rating and review count from the same search result — stored for
+  // display (the team's own stars are what weight a spin).
+  rating: z.number().min(1).max(5).nullable().optional(),
+  ratingCount: z.number().int().min(0).nullable().optional(),
 });
 type NearbyPlaceInput = z.infer<typeof nearbyPlaceSchema>;
 
@@ -195,6 +199,8 @@ async function addNearbyPlaces(
           address: place.address,
           priceLevel: place.priceLevel,
           cuisine: place.cuisine,
+          rating: place.rating ?? null,
+          ratingCount: place.ratingCount ?? null,
         },
       };
     }),
@@ -211,7 +217,11 @@ async function addNearbyPlaces(
   // request, so the whole batch is one call via computeDistancesFor. Looping
   // maybeComputeOneDistance here would have billed one request per restaurant.
   await Promise.allSettled([
-    ...rows.map((r) => maybeFetchOneRestaurantHours(r.id, r.placeId)),
+    ...rows.map((r) =>
+      maybeFetchOneRestaurantHours(r.id, r.placeId, {
+        withRating: fresh.find((f) => f.placeId === r.placeId)?.rating == null,
+      }),
+    ),
     computeDistancesFor(wheelId, rows.map((r) => r.id)),
   ]);
 
@@ -879,7 +889,7 @@ export const appRouter = router({
           // adding the restaurant still succeeded; distance is a courtesy
         }
         // Opening hours, same best-effort contract (never throws).
-        await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
+        await maybeFetchOneRestaurantHours(id, input.placeId ?? null, { withRating: true });
         return { id };
       }),
 
@@ -1097,16 +1107,7 @@ export const appRouter = router({
       .input(
         z.object({
           wheelId: z.number(),
-          place: z.object({
-            placeId: z.string().min(1).max(256),
-            name: z.string().min(1).max(128),
-            lat: z.number().min(-90).max(90).nullable(),
-            lng: z.number().min(-180).max(180).nullable(),
-            address: z.string().max(512).nullable(),
-            priceLevel: z.number().int().min(1).max(4).nullable(),
-            cuisine: z.string().max(64).nullable(),
-            mapUrl: z.string().max(512).nullable().optional(),
-          }),
+          place: nearbyPlaceSchema,
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -1139,6 +1140,8 @@ export const appRouter = router({
             address: input.place.address,
             priceLevel: input.place.priceLevel,
             cuisine: input.place.cuisine,
+            rating: input.place.rating ?? null,
+            ratingCount: input.place.ratingCount ?? null,
           },
         );
         // Best-effort: this restaurant already has provider coordinates, so
@@ -1151,7 +1154,7 @@ export const appRouter = router({
         }
         // Same contract for opening hours: a provider place has a placeId, so
         // fetch its weekly hours now. Never throws (see server/openHours.ts).
-        await maybeFetchOneRestaurantHours(id, input.place.placeId);
+        await maybeFetchOneRestaurantHours(id, input.place.placeId, { withRating: input.place.rating == null });
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
       }),
 

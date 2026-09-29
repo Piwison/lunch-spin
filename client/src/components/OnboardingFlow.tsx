@@ -360,6 +360,8 @@ export default function OnboardingFlow({
           address: p.address,
           priceLevel: p.priceLevel,
           cuisine: p.cuisine,
+          rating: p.rating,
+          ratingCount: p.ratingCount,
           mapUrl: placeMapUrl(p.placeId, p.name),
         })),
         // Only a *named* pick becomes the wheel's office. A raw geolocation fix

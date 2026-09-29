@@ -492,6 +492,14 @@ export interface PlaceFields {
   priceLevel: number | null;
   cuisine: string | null;
   openHours?: unknown;
+  /** Google's own rating (1–5) and review count, when the search reported them. */
+  rating?: number | null;
+  ratingCount?: number | null;
+}
+
+/** decimal(2,1) takes a string in drizzle-mysql; out-of-range becomes null. */
+function googleRatingValue(rating: number | null | undefined): string | null {
+  return rating != null && rating >= 1 && rating <= 5 ? rating.toFixed(1) : null;
 }
 
 export async function addRestaurant(
@@ -523,6 +531,8 @@ export async function addRestaurant(
           priceLevel: place.priceLevel,
           cuisine: place.cuisine,
           openHours: place.openHours ?? null,
+          googleRating: googleRatingValue(place.rating),
+          googleRatingCount: place.ratingCount ?? null,
           source: "provider" as const,
         }
       : {}),
@@ -599,6 +609,8 @@ export async function addProviderRestaurants(
       priceLevel: r.place.priceLevel,
       cuisine: r.place.cuisine,
       openHours: r.place.openHours ?? null,
+      googleRating: googleRatingValue(r.place.rating),
+      googleRatingCount: r.place.ratingCount ?? null,
       source: "provider" as const,
     })),
   );
@@ -757,12 +769,21 @@ export async function setRestaurantHours(
   id: number,
   openHours: unknown,
   utcOffsetMinutes: number | null,
+  google?: { rating: number | null; ratingCount: number | null } | null,
 ) {
   const db = await getDb();
   if (!db) return;
   await db
     .update(restaurants)
-    .set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: new Date() })
+    .set({
+      openHours: openHours ?? null,
+      utcOffsetMinutes,
+      hoursUpdatedAt: new Date(),
+      // Only when this refresh asked for them — never blanks a stored rating.
+      ...(google && google.rating != null
+        ? { googleRating: googleRatingValue(google.rating), googleRatingCount: google.ratingCount }
+        : {}),
+    })
     .where(eq(restaurants.id, id));
 }
 
@@ -790,6 +811,7 @@ export async function getRestaurantsNeedingHours(wheelId: number, staleAfterMs: 
       placeId: restaurants.placeId,
       mapUrl: restaurants.mapUrl,
       hoursUpdatedAt: restaurants.hoursUpdatedAt,
+      googleRating: restaurants.googleRating,
     })
     .from(restaurants)
     .where(eq(restaurants.wheelId, wheelId));
