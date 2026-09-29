@@ -72,6 +72,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
 type Step = "locate" | "pick" | "building";
 type NearbyRow = RouterOutputs["places"]["searchNearby"]["places"][number];
@@ -192,7 +193,7 @@ export default function OnboardingFlow({
     lng: at.lng,
     rankBy: "distance" as const,
     limit: CANDIDATE_POOL,
-    language: lang,
+    language: devicePlaceLanguage(),
   });
 
   // ── Requests: only these three ever reach Google ─────────────────────────
@@ -366,7 +367,7 @@ export default function OnboardingFlow({
         // Only a *named* pick becomes the wheel's office. A raw geolocation fix
         // is where the user happened to be standing, not their office.
         extraNames: typedOnWheel,
-        language: lang,
+        language: devicePlaceLanguage(),
         origin: origin?.label
           ? { lat: origin.lat, lng: origin.lng, label: origin.label }
           : null,

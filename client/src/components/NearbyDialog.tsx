@@ -12,6 +12,7 @@ import { useLang } from "@/i18n";
 import { tagLabel } from "@/lib/tagLabel";
 import { walkLabel } from "@/lib/timeLabels";
 import { userError } from "@/lib/userError";
+import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
 interface NearbyDialogProps {
   wheelId: number;
@@ -58,7 +59,7 @@ export default function NearbyDialog({ wheelId, open, onOpenChange, onAdded }: N
 
   const runSearch = (at: Coords, r: number) => {
     search.mutate(
-      { wheelId, lat: at.lat, lng: at.lng, radius: r, keyword: keyword.trim() || undefined, language: lang },
+      { wheelId, lat: at.lat, lng: at.lng, radius: r, keyword: keyword.trim() || undefined, language: devicePlaceLanguage() },
       { onError: (e) => toast.error(userError(e, t)) },
     );
   };

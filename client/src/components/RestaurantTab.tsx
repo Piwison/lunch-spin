@@ -30,6 +30,7 @@ import { useLang } from "@/i18n";
 import { originLabelText, tagLabel } from "@/lib/tagLabel";
 import { walkLabel } from "@/lib/timeLabels";
 import { userError } from "@/lib/userError";
+import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
 /** Loose check: does this string look like a Google Maps link worth resolving? */
 const looksLikeMapLink = (s: string) =>
@@ -208,7 +209,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       // Reuses this session's fix (lib/geo) — no second permission prompt if
       // ADD NEARBY or first-run already asked.
       const at = await requestCoords();
-      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword, language: lang });
+      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword, language: devicePlaceLanguage() });
     } catch (err) {
       const kind = err instanceof GeoError ? err.kind : "failed";
       setNameGeoError(
@@ -954,7 +955,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   type="button"
                   variant="outline"
                   size="md"
-                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim(), language: lang }); }}
+                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim(), language: devicePlaceLanguage() }); }}
                   disabled={!looksLikeMapLink(form.mapUrl) || resolveLink.isPending}
                   title={t("places.form.lookupTitle")}
                 >

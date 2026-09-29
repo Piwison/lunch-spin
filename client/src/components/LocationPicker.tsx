@@ -27,6 +27,7 @@ import { providerAlert } from "@/lib/placesError";
 import { GeoError, requestCoords, watchGeoPermission } from "@/lib/geo";
 import { locationEntryMode, type GeoPermission } from "@shared/locationEntry";
 import { AlertTriangle, Loader2, MapPin, Navigation, Search } from "lucide-react";
+import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
 export interface PickedLocation {
   lat: number;
@@ -113,7 +114,7 @@ export default function LocationPicker({
     const q = query.trim();
     if (!q) return;
     setGeoError(null);
-    searchPlaces.mutate({ query: q, language: lang });
+    searchPlaces.mutate({ query: q, language: devicePlaceLanguage() });
   };
 
   const results = searchPlaces.data?.places ?? [];
@@ -271,7 +272,7 @@ export default function LocationPicker({
               />
               <Button
                 type="button"
-                onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim(), language: lang }); }}
+                onClick={() => { setGeoError(null); resolveLink.mutate({ url: link.trim(), language: devicePlaceLanguage() }); }}
                 aria-label={t("loc.link.submit")}
                 disabled={!looksLikeMapLink(link) || busy}
                 variant="outline"

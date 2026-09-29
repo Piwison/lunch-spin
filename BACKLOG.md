@@ -383,6 +383,7 @@ CSS token 留下來了但沒人用。獨立量測確認過它的形狀就是 45 
 **處理狀態（2026-09-23，業主決定：5c/5d/5f/5l 用建議方案）**
 
 - ✅ **5a** 所有 Places 請求都帶 `language`（預設 zh-TW，first run 和 LocationPicker 傳 UI 語言）；新輪盤名稱依 first run 的語言：`信義區的午餐`／`附近的午餐`
+  - 2026-09-29 由走查計畫 **B4** 修正：送出的 `language` 改成跟**手機語言**（`navigator.language`），不跟介面語言；新輪盤名稱用同一個語言
 - ✅ **5b** server 那一半（輪盤名、店名語言）＋畫面翻譯（Codex 翻、Claude 補完，見 3a）
 - ✅ **5c** 休息中的店不預設勾，只在營業中不到 2 家時補到 2 家；文案照實說；開轉按鈕第二行寫「其中 N 家現在休息中，今天轉不到」
 - ✅ **5d** 只帶「自己加的店」（`shared/demoDraft.ts`，24 小時有效）：首頁存 → 登入 → first run 定位頁先告知、清單最上面「你在首頁加的」預設勾 → `createFromNearby.extraNames` → 建立後清掉。
