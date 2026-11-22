@@ -15,7 +15,7 @@
 // fails in the web container (failure mode 68); this talks CDP to headless_shell
 // with Node's global WebSocket and needs nothing installed.
 import { spawn } from "node:child_process";
-import { writeFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, writeFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import http from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,13 @@ mkdirSync(SHOTS, { recursive: true });
 const PW = "/opt/pw-browsers";
 const shell = readdirSync(PW).find((d) => d.startsWith("chromium_headless_shell-"));
 if (!shell) throw new Error(`no chromium_headless_shell-* under ${PW}`);
-const HS = join(PW, shell, "chrome-linux", "headless_shell");
+// Two layouts in the wild: older images ship chrome-linux/headless_shell, newer
+// ones chrome-headless-shell-linux64/chrome-headless-shell.
+const HS = [
+  join(PW, shell, "chrome-linux", "headless_shell"),
+  join(PW, shell, "chrome-headless-shell-linux64", "chrome-headless-shell"),
+].find((p) => existsSync(p));
+if (!HS) throw new Error(`no headless_shell binary under ${join(PW, shell)}`);
 const ORIGIN = `http://localhost:${process.env.PORT || 3000}`;
 const OFFICE = { latitude: FIXTURE_OFFICE.lat, longitude: FIXTURE_OFFICE.lng, accuracy: 30 };
 const ACCEPT_LANGUAGE = process.env.REPLICA_BROWSER_LANG || "zh-TW,zh;q=0.9,en;q=0.8";
