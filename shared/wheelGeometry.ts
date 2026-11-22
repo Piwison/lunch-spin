@@ -20,21 +20,20 @@
 export const SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
   windupMs: 100,
-  /** The shortest free spin after the wind-up, even when the server answers
-   *  at once. Stretches while the server is still choosing, and by up to one
-   *  more turn (MAX_ALIGN_MS) so the decay always starts the same distance
-   *  from the winning pane.
+  /** The free spin after the wind-up, before the stop may begin. Then up to
+   *  one more turn (MAX_ALIGN_MS) so the stop always starts the same distance
+   *  from the winning pane. Wind-up + this + MAX_ALIGN_MS + decayMs is
+   *  SPIN_TARGET_MS (pinned by a test), so an on-time reply lands at 2.85–3.0s
+   *  from the TAP, whatever the network did.
    *
-   *  2600 -> 1900 -> 600 -> 150. The free spin used to carry the length of the
-   *  spin; since 2026-11 (the owner: under half, then "slow down on a curve,
-   *  same total") the length lives in `decayMs`, where it is visible as
-   *  slowing down rather than as a wheel turning at one speed. */
-  travelMs: 150,
-  /** The stop. Fixed: every spin decelerates over the same time and the same
-   *  arc (DECAY_ARC_DEG), from the free spin's own speed, along EASE_DECAY.
-   *  Replaces the arc-sized decay and the 12deg settle bounce, which together
-   *  read as braking to a halt and then being nudged. */
-  decayMs: 700,
+   *  2600 -> 1900 -> 600 -> 150 -> 750. A reply that misses this point does
+   *  not wait for it: the stop starts the moment it arrives (planLateLanding). */
+  travelMs: 750,
+  /** The stop. Fixed: every on-time spin decelerates over the same time and
+   *  the same arc (DECAY_ARC_DEG), from the free spin's own speed, along
+   *  EASE_DECAY. 700 -> 2000 (2026-11, the owner: "two seconds more, it has no
+   *  sense of slowing"): at 0.7s the curve had no room to read as a curve. */
+  decayMs: 2000,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -46,6 +45,9 @@ export const SPIN_TIMELINE = {
   /** Reduced motion: no zoom, no blur, no unroll — same result, no theatre. */
   reducedMs: 400,
 } as const;
+
+/** Tap to the disc at rest, on a reply that is in by the start of the stop. */
+export const SPIN_TARGET_MS = 3000;
 
 /**
  * Tap to the winner's name fully unrolled, on a fast reply.
@@ -496,6 +498,44 @@ export const DECAY_ARC_DEG = (FREE_SPIN_SPEED * SPIN_TIMELINE.decayMs) / DECAY_P
 /** The most extra free spin a landing can need to line the decay up: one turn. */
 export const MAX_ALIGN_MS = 360 / FREE_SPIN_SPEED;
 
+/** The shortest stop a LATE reply gets. It starts slowing the moment the reply
+ *  lands, but a stop still has to read as one rather than a brake. */
+export const MIN_LATE_DECAY_MS = 1000;
+
+/**
+ * The stop for a reply that arrived after the on-time stop should already have
+ * begun (`elapsedMs` from the tap). The owner's rule: start slowing the moment
+ * the answer is in, and still aim for SPIN_TARGET_MS.
+ *
+ * The decay starts HERE (`decayStartDeg === fromDeg`), so the only freedom is
+ * its length. For the opening to equal the free spin the length is tied to the
+ * arc (`decayMs = DECAY_PEAK * arc / FREE_SPIN_SPEED`), and the arc must end on
+ * the winning pane, so the candidates are one turn apart — MAX_ALIGN_MS *
+ * DECAY_PEAK (~454ms) of stop apart. Pick the one whose landing is nearest
+ * SPIN_TARGET_MS, never shorter than MIN_LATE_DECAY_MS.
+ */
+export function planLateLanding({
+  fromDeg,
+  targetIndex,
+  count,
+  pointerDeg,
+  elapsedMs,
+}: Omit<LandingRequest, "minTurns"> & { elapsedMs: number }): {
+  decayStartDeg: number;
+  targetDeg: number;
+  decayMs: number;
+} {
+  const msPerDeg = DECAY_PEAK / FREE_SPIN_SPEED;
+  const first = landingRotationDeg({ fromDeg, targetIndex, count, pointerDeg, minTurns: 0 }) - fromDeg;
+  const minArc = MIN_LATE_DECAY_MS / msPerDeg;
+  // Smallest aligned arc that still makes a full-length stop...
+  let arc = first + Math.max(0, Math.ceil((minArc - first) / 360)) * 360;
+  // ...then whole turns more while that brings the landing nearer the target.
+  const want = Math.max(SPIN_TARGET_MS - elapsedMs, MIN_LATE_DECAY_MS);
+  while (Math.abs((arc + 360) * msPerDeg - want) < Math.abs(arc * msPerDeg - want)) arc += 360;
+  return { decayStartDeg: fromDeg, targetDeg: fromDeg + arc, decayMs: arc * msPerDeg };
+}
+
 /**
  * Where a spin that is at `fromDeg` now should start decelerating, and where it
  * stops.
@@ -533,10 +573,7 @@ export const REPLY_ALLOWANCE_MS = 500;
 
 export const SPIN_REVEAL_DELAY_MS = Math.ceil(
   REPLY_ALLOWANCE_MS +
-  SPIN_TIMELINE.windupMs +
-    SPIN_TIMELINE.travelMs +
-    MAX_ALIGN_MS +
-    SPIN_TIMELINE.decayMs +
+    SPIN_TARGET_MS +
     SPIN_TIMELINE.unrollDelayMs +
     SPIN_TIMELINE.unrollMs,
 );

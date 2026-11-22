@@ -7,6 +7,7 @@ import {
   SPIN_TIMELINE,
   landingRotationDeg,
   planLanding,
+  planLateLanding,
   normalizeDeg,
   paneCenterDeg,
   panes,
@@ -414,7 +415,11 @@ export default function SpinWheel({
     let decayFrom = 0;
     let decayStartAngle = 0;
     let targetAngle = 0;
+    let decayMs: number = SPIN_TIMELINE.decayMs;
     let planned = false;
+    // When this frame loop first saw the server's answer. On time = in by the
+    // moment the stop may begin; otherwise the stop begins the moment it lands.
+    let answeredAt: number | null = null;
     let landSegment: WheelSegment | null = null;
     let phase: "windup" | "free" | "decay" = "windup";
 
@@ -435,7 +440,7 @@ export default function SpinWheel({
 
     /** Decay position at `elapsed` ms into the fixed stop. */
     const decayAt = (elapsed: number) => {
-      const p = Math.min(elapsed / SPIN_TIMELINE.decayMs, 1);
+      const p = Math.min(elapsed / decayMs, 1);
       return { p, angle: decayStartAngle + (targetAngle - decayStartAngle) * EASE_DECAY(p) };
     };
 
@@ -462,14 +467,30 @@ export default function SpinWheel({
         speedRef.current = FREE_SPIN_SPEED;
         const next = angleRef.current + FREE_SPIN_SPEED * (now - lastRef.current);
         lastRef.current = now;
-        // Once the server has answered and the minimum free spin is done, plan
-        // the stop from where the disc is: keep turning at this same speed
-        // until it is exactly one decay-arc short of the winning seat.
-        if (!planned && targetIdRef.current != null && now >= freeFloorAt) {
+        if (answeredAt == null && targetIdRef.current != null) answeredAt = now;
+        // The spin is counted from the TAP (SPIN_TARGET_MS), not from the reply.
+        // On time: keep turning at this speed until exactly one decay-arc short
+        // of the winning seat, then the fixed 2s stop — landing by 3s.
+        // Late: start slowing right now, sized to land as near 3s as it can.
+        if (!planned && answeredAt != null && now >= freeFloorAt) {
           const { targetIndex, count } = resolveTarget();
-          const plan = planLanding({ fromDeg: angleRef.current, targetIndex, count, pointerDeg: POINTER_DEG });
-          decayStartAngle = plan.decayStartDeg;
-          targetAngle = plan.targetDeg;
+          if (answeredAt <= freeFloorAt) {
+            const plan = planLanding({ fromDeg: angleRef.current, targetIndex, count, pointerDeg: POINTER_DEG });
+            decayStartAngle = plan.decayStartDeg;
+            targetAngle = plan.targetDeg;
+            decayMs = SPIN_TIMELINE.decayMs;
+          } else {
+            const plan = planLateLanding({
+              fromDeg: next,
+              targetIndex,
+              count,
+              pointerDeg: POINTER_DEG,
+              elapsedMs: now - startedAt,
+            });
+            decayStartAngle = plan.decayStartDeg;
+            targetAngle = plan.targetDeg;
+            decayMs = plan.decayMs;
+          }
           planned = true;
         }
         if (planned && next >= decayStartAngle) {

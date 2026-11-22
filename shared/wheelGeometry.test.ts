@@ -4,6 +4,10 @@ import {
   FREE_SPIN_SPEED,
   DECAY_ARC_DEG,
   MAX_ALIGN_MS,
+  MIN_LATE_DECAY_MS,
+  REPLY_ALLOWANCE_MS,
+  SPIN_TARGET_MS,
+  planLateLanding,
   SPIN_REVEAL_DELAY_MS,
   planLanding,
   EASE_DECAY,
@@ -45,15 +49,20 @@ describe("timeline", () => {
     expect(windupMs + travelMs + decayMs + unrollDelayMs + unrollMs).toBe(SPIN_TOTAL_MS);
   });
 
-  // The owner's call (2026-11): the spin was too long and had to lose MORE than
-  // half. Measured before that change in the replica, with the server answering
-  // in 64ms: tap -> disc at rest 2389ms. A fast reply's landing is wind-up, the
-  // minimum free spin, up to one turn of free spin to line the decay up, then
-  // the decay — so the worst case is a whole alignment turn.
-  // A slow server still lengthens the free spin; that part is the network's.
-  it("lands in under half the old 2.39s, even with a full turn of alignment", () => {
-    const worst = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + MAX_ALIGN_MS + SPIN_TIMELINE.decayMs;
-    expect(worst).toBeLessThan(2389 / 2);
+  // The owner's call (2026-11, third round): ~1s had no room to slow down in,
+  // so "two seconds more", counted FROM THE TAP — not from the server's reply,
+  // which is what made the same spin feel different on production. A reply
+  // that is in by the start of the stop lands within one alignment turn of
+  // SPIN_TARGET_MS, and never after it.
+  it("lands at 3s from the tap when the reply is on time", () => {
+    const latest = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + MAX_ALIGN_MS + SPIN_TIMELINE.decayMs;
+    expect(SPIN_TARGET_MS).toBe(3000);
+    expect(latest).toBe(SPIN_TARGET_MS);
+    expect(latest - MAX_ALIGN_MS).toBeGreaterThanOrEqual(SPIN_TARGET_MS - 200);
+  });
+
+  it("spends two seconds slowing down, most of the spin", () => {
+    expect(SPIN_TIMELINE.decayMs).toBe(2000);
   });
 
   it("still turns at least twice between the release and the stop", () => {
@@ -114,6 +123,54 @@ describe("the stop", () => {
 
   it("is the same length every spin: the arc is fixed, alignment comes out of the free spin", () => {
     expect(MAX_ALIGN_MS).toBeCloseTo(360 / FREE_SPIN_SPEED, 6);
+  });
+});
+
+describe("planLateLanding — the reply missed the start of the stop", () => {
+  const plan = (elapsedMs: number, fromDeg = 13, targetIndex = 3, count = 8) =>
+    planLateLanding({ fromDeg, targetIndex, count, pointerDeg: POINTER, elapsedMs });
+
+  it("starts slowing at once, from exactly the free spin's speed", () => {
+    for (const elapsed of [900, 1500, 2600, 4000, 9000]) {
+      const p = plan(elapsed);
+      expect(p.decayStartDeg).toBe(13);
+      expect((DECAY_PEAK * (p.targetDeg - p.decayStartDeg)) / p.decayMs).toBeCloseTo(FREE_SPIN_SPEED, 6);
+    }
+  });
+
+  it("lands as near 3s from the tap as a whole pane allows", () => {
+    // Aligned arcs are a turn apart, i.e. MAX_ALIGN_MS * DECAY_PEAK of decay;
+    // the nearest is never more than half of that away.
+    const step = MAX_ALIGN_MS * DECAY_PEAK;
+    // Up to 1.5s the nearest arc is never one the minimum stop rules out.
+    for (const elapsed of [900, 1200, 1500]) {
+      for (let t = 0; t < 8; t++) {
+        const p = plan(elapsed, 13, t);
+        expect(Math.abs(elapsed + p.decayMs - SPIN_TARGET_MS)).toBeLessThanOrEqual(step / 2 + 1e-6);
+      }
+    }
+  });
+
+  it("past that, still gives the stop at least MIN_LATE_DECAY_MS — a stop, not a brake", () => {
+    for (const elapsed of [2600, 3000, 5000]) {
+      for (let t = 0; t < 8; t++) {
+        const p = plan(elapsed, 200, t);
+        expect(p.decayMs).toBeGreaterThanOrEqual(MIN_LATE_DECAY_MS - 1e-6);
+        expect(p.decayMs).toBeLessThan(MIN_LATE_DECAY_MS + MAX_ALIGN_MS * DECAY_PEAK);
+      }
+    }
+  });
+
+  it("lands every pane under the pointer", () => {
+    for (const pointerDeg of POINTER_ANGLES) {
+      for (const count of [3, 8, 12]) {
+        for (let target = 0; target < count; target++) {
+          const p = planLateLanding({ fromDeg: 1234.5, targetIndex: target, count, pointerDeg, elapsedMs: 1700 });
+          const seat = normalizeDeg(p.targetDeg + paneCenterDeg(target, count));
+          expect(Math.min(Math.abs(seat - pointerDeg), 360 - Math.abs(seat - pointerDeg))).toBeLessThan(1e-6);
+        }
+      }
+    }
   });
 });
 
@@ -562,14 +619,16 @@ describe("cubicBezier", () => {
 });
 
 describe("SPIN_REVEAL_DELAY_MS — teammates never learn the result first", () => {
-  it("covers the longest landing: wind-up, minimum free spin, a full alignment turn, the decay and the unroll", () => {
+  it("covers the on-time landing (3s) plus the unroll, after the reply's trip back", () => {
     expect(SPIN_REVEAL_DELAY_MS).toBeGreaterThanOrEqual(
-      SPIN_TIMELINE.windupMs +
-        SPIN_TIMELINE.travelMs +
-        MAX_ALIGN_MS +
-        SPIN_TIMELINE.decayMs +
-        SPIN_TIMELINE.unrollDelayMs +
-        SPIN_TIMELINE.unrollMs,
+      REPLY_ALLOWANCE_MS + SPIN_TARGET_MS + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs,
     );
+  });
+
+  it("covers a late reply too: its stop is never longer than the on-time spin", () => {
+    // A late reply decays for at most MIN_LATE_DECAY_MS plus one alignment step
+    // from the moment it lands on the phone, which is within the allowance of
+    // the server's record of it.
+    expect(MIN_LATE_DECAY_MS + MAX_ALIGN_MS * DECAY_PEAK).toBeLessThan(SPIN_TARGET_MS);
   });
 });
