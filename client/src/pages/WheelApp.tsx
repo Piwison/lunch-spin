@@ -119,9 +119,6 @@ export default function WheelApp() {
   // "New wheel" when one already exists: the first-run flow again, in place of
   // the tabs, until a wheel is made or the person goes back (see onNewWheel).
   const [creatingWheel, setCreatingWheel] = useState(false);
-  // The floating "Decided today" capsule's height, so the tab content keeps
-  // its last row (Spin, on the Wheel tab) clear of it.
-  const [todayFloatPx, setTodayFloatPx] = useState(0);
   const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -676,12 +673,6 @@ export default function WheelApp() {
     { enabled: !!selectedWheelId && !isShared && seeded && !!user },
   );
   const todayEntries: TodayEntry[] = (isShared ? realtimeQuery.data?.today : todayQuery.data) ?? [];
-  /** My newest decision today, if a spin by me now would replace it. */
-  const myReplaceable = useMemo(() => {
-    const mine = todayEntries.filter((e) => e.spunBy === user?.id);
-    const last = mine[mine.length - 1];
-    return last && !last.accepted ? last : null;
-  }, [todayEntries, user?.id]);
 
   // Latest spin: surface a teammate's spin (skip our own) — but only once their
   // own wheel has landed. The toast names who, never what; the answer is theirs
@@ -1208,6 +1199,31 @@ export default function WheelApp() {
               <DropdownMenuLabel className="px-3 py-2.5 text-sm">{t("app.notifications.label")}</DropdownMenuLabel>
               <DropdownMenuSeparator className="my-0" />
               <div className="max-h-[60vh] overflow-y-auto">
+                {/* This wheel's decision today, and the way to redo it — here
+                    rather than on the wheel screen (see TodayCard). Redoing
+                    closes the panel and spins on the Wheel tab, where the
+                    spin can be seen. */}
+                {selectedWheelId && todayEntries.length > 0 && (
+                  <>
+                    <TodayCard
+                      entries={todayEntries}
+                      currentUserId={user.id}
+                      showWalk={!!wheelData?.distanceEnabled}
+                      onDirections={(e) => {
+                        setNotifOpen(false);
+                        openDirections({ id: e.restaurantId, label: e.name, color: "" });
+                      }}
+                      onRedecide={() => {
+                        setNotifOpen(false);
+                        setCreatingWheel(false);
+                        setActiveTab("wheel");
+                        void handleSpin();
+                      }}
+                      redecideDisabled={spinDisabled}
+                    />
+                    <DropdownMenuSeparator className="my-0" />
+                  </>
+                )}
                 {notifications.length === 0 ? (
                   <div className="px-3 py-6 text-center type-meta text-muted-foreground">
                     {t("app.notifications.empty")}
@@ -1439,11 +1455,6 @@ export default function WheelApp() {
             className={`flex-1 overflow-y-auto overflow-x-clip pb-dock${
               !selectedWheelId || creatingWheel ? " flex flex-col" : ""
             }`}
-            style={
-              todayFloatPx > 0
-                ? { paddingBottom: `calc(var(--dock-height) + 1rem + ${Math.ceil(todayFloatPx)}px + 0.5rem)` }
-                : undefined
-            }
           >
             {creatingWheel && !firstRun ? (
               /* "New wheel" with wheels already made: the same nearby flow as
@@ -1691,9 +1702,12 @@ export default function WheelApp() {
                                 ? t("app.wheel.spinning")
                                 : wheelSegments.length === 1
                                   ? t("app.wheel.goThere")
-                                  : myReplaceable
-                                  ? t("app.wheel.spinReplace", { name: myReplaceable.name })
-                                  : t("app.wheel.spin")}
+                                  : /* Always "Spin", even when it would replace
+                                       today's decision (2026-11, the owner): the
+                                       label is the product's one verb, and the
+                                       way to redo a decision lives under the
+                                       bell with the decision itself. */
+                                    t("app.wheel.spin")}
                             </Button>
 
                             {/* The muted line under the stack: how many are on the
@@ -1843,21 +1857,6 @@ export default function WheelApp() {
               </div>
             )}
           </div>
-
-          {/* Today's decisions — what people open the app to find out. Floats
-              over the Wheel tab above the dock; gone while the camera is in. */}
-          {user && selectedWheelId && (
-            <TodayCard
-              entries={todayEntries}
-              currentUserId={user.id}
-              showWalk={!!wheelData?.distanceEnabled}
-              onDirections={(e) => openDirections({ id: e.restaurantId, label: e.name, color: "" })}
-              onRedecide={handleSpin}
-              redecideDisabled={spinDisabled}
-              visible={activeTab === "wheel" && !creatingWheel && !isSpinning && !showResult}
-              onHeight={setTodayFloatPx}
-            />
-          )}
 
           {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule, fixed to the
                 viewport so it's reachable at any scroll position ── */}
