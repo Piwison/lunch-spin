@@ -848,23 +848,6 @@
     --glass-lens-band: var(--dock-gutter);
   }
 
-  /* "Decided today" floats just above the dock (TodayCard), and above the
-     page's bottom edge where the dock does not exist. */
-  .today-float {
-    bottom: calc(var(--dock-height) + 0.5rem);
-    animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  @media (min-width: 768px) {
-    .today-float {
-      bottom: 1.5rem;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .today-float {
-      animation: none;
-    }
-  }
-
   /* The tab content's clearance for the fixed dock. A class rather than a
      `pb-*` utility because the number is `--dock-height`, which ends in
      `env(safe-area-inset-bottom)` and is therefore different on every phone —
