@@ -11,6 +11,7 @@
  * When a new migration lands, add what it creates to EXPECTED.
  */
 import mysql from "mysql2/promise";
+import { describeShape, isLocalHost, parseDbUrl } from "./dbUrl.mjs";
 
 /** [migration, SQL that returns >= 1 row once it is applied] */
 const EXPECTED = [
@@ -21,39 +22,39 @@ const EXPECTED = [
   ["0018", "SHOW COLUMNS FROM round_marks LIKE 'createdAt'"],
 ];
 
-const raw = (process.env.DATABASE_URL ?? "").trim();
-if (!raw) {
+const raw = process.env.DATABASE_URL ?? "";
+if (!raw.trim()) {
   console.error("DATABASE_URL is empty. Run:  read -rs DATABASE_URL && export DATABASE_URL  then paste the URL and press Enter.");
   process.exit(2);
 }
 
-let url;
-try {
-  url = new URL(raw);
-} catch {
-  console.error("DATABASE_URL is not a URL (expected mysql://user:password@host:port/database).");
+// Tolerates what a paste brings along (quotes, a DATABASE_URL= prefix) and a
+// password with / @ # ? in it — see scripts/dbUrl.mjs.
+const url = parseDbUrl(raw);
+if (!url) {
+  console.error("DATABASE_URL does not look like mysql://user:password@host:port/database.");
+  console.error(`What was pasted (user and password hidden): ${describeShape(raw)}`);
   process.exit(2);
 }
 
-// The URL's own ?ssl=... options are not handed to mysql2: drizzle-kit and
-// mysql2 read them differently. TiDB requires TLS, so it is set explicitly —
-// except for a local database, which has none.
-const local = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+// The URL's own ?ssl=... options are not used: drizzle-kit and mysql2 read
+// them differently. TiDB requires TLS, so it is set explicitly — except for a
+// local database, which has none.
 const conn = await mysql
   .createConnection({
-    host: url.hostname,
-    port: Number(url.port || (local ? 3306 : 4000)),
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: decodeURIComponent(url.pathname.slice(1)),
-    ssl: local ? undefined : { minVersion: "TLSv1.2", rejectUnauthorized: true },
+    host: url.host,
+    port: url.port,
+    user: url.user,
+    password: url.password,
+    database: url.database,
+    ssl: isLocalHost(url.host) ? undefined : { minVersion: "TLSv1.2", rejectUnauthorized: true },
   })
   .catch((e) => {
-    console.error(`Could not connect to ${url.hostname}: ${e.code ?? ""} ${e.message}`);
+    console.error(`Could not connect to ${url.host}: ${e.code ?? ""} ${e.message}`);
     process.exit(1);
   });
 
-console.log(`Checking ${url.hostname} / ${decodeURIComponent(url.pathname.slice(1))}`);
+console.log(`Checking ${url.host} / ${url.database}`);
 let missing = 0;
 for (const [migration, sql] of EXPECTED) {
   const [rows] = await conn.query(sql);
