@@ -1305,10 +1305,9 @@ export const appRouter = router({
         // Three waves, not ten serial hops. Every `await` here is a round trip to
         // a TiDB Serverless cluster from a Vercel function, and this is the one
         // call a user physically waits on: the disc free-spins until the winner
-        // comes back, and `decayDurationMs` sizes the deceleration to whatever is
-        // left of the timeline (SpinWheel, AGENTS.md failure mode 45) — so server
-        // latency here is not hidden by the animation, it IS the length of the
-        // spin. The reads were fully serial and all but two of them only ever
+        // comes back, and only then does the fixed 700ms stop begin (SpinWheel,
+        // `planLanding`) — so server latency here is not hidden by the
+        // animation, it IS added to the length of the spin. The reads were fully serial and all but two of them only ever
         // needed `wheelId`.
         //
         // Wave A authorizes. It stays a wave of its OWN, ahead of every data

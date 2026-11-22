@@ -1971,24 +1971,21 @@ function hoursView(rawOpenHours, utcOffsetMinutes, walkSeconds, now = /* @__PURE
 var SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
   windupMs: 100,
-  /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
-   *  server is still choosing — this is the floor, not the ceiling.
+  /** The shortest free spin after the wind-up, even when the server answers
+   *  at once. Stretches while the server is still choosing, and by up to one
+   *  more turn (MAX_ALIGN_MS) so the decay always starts the same distance
+   *  from the winning pane.
    *
-   *  2600 -> 1900. The old spin read as long, and the reason was not only its
-   *  length: with the old decay curve the wheel finished 96% of its rotation in
-   *  the first half of the decay, so most of what you sat through was a disc
-   *  that had already stopped moving. Shortening the phase and spreading the
-   *  deceleration across it are the same fix.
-   *
-   *  1900 -> 600 (2026-11). Still too long, and the owner asked for it to lose
-   *  more than half. Measured in the replica with a 64ms server reply: tap ->
-   *  disc at rest went from 2389ms to about a second. The spin is shorter
-   *  because it turns fewer times at a higher speed (MIN_LAND_TURNS,
-   *  FREE_SPIN_SPEED), not because the decay was squeezed: decayDurationMs
-   *  still sizes the deceleration so it never outruns the free spin. */
-  travelMs: 600,
-  /** Lands the winning pane on the pointer. `--ease-settle`. */
-  settleMs: 180,
+   *  2600 -> 1900 -> 600 -> 150. The free spin used to carry the length of the
+   *  spin; since 2026-11 (the owner: under half, then "slow down on a curve,
+   *  same total") the length lives in `decayMs`, where it is visible as
+   *  slowing down rather than as a wheel turning at one speed. */
+  travelMs: 150,
+  /** The stop. Fixed: every spin decelerates over the same time and the same
+   *  arc (DECAY_ARC_DEG), from the free spin's own speed, along EASE_DECAY.
+   *  Replaces the arc-sized decay and the 12deg settle bounce, which together
+   *  read as braking to a halt and then being nudged. */
+  decayMs: 700,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -2000,11 +1997,8 @@ var SPIN_TIMELINE = {
   /** Reduced motion: no zoom, no blur, no unroll — same result, no theatre. */
   reducedMs: 400
 };
-var SPIN_TOTAL_MS = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs;
+var SPIN_TOTAL_MS = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + SPIN_TIMELINE.decayMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs;
 var FREE_SPIN_SPEED = 2.4;
-var MIN_LAND_TURNS = 2;
-var SETTLE_DEG = 12;
-var MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
 function cubicBezier(x1, y1, x2, y2) {
   const curve = (a, b, t2) => {
     const u = 1 - t2;
@@ -2028,16 +2022,13 @@ function cubicBezier(x1, y1, x2, y2) {
 }
 var EASE_STANDARD = cubicBezier(0.2, 0.9, 0.1, 1);
 var EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
-var EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
-var EASE_DECAY = cubicBezier(0.3, 0.45, 0.5, 1);
-var DECAY_PEAK = 1.684;
-function decayDurationMs(arcDeg, freeSpinSpeed) {
-  if (freeSpinSpeed <= 0) return 0;
-  return Math.abs(arcDeg) * DECAY_PEAK / freeSpinSpeed;
-}
+var EASE_DECAY = cubicBezier(0.33, 1, 0.68, 1);
+var DECAY_PEAK = 3.024;
+var DECAY_ARC_DEG = FREE_SPIN_SPEED * SPIN_TIMELINE.decayMs / DECAY_PEAK;
+var MAX_ALIGN_MS = 360 / FREE_SPIN_SPEED;
 var REPLY_ALLOWANCE_MS = 500;
 var SPIN_REVEAL_DELAY_MS = Math.ceil(
-  REPLY_ALLOWANCE_MS + SPIN_TIMELINE.windupMs + Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs
+  REPLY_ALLOWANCE_MS + SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + MAX_ALIGN_MS + SPIN_TIMELINE.decayMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs
 );
 
 // shared/bootstrap.ts

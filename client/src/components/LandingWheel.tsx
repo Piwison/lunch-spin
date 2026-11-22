@@ -9,6 +9,7 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useLang } from "@/i18n";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 /**
  * The landing page's playable wheel — the app's own SpinWheel, not a copy of it.
@@ -71,6 +72,10 @@ export default function LandingWheel({
   const [targetId, setTargetId] = useState<number | null>(null);
   const [result, setResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  // "Sounds good" on a demo spin is the moment the visitor has decided they
+  // like the thing — so that is where the sign-in ask goes, as its own dialog,
+  // rather than only as a link under the result they may never read.
+  const [askSignIn, setAskSignIn] = useState(false);
 
   // Switching language re-seeds the demo — but only while it is still the seed.
   // Someone who typed their own places keeps them.
@@ -107,9 +112,10 @@ export default function LandingWheel({
     setShowResult(false);
     setResult(null);
     // The target is known before the first frame, and SpinWheel still runs its
-    // whole timeline: a reply that arrives instantly gets the spec's wind-up and
-    // travel exactly (see its `beginDecay`), so a client-side pick does not
-    // make the demo spin shorter than the real thing.
+    // whole timeline: a reply that arrives instantly gets the same wind-up,
+    // minimum free spin and fixed stop as a real one (shared/wheelGeometry
+    // `planLanding`), so a client-side pick does not make the demo spin
+    // shorter than the real thing.
     setTargetId(pickWinner(places.map((p) => p.id)));
     setIsSpinning(true);
   };
@@ -307,7 +313,10 @@ export default function LandingWheel({
           <WinnerSurface
             name={result.label}
             acceptLabel={t("app.guest.accept")}
-            onAccept={() => setShowResult(false)}
+            onAccept={() => {
+              setShowResult(false);
+              if (onSaveIntent) setAskSignIn(true);
+            }}
             onRespin={respin}
             onDirections={() => openDirections(result.label)}
             onDismiss={() => setShowResult(false)}
@@ -327,6 +336,32 @@ export default function LandingWheel({
           </WinnerSurface>,
           document.body,
         )}
+
+      {/* Radix portals this to <body> itself, so `.reveal`'s transform cannot
+          box it in (see the result surface above). */}
+      {onSaveIntent && (
+        <Dialog open={askSignIn} onOpenChange={setAskSignIn}>
+          <DialogContent className="glass-sheet max-w-sm">
+            {/* pr-8 keeps the title off the dialog's own close button. */}
+            <DialogHeader className="pr-8">
+              <DialogTitle className="type-section text-balance" style={{ color: "var(--ink-warm)" }}>
+                {t("demo.signIn.title", { name: result?.label ?? "" })}
+              </DialogTitle>
+              <DialogDescription className="type-meta" style={{ color: "var(--body-warm)" }}>
+                {typed.length > 0 ? t("demo.signIn.bodyTyped", { n: typed.length }) : t("demo.signIn.body")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button type="button" className="w-full font-semibold" onClick={() => onSaveIntent(typed)}>
+                {t("demo.signIn.cta")}
+              </Button>
+              <Button type="button" variant="ghost" size="md" className="w-full" onClick={() => setAskSignIn(false)}>
+                {t("demo.signIn.later")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

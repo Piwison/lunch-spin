@@ -20,24 +20,21 @@
 export const SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
   windupMs: 100,
-  /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
-   *  server is still choosing — this is the floor, not the ceiling.
+  /** The shortest free spin after the wind-up, even when the server answers
+   *  at once. Stretches while the server is still choosing, and by up to one
+   *  more turn (MAX_ALIGN_MS) so the decay always starts the same distance
+   *  from the winning pane.
    *
-   *  2600 -> 1900. The old spin read as long, and the reason was not only its
-   *  length: with the old decay curve the wheel finished 96% of its rotation in
-   *  the first half of the decay, so most of what you sat through was a disc
-   *  that had already stopped moving. Shortening the phase and spreading the
-   *  deceleration across it are the same fix.
-   *
-   *  1900 -> 600 (2026-11). Still too long, and the owner asked for it to lose
-   *  more than half. Measured in the replica with a 64ms server reply: tap ->
-   *  disc at rest went from 2389ms to about a second. The spin is shorter
-   *  because it turns fewer times at a higher speed (MIN_LAND_TURNS,
-   *  FREE_SPIN_SPEED), not because the decay was squeezed: decayDurationMs
-   *  still sizes the deceleration so it never outruns the free spin. */
-  travelMs: 600,
-  /** Lands the winning pane on the pointer. `--ease-settle`. */
-  settleMs: 180,
+   *  2600 -> 1900 -> 600 -> 150. The free spin used to carry the length of the
+   *  spin; since 2026-11 (the owner: under half, then "slow down on a curve,
+   *  same total") the length lives in `decayMs`, where it is visible as
+   *  slowing down rather than as a wheel turning at one speed. */
+  travelMs: 150,
+  /** The stop. Fixed: every spin decelerates over the same time and the same
+   *  arc (DECAY_ARC_DEG), from the free spin's own speed, along EASE_DECAY.
+   *  Replaces the arc-sized decay and the 12deg settle bounce, which together
+   *  read as braking to a halt and then being nudged. */
+  decayMs: 700,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -61,7 +58,7 @@ export const SPIN_TIMELINE = {
 export const SPIN_TOTAL_MS =
   SPIN_TIMELINE.windupMs +
   SPIN_TIMELINE.travelMs +
-  SPIN_TIMELINE.settleMs +
+  SPIN_TIMELINE.decayMs +
   SPIN_TIMELINE.unrollDelayMs +
   SPIN_TIMELINE.unrollMs;
 
@@ -75,31 +72,6 @@ export const SPIN_TOTAL_MS =
  */
 export const FREE_SPIN_SPEED = 2.4;
 
-/**
- * Whole turns the landing must cover, so the stop reads as a decision.
- *
- * Five, then four, now two (2026-11, the "under half" spin): the spin is
- * shorter because it turns less, not because it hurries. Two whole turns plus
- * up to one of alignment is still well past the point where anyone could track
- * which pane is coming. The handover speed is `decayMs`'s job, not this
- * constant's — see `decayDurationMs`, which sizes the deceleration to whatever
- * arc the landing picks.
- */
-export const MIN_LAND_TURNS = 2;
-
-/**
- * The final arc handed to the settle, where the overshoot lives.
- *
- * Kept well under a half-pane (22.5° at eight places) so the bounce never
- * carries the pointer off the winning pane and back — the wheel wavers between
- * two panes during the decay, which is intended, but once it has landed it has
- * landed.
- */
-export const SETTLE_DEG = 12;
-
-/** The longest arc a landing's decay can cover: the minimum turns plus up to a
- *  full turn of alignment, less the settle (landingRotationDeg). */
-export const MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
 
 /** Full size out to here; beyond FAR_DEG a label is not rendered at all. */
 const SHARP_DEG = 22.5;
@@ -478,11 +450,9 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
   };
 }
 
-/** The four curves from index.css, evaluated the same way the CSS would. */
+/** The disc's curves, evaluated the way CSS would (STANDARD and EXIT match index.css). */
 export const EASE_STANDARD = cubicBezier(0.2, 0.9, 0.1, 1);
 export const EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
-/** Overshoots past 1 before settling — the only curve allowed to bounce. */
-export const EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
 /**
  * The deceleration, and the one curve here that was doing the opposite of its
  * name.
@@ -494,42 +464,57 @@ export const EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
  * The back half of every spin was a disc that had visibly stopped, which is
  * both why the spin felt long and why the slowdown had no motion in it.
  *
- * (0.3, 0.45, 0.5, 1) opens at 1.5x average, which against the shortened travel
- * hands over from the free spin at very nearly the same speed — no step — and
- * still carries 1.09x at the halfway mark and 0.35x at 80%, so the tail is a
- * wheel slowing down rather than a wheel already stopped.
+ * (0.3, 0.45, 0.5, 1) opened at 1.5x average and handed over from the free
+ * spin without a step — but its deceleration was back-loaded: it still carried
+ * 0.35x average at 80%, so once the spin was shortened (2026-11) the last ~100ms
+ * braked from half the free spin to nothing, and then the settle bounce moved
+ * the disc again. The owner: "it just stops".
+ *
+ * (0.33, 1, 0.68, 1) is ease-out-cubic: fastest at its first instant and slower
+ * at every instant after (pinned by a test), with the last quarter of the time
+ * covering 1.7% of the arc. That last quarter is the creep onto the pane — the
+ * curve IS the stop, so there is no separate settle.
  */
-export const EASE_DECAY = cubicBezier(0.3, 0.45, 0.5, 1);
+export const EASE_DECAY = cubicBezier(0.33, 1, 0.68, 1);
 
 /**
- * EASE_DECAY's FASTEST moment, as a multiple of its own average speed.
+ * EASE_DECAY's FASTEST moment, as a multiple of its own average speed — for
+ * this curve, its opening.
  *
  * This is the number that decides whether the deceleration is continuous with
- * the free spin before it. The decay covers `arc` degrees in `decayMs`, so its
- * peak rate is `DECAY_PEAK * arc / decayMs` — give it too little time for the
- * distance and the wheel speeds up at the one moment nothing is pushing it.
- *
- * The peak, not the opening (y1/x1 = 1.50). Bounding the opening alone left a
- * measurable step, because this curve is still gaining speed after it starts:
- * it peaks at 1.68x average at p = 0.174, and a browser reading the disc's own
- * rotation saw exactly that — 1.49 deg/ms of free spin handing over to 1.66.
- * Sampled numerically off the curve, and pinned by a test, because retuning
- * EASE_DECAY moves it.
+ * the free spin before it: the decay covers DECAY_ARC_DEG in decayMs, so it
+ * opens at `DECAY_PEAK * DECAY_ARC_DEG / decayMs`, and DECAY_ARC_DEG is chosen
+ * to make that exactly FREE_SPIN_SPEED. Sampled numerically off the curve and
+ * pinned by a test, because retuning EASE_DECAY moves it.
  */
-export const DECAY_PEAK = 1.684;
+export const DECAY_PEAK = 3.024;
+
+/** The arc every decay covers: whatever opens at exactly the free spin's speed
+ *  over `decayMs` (~556deg). */
+export const DECAY_ARC_DEG = (FREE_SPIN_SPEED * SPIN_TIMELINE.decayMs) / DECAY_PEAK;
+
+/** The most extra free spin a landing can need to line the decay up: one turn. */
+export const MAX_ALIGN_MS = 360 / FREE_SPIN_SPEED;
 
 /**
- * How long the deceleration must run to cover `arcDeg` without ever turning
- * faster than the free spin it takes over from.
+ * Where a spin that is at `fromDeg` now should start decelerating, and where it
+ * stops.
  *
- * A floor, not a schedule. A fast reply leaves plenty of travel budget and the
- * decay simply runs longer than this, peaking BELOW the free spin, which is
- * what a wheel slowing down looks like. A cold start leaves none, and this is
- * what stops the deceleration being compressed into a kick.
+ * The decay is fixed (same time, same arc, same opening speed), so the only
+ * freedom is WHEN it starts: the free spin carries on, at its constant speed,
+ * until the disc is exactly DECAY_ARC_DEG short of the angle that puts the
+ * winning pane under the pointer. That is under one more turn — at most
+ * MAX_ALIGN_MS — and it is invisible, because it is the same constant speed the
+ * wheel was already doing.
  */
-export function decayDurationMs(arcDeg: number, freeSpinSpeed: number): number {
-  if (freeSpinSpeed <= 0) return 0;
-  return (Math.abs(arcDeg) * DECAY_PEAK) / freeSpinSpeed;
+export function planLanding({
+  fromDeg,
+  targetIndex,
+  count,
+  pointerDeg,
+}: Omit<LandingRequest, "minTurns">): { decayStartDeg: number; targetDeg: number } {
+  const targetDeg = landingRotationDeg({ fromDeg: fromDeg + DECAY_ARC_DEG, targetIndex, count, pointerDeg, minTurns: 0 });
+  return { decayStartDeg: targetDeg - DECAY_ARC_DEG, targetDeg };
 }
 
 /**
@@ -549,8 +534,9 @@ export const REPLY_ALLOWANCE_MS = 500;
 export const SPIN_REVEAL_DELAY_MS = Math.ceil(
   REPLY_ALLOWANCE_MS +
   SPIN_TIMELINE.windupMs +
-    Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) +
-    SPIN_TIMELINE.settleMs +
+    SPIN_TIMELINE.travelMs +
+    MAX_ALIGN_MS +
+    SPIN_TIMELINE.decayMs +
     SPIN_TIMELINE.unrollDelayMs +
     SPIN_TIMELINE.unrollMs,
 );

@@ -119,6 +119,9 @@ export default function WheelApp() {
   // "New wheel" when one already exists: the first-run flow again, in place of
   // the tabs, until a wheel is made or the person goes back (see onNewWheel).
   const [creatingWheel, setCreatingWheel] = useState(false);
+  // The floating "Decided today" capsule's height, so the tab content keeps
+  // its last row (Spin, on the Wheel tab) clear of it.
+  const [todayFloatPx, setTodayFloatPx] = useState(0);
   const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -1436,6 +1439,11 @@ export default function WheelApp() {
             className={`flex-1 overflow-y-auto overflow-x-clip pb-dock${
               !selectedWheelId || creatingWheel ? " flex flex-col" : ""
             }`}
+            style={
+              todayFloatPx > 0
+                ? { paddingBottom: `calc(var(--dock-height) + 1rem + ${Math.ceil(todayFloatPx)}px + 0.5rem)` }
+                : undefined
+            }
           >
             {creatingWheel && !firstRun ? (
               /* "New wheel" with wheels already made: the same nearby flow as
@@ -1542,21 +1550,6 @@ export default function WheelApp() {
                           }
                           skipping={markSkipped.isPending}
                           onSkipped={(spinId) => markSkipped.mutate({ wheelId: selectedWheelId, spinId })}
-                        />
-                      </div>
-                    )}
-
-                    {/* Today's decisions — first, because it answers the question
-                        people open the app with. Hidden while the camera is in. */}
-                    {todayEntries.length > 0 && user && (
-                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
-                        <TodayCard
-                          entries={todayEntries}
-                          currentUserId={user.id}
-                          showWalk={!!wheelData?.distanceEnabled}
-                          onDirections={(e) => openDirections({ id: e.restaurantId, label: e.name, color: "" })}
-                          onRedecide={handleSpin}
-                          redecideDisabled={spinDisabled}
                         />
                       </div>
                     )}
@@ -1850,6 +1843,21 @@ export default function WheelApp() {
               </div>
             )}
           </div>
+
+          {/* Today's decisions — what people open the app to find out. Floats
+              over the Wheel tab above the dock; gone while the camera is in. */}
+          {user && selectedWheelId && (
+            <TodayCard
+              entries={todayEntries}
+              currentUserId={user.id}
+              showWalk={!!wheelData?.distanceEnabled}
+              onDirections={(e) => openDirections({ id: e.restaurantId, label: e.name, color: "" })}
+              onRedecide={handleSpin}
+              redecideDisabled={spinDisabled}
+              visible={activeTab === "wheel" && !creatingWheel && !isSpinning && !showResult}
+              onHeight={setTodayFloatPx}
+            />
+          )}
 
           {/* ── MOBILE BOTTOM TAB BAR — docked Liquid Glass capsule, fixed to the
                 viewport so it's reachable at any scroll position ── */}

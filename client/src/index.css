@@ -829,10 +829,14 @@
     padding: var(--glass-lens-band);
     backdrop-filter: var(--lens-filter, ) blur(var(--glass-lens-blur))
       saturate(var(--glass-lens-sat)) brightness(var(--glass-lens-bright));
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
+    /* A FADE, not a cut-out (2026-11). The hard content-box mask this replaces
+       ended the ring at a crisp line 8–14px in, which over flat ground was the
+       only thing visible: a lighter band reading as solid padding round every
+       surface. lib/liquidGlass.ts draws the fade from the same distance field
+       as the bend — full at the rim, nothing at the band's inner edge. Until it
+       has measured the surface the ring is fully transparent, so there is no
+       moment, and no browser, in which the hard band comes back. */
+    mask: var(--lens-mask, linear-gradient(transparent, transparent)) 0 0 / 100% 100% no-repeat;
     pointer-events: none;
   }
 
@@ -842,6 +846,23 @@
      token and matches the two. */
   :is(.glass-bar, .glass-nav) {
     --glass-lens-band: var(--dock-gutter);
+  }
+
+  /* "Decided today" floats just above the dock (TodayCard), and above the
+     page's bottom edge where the dock does not exist. */
+  .today-float {
+    bottom: calc(var(--dock-height) + 0.5rem);
+    animation: tab-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @media (min-width: 768px) {
+    .today-float {
+      bottom: 1.5rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .today-float {
+      animation: none;
+    }
   }
 
   /* The tab content's clearance for the fixed dock. A class rather than a
@@ -899,7 +920,8 @@
     height: var(--glass-lens-band);
     padding: 0;
     border-radius: 0;
-    mask: none;
+    /* Fades up from the edge for the same reason the ring does. */
+    mask: linear-gradient(to top, #000, transparent);
     backdrop-filter: var(--lens-filter, ) saturate(var(--glass-lens-sat));
     pointer-events: none;
   }
