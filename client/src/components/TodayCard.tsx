@@ -1,5 +1,5 @@
-import { MapPin, RotateCw } from "lucide-react";
-import { Fragment } from "react";
+import { MapPin, RotateCw, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { taipeiClock } from "@shared/lunch";
 import { Button } from "@/components/ui/button";
 import { useLang } from "@/i18n";
@@ -29,6 +29,24 @@ interface TodayCardProps {
    *  actually be replaced (shared/lunch.ts: an accepted lunch stays). */
   onRedecide: () => void;
   redecideDisabled: boolean;
+  /** False while the wheel is spinning, a result is up, or another tab shows. */
+  visible: boolean;
+  /** The capsule's height while it is on screen, 0 while it is not, so the
+   *  page under it can keep its last row clear of it. */
+  onHeight?: (px: number) => void;
+}
+
+/** Decisions this viewer closed, by spin id. Per-device convenience only —
+ *  a new decision has a new id, so it always shows. */
+const DISMISSED_KEY = "lw.today.dismissed";
+
+function readDismissed(): number[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((n): n is number => typeof n === "number") : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -36,8 +54,12 @@ interface TodayCardProps {
  * decide), read the moment the Wheel tab opens — nobody should have to spin or
  * ask to find out. Rows come from shared/lunch.ts `todaysLunches` on the server.
  *
- * Solid paper, not glass: this sits on the bare ground above the wheel, where a
- * glass panel would only blur a flat colour (failure mode 29).
+ * A floating capsule above the dock (2026-11), not a card in the page. As a
+ * card it took ~120px above the wheel, with an eyebrow line that made its top
+ * padding read heavier than its bottom. Floating, it costs the wheel nothing,
+ * says the same thing in one row, and can be closed. Glass, because it now
+ * floats over the page (failure mode 29); its controls are outlined, because
+ * the capsule is the material (failure mode 35).
  */
 export default function TodayCard({
   entries,
@@ -46,21 +68,53 @@ export default function TodayCard({
   onDirections,
   onRedecide,
   redecideDisabled,
+  visible,
+  onHeight,
 }: TodayCardProps) {
   const { t } = useLang();
-  if (entries.length === 0) return null;
+  const [dismissed, setDismissed] = useState<number[]>(readDismissed);
+  const shown = entries.filter((e) => !dismissed.includes(e.spinId));
+  const on = visible && shown.length > 0;
+
+  const ref = useRef<HTMLElement>(null);
+  const onHeightRef = useRef(onHeight);
+  onHeightRef.current = onHeight;
+  useEffect(() => {
+    const el = ref.current;
+    if (!on || !el) {
+      onHeightRef.current?.(0);
+      return;
+    }
+    const report = () => onHeightRef.current?.(el.getBoundingClientRect().height);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      onHeightRef.current?.(0);
+    };
+  }, [on]);
+
+  const dismiss = () => {
+    const next = Array.from(new Set([...dismissed, ...shown.map((e) => e.spinId)])).slice(-30);
+    setDismissed(next);
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
+    } catch {
+      /* private mode: closed for this visit only */
+    }
+  };
+
+  if (!on) return null;
 
   return (
     <section
+      ref={ref}
       aria-label={t("wheel.today.title")}
-      className="w-full flex flex-col gap-3 px-4 py-3.5"
-      style={{ borderRadius: "var(--radius-card)", background: "var(--paper)", border: "1px solid var(--border)" }}
+      className="today-float glass-card fixed inset-x-3 z-30 mx-auto max-w-md flex items-center gap-1 py-2 pl-4 pr-1.5"
     >
-      <p className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
-        {t("wheel.today.title")}
-      </p>
-      <ul className="flex flex-col gap-3">
-        {entries.map((e) => {
+      <ul className="flex-1 min-w-0 flex flex-col gap-2">
+        {shown.map((e) => {
           const mine = e.spunBy === currentUserId;
           const who = mine ? t("wheel.members.you") : e.spunByName?.trim() || t("app.teammate");
           const facts = [
@@ -73,25 +127,23 @@ export default function TodayCard({
                 : null,
           ].filter(Boolean);
           return (
-            <li key={e.spinId} className="flex items-center gap-2">
+            <li key={e.spinId} className="flex items-center gap-1">
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-balance" style={{ color: "var(--ink-warm)", fontSize: 17 }}>
+                <p className="truncate font-semibold" style={{ color: "var(--ink-warm)", fontSize: 16, lineHeight: 1.3 }}>
                   {e.name}
                 </p>
-                {/* Each fact holds together; the line breaks between them. */}
-                <p className="type-meta" style={{ color: "var(--body)" }}>
+                {/* The eyebrow folded into the meta line: one row says what
+                    the old card's title row and fact row said together. */}
+                <p className="type-meta truncate" style={{ color: "var(--body)" }}>
+                  <span style={{ color: "var(--brand-text)", fontWeight: 600 }}>{t("wheel.today.title")}</span>
                   {facts.map((f, i) => (
                     <Fragment key={i}>
-                      {i > 0 && " · "}
-                      <span className="whitespace-nowrap">{f}</span>
+                      {" · "}
+                      {f}
                     </Fragment>
                   ))}
                 </p>
               </div>
-              {/* Icons, not labelled buttons: a full-width row of actions per
-                  decision pushed the wheel and Spin below the fold at 390×844.
-                  "Decide again" is also spelled out on the Spin button itself
-                  whenever it applies. */}
               {mine && !e.accepted && (
                 <Button
                   variant="outline"
@@ -105,7 +157,7 @@ export default function TodayCard({
                 </Button>
               )}
               <Button
-                variant="secondary"
+                variant="outline"
                 size="icon"
                 onClick={() => onDirections(e)}
                 aria-label={t("wheel.today.directionsTo", { name: e.name })}
@@ -117,6 +169,9 @@ export default function TodayCard({
           );
         })}
       </ul>
+      <Button variant="ghost" size="icon" onClick={dismiss} aria-label={t("wheel.today.dismiss")} title={t("wheel.today.dismiss")}>
+        <X />
+      </Button>
     </section>
   );
 }
