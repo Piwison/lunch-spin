@@ -57,21 +57,34 @@ function sdRoundRect(px: number, py: number, halfW: number, halfH: number, r: nu
 }
 
 /**
- * The displacement map, as a data URL.
+ * The displacement map and the ring's fade, as data URLs.
+ *
+ * The fade (2026-11): the ring used to be cut out by a hard content-box mask,
+ * so its lifted, sharper backdrop stopped at a line 8–14px inside the edge. Over
+ * flat ground there is nothing to bend, so all that showed was that line: a
+ * lighter band with a crisp inner edge that read as SOLID PADDING around every
+ * surface — reported from an iPhone, and visible in Chromium too. A lens has no
+ * inner edge. The fade is alpha from the same distance field and the same ramp
+ * as the displacement, so the ring is fully there at the rim, gone at the
+ * band's inner edge, and never visible as a shape of its own. Computed in the
+ * one band pass, so it costs no extra walk.
  *
  * R = x offset, G = y offset, both around a neutral 128. Outside the band the
  * channels stay at 128, so the interior of the surface is displaced by exactly
  * zero and only the rim moves — the whole map can therefore cover the element's
  * full box and still leave the middle alone.
  */
-function buildMap(w: number, h: number, radius: number, band: number): string {
+function buildMap(w: number, h: number, radius: number, band: number): { map: string; mask: string } | null {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
+  if (!ctx) return null;
   const image = ctx.createImageData(w, h);
   const data = image.data;
+  // The fade: transparent everywhere (createImageData is zeroed) except the band.
+  const fade = ctx.createImageData(w, h);
+  const alpha = fade.data;
   const halfW = w / 2;
   const halfH = h / 2;
   const r = Math.min(radius, halfW, halfH);
@@ -120,15 +133,19 @@ function buildMap(w: number, h: number, radius: number, band: number): string {
       // keeps the transition invisible: linear leaves a hard seam where the
       // displacement starts, and a lens has no seam.
       const t = (d + band) / band;
-      const s = t * t * (3 - 2 * t) * t;
+      const ease = t * t * (3 - 2 * t);
+      const s = ease * t;
 
       const k = (y * w + x) * 4;
       data[k] = Math.round(128 + (gx / len) * s * 127);
       data[k + 1] = Math.round(128 + (gy / len) * s * 127);
+      alpha[k + 3] = Math.round(ease * 255);
     }
   }
   ctx.putImageData(image, 0, 0);
-  return canvas.toDataURL();
+  const map = canvas.toDataURL();
+  ctx.putImageData(fade, 0, 0);
+  return { map, mask: canvas.toDataURL() };
 }
 
 export type LiquidGlassOptions = {
@@ -213,13 +230,14 @@ export function attachLiquidGlass(el: HTMLElement, options: LiquidGlassOptions =
     if (key === lastKey) return;
     lastKey = key;
 
-    const url = buildMap(w, h, radius * k, Math.max(1, band * k));
-    if (!url) return;
-    feImage.setAttribute("href", url);
+    const built = buildMap(w, h, radius * k, Math.max(1, band * k));
+    if (!built) return;
+    feImage.setAttribute("href", built.map);
     // The map is stretched back to the element's box, so the displacement it
     // encodes has to be scaled back up by the same factor.
     feDisplace.setAttribute("scale", String(strength / k));
     el.style.setProperty("--lens-filter", `url(#${id})`);
+    el.style.setProperty("--lens-mask", `url(${built.mask})`);
   };
 
   const schedule = () => {
@@ -236,6 +254,7 @@ export function attachLiquidGlass(el: HTMLElement, options: LiquidGlassOptions =
     observer.disconnect();
     filter.remove();
     el.style.removeProperty("--lens-filter");
+    el.style.removeProperty("--lens-mask");
   };
 }
 
