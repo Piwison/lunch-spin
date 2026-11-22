@@ -1971,21 +1971,20 @@ function hoursView(rawOpenHours, utcOffsetMinutes, walkSeconds, now = /* @__PURE
 var SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
   windupMs: 100,
-  /** The shortest free spin after the wind-up, even when the server answers
-   *  at once. Stretches while the server is still choosing, and by up to one
-   *  more turn (MAX_ALIGN_MS) so the decay always starts the same distance
-   *  from the winning pane.
+  /** The free spin after the wind-up, before the stop may begin. Then up to
+   *  one more turn (MAX_ALIGN_MS) so the stop always starts the same distance
+   *  from the winning pane. Wind-up + this + MAX_ALIGN_MS + decayMs is
+   *  SPIN_TARGET_MS (pinned by a test), so an on-time reply lands at 2.85–3.0s
+   *  from the TAP, whatever the network did.
    *
-   *  2600 -> 1900 -> 600 -> 150. The free spin used to carry the length of the
-   *  spin; since 2026-11 (the owner: under half, then "slow down on a curve,
-   *  same total") the length lives in `decayMs`, where it is visible as
-   *  slowing down rather than as a wheel turning at one speed. */
-  travelMs: 150,
-  /** The stop. Fixed: every spin decelerates over the same time and the same
-   *  arc (DECAY_ARC_DEG), from the free spin's own speed, along EASE_DECAY.
-   *  Replaces the arc-sized decay and the 12deg settle bounce, which together
-   *  read as braking to a halt and then being nudged. */
-  decayMs: 700,
+   *  2600 -> 1900 -> 600 -> 150 -> 750. A reply that misses this point does
+   *  not wait for it: the stop starts the moment it arrives (planLateLanding). */
+  travelMs: 750,
+  /** The stop. Fixed: every on-time spin decelerates over the same time and
+   *  the same arc (DECAY_ARC_DEG), from the free spin's own speed, along
+   *  EASE_DECAY. 700 -> 2000 (2026-11, the owner: "two seconds more, it has no
+   *  sense of slowing"): at 0.7s the curve had no room to read as a curve. */
+  decayMs: 2e3,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -1997,6 +1996,7 @@ var SPIN_TIMELINE = {
   /** Reduced motion: no zoom, no blur, no unroll — same result, no theatre. */
   reducedMs: 400
 };
+var SPIN_TARGET_MS = 3e3;
 var SPIN_TOTAL_MS = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + SPIN_TIMELINE.decayMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs;
 var FREE_SPIN_SPEED = 2.4;
 function cubicBezier(x1, y1, x2, y2) {
@@ -2028,7 +2028,7 @@ var DECAY_ARC_DEG = FREE_SPIN_SPEED * SPIN_TIMELINE.decayMs / DECAY_PEAK;
 var MAX_ALIGN_MS = 360 / FREE_SPIN_SPEED;
 var REPLY_ALLOWANCE_MS = 500;
 var SPIN_REVEAL_DELAY_MS = Math.ceil(
-  REPLY_ALLOWANCE_MS + SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + MAX_ALIGN_MS + SPIN_TIMELINE.decayMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs
+  REPLY_ALLOWANCE_MS + SPIN_TARGET_MS + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs
 );
 
 // shared/bootstrap.ts
