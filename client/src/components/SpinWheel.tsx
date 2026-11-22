@@ -2,14 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import {
   EASE_DECAY,
   EASE_EXIT,
-  EASE_SETTLE,
   EASE_STANDARD,
   FREE_SPIN_SPEED,
-  MIN_LAND_TURNS,
-  SETTLE_DEG,
   SPIN_TIMELINE,
-  decayDurationMs,
   landingRotationDeg,
+  planLanding,
   normalizeDeg,
   paneCenterDeg,
   panes,
@@ -95,7 +92,7 @@ const DISC_CENTER_X = 0.5;
 /** Degrees the disc counter-rotates on the wind-up, before it releases. */
 const WINDUP_DEG = 14;
 
-/* FREE_SPIN_SPEED, MIN_LAND_TURNS and SETTLE_DEG live in shared/wheelGeometry:
+/* FREE_SPIN_SPEED, the fixed decay and planLanding live in shared/wheelGeometry:
    they bound how long a landing can take, which is what SPIN_REVEAL_DELAY_MS —
    how long teammates wait before they are told — is derived from. */
 
@@ -410,52 +407,36 @@ export default function SpinWheel({
 
     const startedAt = performance.now();
     const startAngle = angleRef.current;
+    const freeFloorAt = startedAt + SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs;
 
     // Resolved once the server names a winner. Until then the wheel free-spins:
     // the client never picks, it only keeps turning.
     let decayFrom = 0;
-    let decayFromAngle = 0;
-    let decayMs = 0;
-    let settleFromAngle = 0;
+    let decayStartAngle = 0;
     let targetAngle = 0;
+    let planned = false;
     let landSegment: WheelSegment | null = null;
-    let phase: "windup" | "free" | "decay" | "settle" = "windup";
+    let phase: "windup" | "free" | "decay" = "windup";
 
-    const beginDecay = (now: number) => {
+    /** Which pane, and where it lands. The server named it; this only finds it. */
+    const resolveTarget = () => {
       const segs = segmentsRef.current;
       const tId = targetIdRef.current;
       const idx = tId == null ? -1 : segs.findIndex((s) => s.id === tId);
       const targetIndex = idx >= 0 ? idx : Math.floor(Math.random() * segs.length);
       landSegment = segs[targetIndex] ?? null;
+      return { targetIndex, count: segs.length };
+    };
 
-      decayFromAngle = angleRef.current;
-      targetAngle = landingRotationDeg({
-        fromDeg: decayFromAngle,
-        targetIndex,
-        count: segs.length,
-        pointerDeg: POINTER_DEG,
-        minTurns: MIN_LAND_TURNS,
-      });
-      settleFromAngle = targetAngle - SETTLE_DEG;
+    const land = () => {
+      settleAt(targetAngle);
+      if (landSegment) onSpinEndRef.current(landSegment);
+    };
 
-      // Travel is wall clock, not animation queued behind a network call:
-      // whatever the server has already spent free-spinning counts against it.
-      // A fast reply gets the spec timeline exactly; a cold start keeps turning
-      // and still gets a real deceleration.
-      const travelEndsAt = startedAt + SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs;
-      // ...and never less than the arc needs. A decay squeezed into the time a
-      // late reply left over opens FASTER than the free spin it takes over from,
-      // so the wheel speeds up at the one moment nothing is pushing it —
-      // measured at 1.46 -> 1.79 deg/ms before this floor existed.
-      // This is also the floor when the server answers late: the shortest arc the
-      // landing can produce (MIN_LAND_TURNS less the settle) already needs
-      // decayDurationMs of it — 497ms at two turns and 2.4 deg/ms — so there is
-      // no separate MIN_DECAY_MS — a constant that can never win an argument is
-      // not a guard.
-      const continuousMs = decayDurationMs(settleFromAngle - decayFromAngle, FREE_SPIN_SPEED);
-      decayMs = Math.max(travelEndsAt - now, continuousMs);
-      decayFrom = now;
-      phase = "decay";
+    /** Decay position at `elapsed` ms into the fixed stop. */
+    const decayAt = (elapsed: number) => {
+      const p = Math.min(elapsed / SPIN_TIMELINE.decayMs, 1);
+      return { p, angle: decayStartAngle + (targetAngle - decayStartAngle) * EASE_DECAY(p) };
     };
 
     const frame = (now: number) => {
@@ -479,60 +460,65 @@ export default function SpinWheel({
 
       if (phase === "free") {
         speedRef.current = FREE_SPIN_SPEED;
-        applyRotation(angleRef.current + FREE_SPIN_SPEED * (now - lastRef.current));
+        const next = angleRef.current + FREE_SPIN_SPEED * (now - lastRef.current);
         lastRef.current = now;
-        if (targetIdRef.current != null) beginDecay(now);
-        rafRef.current = requestAnimationFrame(frame);
-        return;
-      }
-
-      if (phase === "decay") {
-        const p = Math.min((now - decayFrom) / decayMs, 1);
-        const next = decayFromAngle + (settleFromAngle - decayFromAngle) * EASE_DECAY(p);
-        // Real angular speed, so the blur ramps down with the wheel instead of
-        // switching off at the end.
-        speedRef.current = Math.abs(next - angleRef.current) / Math.max(now - lastRef.current, 1);
-        lastRef.current = now;
-        applyRotation(next);
-        if (p >= 1) {
-          phase = "settle";
-          decayFrom = now;
+        // Once the server has answered and the minimum free spin is done, plan
+        // the stop from where the disc is: keep turning at this same speed
+        // until it is exactly one decay-arc short of the winning seat.
+        if (!planned && targetIdRef.current != null && now >= freeFloorAt) {
+          const { targetIndex, count } = resolveTarget();
+          const plan = planLanding({ fromDeg: angleRef.current, targetIndex, count, pointerDeg: POINTER_DEG });
+          decayStartAngle = plan.decayStartDeg;
+          targetAngle = plan.targetDeg;
+          planned = true;
         }
-        rafRef.current = requestAnimationFrame(frame);
-        return;
+        if (planned && next >= decayStartAngle) {
+          // Hand over mid-frame: the time spent past the start belongs to the
+          // decay, so the disc never pauses or jumps at the handover.
+          decayFrom = now - (next - decayStartAngle) / FREE_SPIN_SPEED;
+          phase = "decay";
+        } else {
+          applyRotation(next);
+          rafRef.current = requestAnimationFrame(frame);
+          return;
+        }
       }
 
-      speedRef.current = 0;
-      const p = Math.min((now - decayFrom) / SPIN_TIMELINE.settleMs, 1);
-      // EASE_SETTLE is the one curve allowed past 1: the disc nudges beyond the
-      // pointer and comes back, which is what makes the stop feel physical.
-      applyRotation(settleFromAngle + SETTLE_DEG * EASE_SETTLE(p));
+      // Decay: one fixed curve from the free spin's own speed down to rest.
+      // It opens at exactly FREE_SPIN_SPEED and only slows after that, so the
+      // stop is the curve — there is no settle bounce to set the disc moving
+      // again once it has come to rest.
+      const { p, angle } = decayAt(now - decayFrom);
+      speedRef.current = Math.abs(angle - angleRef.current) / Math.max(now - lastRef.current, 1);
+      lastRef.current = now;
+      applyRotation(angle);
       if (p < 1) {
         rafRef.current = requestAnimationFrame(frame);
       } else {
-        settleAt(targetAngle);
-        if (landSegment) onSpinEndRef.current(landSegment);
+        speedRef.current = 0;
+        land();
       }
     };
 
-    // Reduced motion: no wind-up, no overshoot, no theatre. 400ms straight to
-    // the same answer — and it still waits for the server to give it.
+    // Reduced motion: no wind-up, no free spin, no theatre. The shortest
+    // forward turn onto the pane in 400ms — and it still waits for the server.
     const reducedFrame = (now: number) => {
       if (targetIdRef.current == null && landSegment == null) {
         rafRef.current = requestAnimationFrame(reducedFrame);
         return;
       }
       if (landSegment == null) {
-        beginDecay(now);
+        const { targetIndex, count } = resolveTarget();
+        decayStartAngle = angleRef.current;
+        targetAngle = landingRotationDeg({ fromDeg: decayStartAngle, targetIndex, count, pointerDeg: POINTER_DEG, minTurns: 0 });
         decayFrom = now;
       }
       const p = Math.min((now - decayFrom) / SPIN_TIMELINE.reducedMs, 1);
-      applyRotation(decayFromAngle + (targetAngle - decayFromAngle) * EASE_STANDARD(p));
+      applyRotation(decayStartAngle + (targetAngle - decayStartAngle) * EASE_STANDARD(p));
       if (p < 1) {
         rafRef.current = requestAnimationFrame(reducedFrame);
       } else {
-        settleAt(targetAngle);
-        if (landSegment) onSpinEndRef.current(landSegment);
+        land();
       }
     };
 

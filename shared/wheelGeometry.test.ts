@@ -2,14 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DECAY_PEAK,
   FREE_SPIN_SPEED,
-  MAX_LAND_ARC_DEG,
-  MIN_LAND_TURNS,
-  SETTLE_DEG,
+  DECAY_ARC_DEG,
+  MAX_ALIGN_MS,
   SPIN_REVEAL_DELAY_MS,
-  decayDurationMs,
+  planLanding,
   EASE_DECAY,
   EASE_EXIT,
-  EASE_SETTLE,
   EASE_STANDARD,
   SPIN_TIMELINE,
   SPIN_TOTAL_MS,
@@ -40,112 +38,103 @@ const POINTER_ANGLES = [270, 180, 0, 90, 37.5];
 
 describe("timeline", () => {
   it("sums to the total only because recede and unroll overlap", () => {
-    const { windupMs, travelMs, settleMs, recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
+    const { windupMs, travelMs, decayMs, recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
     // The phases end to end overshoot the total by the part of the recede the
     // unroll runs over: the unroll starts partway into the recede.
-    expect(windupMs + travelMs + settleMs + recedeMs + unrollMs - SPIN_TOTAL_MS).toBe(recedeMs - unrollDelayMs);
-    expect(windupMs + travelMs + settleMs + unrollDelayMs + unrollMs).toBe(SPIN_TOTAL_MS);
+    expect(windupMs + travelMs + decayMs + recedeMs + unrollMs - SPIN_TOTAL_MS).toBe(recedeMs - unrollDelayMs);
+    expect(windupMs + travelMs + decayMs + unrollDelayMs + unrollMs).toBe(SPIN_TOTAL_MS);
   });
 
   // The owner's call (2026-11): the spin was too long and had to lose MORE than
-  // half. Measured before the change in the replica, with the server answering
+  // half. Measured before that change in the replica, with the server answering
   // in 64ms: tap -> disc at rest 2389ms. A fast reply's landing is wind-up, the
-  // longer of the travel floor and the decay over the arc it drew, then the
-  // settle — and the longest arc is the worst case, so that is what is pinned.
+  // minimum free spin, up to one turn of free spin to line the decay up, then
+  // the decay — so the worst case is a whole alignment turn.
   // A slow server still lengthens the free spin; that part is the network's.
-  it("lands in under half the old 2.39s, even on the longest arc", () => {
-    const worst =
-      SPIN_TIMELINE.windupMs +
-      Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) +
-      SPIN_TIMELINE.settleMs;
+  it("lands in under half the old 2.39s, even with a full turn of alignment", () => {
+    const worst = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + MAX_ALIGN_MS + SPIN_TIMELINE.decayMs;
     expect(worst).toBeLessThan(2389 / 2);
   });
 
-  it("still turns at least twice before it lands, so the stop reads as a draw", () => {
-    expect(MIN_LAND_TURNS).toBeGreaterThanOrEqual(2);
+  it("still turns at least twice between the release and the stop", () => {
+    expect(SPIN_TIMELINE.travelMs * FREE_SPIN_SPEED + DECAY_ARC_DEG).toBeGreaterThanOrEqual(720);
   });
 
   it("finishes the recede before the unroll finishes, so the disc is behind the type", () => {
-    const { windupMs, travelMs, settleMs, recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
-    const landed = windupMs + travelMs + settleMs;
-    expect(landed + recedeMs).toBeLessThanOrEqual(landed + unrollDelayMs + unrollMs);
-  });
-
-  it("decelerates rather than bursting: the decay opens near the free-spin speed", () => {
-    // Speed at the start of the decay, as a multiple of the decay's average.
-    // The old curve opened at 10.25x — the wheel visibly ACCELERATED the moment
-    // the server answered, then crawled for the rest of the phase. Anything
-    // near 1 hands the free spin over without a step.
-    const opening = (EASE_DECAY(0.005) - EASE_DECAY(0)) / 0.005;
-    expect(opening).toBeGreaterThan(0.8);
-    expect(opening).toBeLessThan(2.2);
-  });
-
-  it("is still visibly turning late in the decay", () => {
-    // The old curve had 95.8% of the rotation done by halfway and 99.9% by 90%,
-    // so the whole back half read as a stopped wheel. The tail is the part that
-    // is supposed to look like slowing down.
-    expect(EASE_DECAY(0.5)).toBeLessThan(0.85);
-    const lateSpeed = (EASE_DECAY(0.805) - EASE_DECAY(0.795)) / 0.01;
-    expect(lateSpeed).toBeGreaterThan(0.2);
-  });
-
-  it("never runs backwards or overshoots on the way down", () => {
-    let prev = 0;
-    for (let p = 0; p <= 1.0001; p += 0.01) {
-      const v = EASE_DECAY(Math.min(p, 1));
-      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
-      expect(v).toBeLessThanOrEqual(1 + 1e-9);
-      prev = v;
-    }
-  });
-
-  it("DECAY_PEAK is the curve's real maximum, not its opening", () => {
-    // decayDurationMs is only correct while this constant tracks EASE_DECAY.
-    // Bounding the OPENING (1.50) is not enough: the curve is still gaining
-    // speed after it starts, and the leftover step was visible on the disc.
-    let peak = 0;
-    for (let p = 0; p <= 1; p += 0.001) {
-      const v = (EASE_DECAY(Math.min(p + 0.0005, 1)) - EASE_DECAY(Math.max(p - 0.0005, 0))) / 0.001;
-      if (v > peak) peak = v;
-    }
-    expect(peak).toBeGreaterThan((EASE_DECAY(0.005) - EASE_DECAY(0)) / 0.005);
-    expect(DECAY_PEAK).toBeGreaterThanOrEqual(peak - 0.005);
-    expect(DECAY_PEAK).toBeCloseTo(peak, 2);
-  });
-
-  it("gives the decay enough time that it never turns faster than the free spin", () => {
-    const freeSpin = FREE_SPIN_SPEED;
-    // The minimum turns plus anything up to a full turn of residual arc: the
-    // range the landing actually produces, and some way beyond it.
-    const shortest = MIN_LAND_TURNS * 360 - SETTLE_DEG;
-    for (const arc of [shortest, shortest + 180, MAX_LAND_ARC_DEG, 1800, 2520]) {
-      const ms = decayDurationMs(arc, freeSpin);
-      // Sample the real curve rather than trusting the constant.
-      let fastest = 0;
-      for (let p = 0; p <= 1; p += 0.005) {
-        const v = ((EASE_DECAY(Math.min(p + 0.0025, 1)) - EASE_DECAY(Math.max(p - 0.0025, 0))) / 0.005) * (arc / ms);
-        if (v > fastest) fastest = v;
-      }
-      expect(fastest).toBeLessThanOrEqual(freeSpin + 1e-6);
-    }
-  });
-
-  it("scales the decay with the distance, not the other way round", () => {
-    const a = decayDurationMs(1440, 1.49);
-    const b = decayDurationMs(2880, 1.49);
-    expect(b).toBeCloseTo(a * 2, 5);
-  });
-
-  it("is safe on the degenerate inputs", () => {
-    expect(decayDurationMs(0, 1.49)).toBe(0);
-    expect(decayDurationMs(1440, 0)).toBe(0);
-    expect(decayDurationMs(-1440, 1.49)).toBe(decayDurationMs(1440, 1.49));
+    const { recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
+    expect(recedeMs).toBeLessThanOrEqual(unrollDelayMs + unrollMs);
   });
 
   it("resolves in 400ms under reduced motion", () => {
     expect(SPIN_TIMELINE.reducedMs).toBe(400);
     expect(SPIN_TIMELINE.reducedMs).toBeLessThan(SPIN_TOTAL_MS);
+  });
+});
+
+/** Speed of a curve at p, in multiples of its own average speed. */
+const rate = (e: (p: number) => number, p: number, h = 0.0005) =>
+  (e(Math.min(p + h, 1)) - e(Math.max(p - h, 0))) / (Math.min(p + h, 1) - Math.max(p - h, 0));
+
+describe("the stop", () => {
+  // 2026-11, the owner: "it just stops — slow down on a curve". The old decay
+  // was sized to whatever arc the landing drew, so on a ~0.6s decay the last
+  // tenth of it braked from 0.5 deg/ms to nothing in ~100ms, and then a 12deg
+  // settle bounce set the disc moving AGAIN. A stop that reads as a curve is
+  // one whose speed only ever falls, with a long slow tail, and nothing after.
+  it("only ever slows down: no burst at the start, no second push at the end", () => {
+    let prev = Infinity;
+    for (let p = 0.001; p < 0.999; p += 0.002) {
+      const v = rate(EASE_DECAY, p);
+      expect(v).toBeLessThanOrEqual(prev + 1e-6);
+      prev = v;
+    }
+  });
+
+  it("spends its last quarter creeping: under 2% of the arc, still moving", () => {
+    expect(1 - EASE_DECAY(0.75)).toBeLessThan(0.02);
+    expect(1 - EASE_DECAY(0.75)).toBeGreaterThan(0);
+    // ...and is not already done by halfway: the middle still visibly turns.
+    expect(EASE_DECAY(0.5)).toBeLessThan(0.9);
+  });
+
+  it("DECAY_PEAK is the curve's real maximum, which is its opening", () => {
+    let peak = 0;
+    for (let p = 0; p <= 1; p += 0.001) peak = Math.max(peak, rate(EASE_DECAY, p));
+    expect(DECAY_PEAK).toBeGreaterThanOrEqual(peak - 0.01);
+    expect(DECAY_PEAK).toBeCloseTo(peak, 1);
+    expect(rate(EASE_DECAY, 0.0005)).toBeCloseTo(peak, 1);
+  });
+
+  it("hands over from the free spin at the free spin's own speed", () => {
+    // Fixed duration, fixed arc: the decay opens at DECAY_PEAK x its average,
+    // and its average is DECAY_ARC_DEG / decayMs.
+    const opening = (DECAY_PEAK * DECAY_ARC_DEG) / SPIN_TIMELINE.decayMs;
+    expect(opening).toBeCloseTo(FREE_SPIN_SPEED, 6);
+  });
+
+  it("is the same length every spin: the arc is fixed, alignment comes out of the free spin", () => {
+    expect(MAX_ALIGN_MS).toBeCloseTo(360 / FREE_SPIN_SPEED, 6);
+  });
+});
+
+describe("planLanding", () => {
+  it("lands the target pane under the pointer, after exactly DECAY_ARC_DEG of decay", () => {
+    for (const pointerDeg of POINTER_ANGLES) {
+      for (const count of [3, 8, 12]) {
+        for (let target = 0; target < count; target++) {
+          for (const fromDeg of [0, 13, 359.5, 1234.5]) {
+            const plan = planLanding({ fromDeg, targetIndex: target, count, pointerDeg });
+            expect(plan.targetDeg - plan.decayStartDeg).toBeCloseTo(DECAY_ARC_DEG, 6);
+            // The free spin only ever goes forward to reach the start, by under a turn.
+            expect(plan.decayStartDeg).toBeGreaterThanOrEqual(fromDeg - 1e-9);
+            expect(plan.decayStartDeg - fromDeg).toBeLessThan(360);
+            // Same seat landingRotationDeg would have chosen.
+            const seat = normalizeDeg(plan.targetDeg + paneCenterDeg(target, count));
+            expect(Math.min(Math.abs(seat - pointerDeg), 360 - Math.abs(seat - pointerDeg))).toBeLessThan(1e-6);
+          }
+        }
+      }
+    }
   });
 });
 
@@ -545,7 +534,7 @@ describe("wedgeClipPolygon", () => {
 });
 
 describe("cubicBezier", () => {
-  const curves = [EASE_STANDARD, EASE_EXIT, EASE_SETTLE, EASE_DECAY];
+  const curves = [EASE_STANDARD, EASE_EXIT, EASE_DECAY];
 
   it("is pinned at both ends", () => {
     for (const e of curves) {
@@ -561,26 +550,10 @@ describe("cubicBezier", () => {
     for (const p of [0.1, 0.25, 0.5, 0.75, 0.9]) expect(linear(p)).toBeCloseTo(p, 4);
   });
 
-  it("makes settle the only curve that overshoots", () => {
-    let peak = 0;
-    for (let p = 0; p <= 1; p += 0.005) peak = Math.max(peak, EASE_SETTLE(p));
-    expect(peak).toBeGreaterThan(1);
-
+  it("never overshoots: the disc stops on the pane, it does not bounce", () => {
     for (const e of [EASE_STANDARD, EASE_EXIT, EASE_DECAY]) {
       for (let p = 0; p <= 1; p += 0.005) expect(e(p)).toBeLessThanOrEqual(1.0001);
     }
-  });
-
-  it("decays: front-loaded, but still moving at the end", () => {
-    // This used to assert the opposite bound — >0.85 at halfway and >0.55 at a
-    // quarter — which pinned a curve that had 96% of the rotation done by the
-    // midpoint and left the whole back half looking stopped. Front-loaded is
-    // right for a deceleration; THAT front-loaded was a burst followed by a
-    // crawl. The bounds now say "past halfway by the midpoint, and not yet
-    // finished at three quarters".
-    expect(EASE_DECAY(0.5)).toBeGreaterThan(0.6);
-    expect(EASE_DECAY(0.5)).toBeLessThan(0.85);
-    expect(EASE_DECAY(0.75)).toBeLessThan(0.98);
   });
 
   it("exits: slow to start, so the wind-up reads as loading up", () => {
@@ -589,25 +562,14 @@ describe("cubicBezier", () => {
 });
 
 describe("SPIN_REVEAL_DELAY_MS — teammates never learn the result first", () => {
-  it("covers the longest landing: wind-up, the decay over the longest arc, the settle and the unroll", () => {
-    const longestDecay = decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED);
+  it("covers the longest landing: wind-up, minimum free spin, a full alignment turn, the decay and the unroll", () => {
     expect(SPIN_REVEAL_DELAY_MS).toBeGreaterThanOrEqual(
       SPIN_TIMELINE.windupMs +
-        Math.max(SPIN_TIMELINE.travelMs, longestDecay) +
-        SPIN_TIMELINE.settleMs +
+        SPIN_TIMELINE.travelMs +
+        MAX_ALIGN_MS +
+        SPIN_TIMELINE.decayMs +
         SPIN_TIMELINE.unrollDelayMs +
         SPIN_TIMELINE.unrollMs,
     );
-  });
-
-  it("the longest arc is the minimum turns plus a full alignment remainder, less the settle", () => {
-    expect(MAX_LAND_ARC_DEG).toBe((MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG);
-    // landingRotationDeg never exceeds it, at any pointer angle or target.
-    for (const pointerDeg of POINTER_ANGLES) {
-      for (let target = 0; target < 8; target++) {
-        const to = landingRotationDeg({ fromDeg: 13, targetIndex: target, count: 8, pointerDeg, minTurns: MIN_LAND_TURNS });
-        expect(to - SETTLE_DEG - 13).toBeLessThanOrEqual(MAX_LAND_ARC_DEG);
-      }
-    }
   });
 });
