@@ -15,7 +15,7 @@ if mysqladmin ping --silent >/dev/null 2>&1; then
 else
   offset=$(( $(date -u -d "$REPLICA_TIME" +%s) - $(date -u +%s) ))
   mkdir -p /run/mysqld && chown mysql:mysql /run/mysqld
-  nohup faketime -f "+${offset}" mariadbd --user=mysql --bind-address=127.0.0.1 --port=3306 \
+  nohup faketime -f "$(printf '%+d' "$offset")" mariadbd --user=mysql --bind-address=127.0.0.1 --port=3306 \
     >"$REPLICA_STATE/mariadb.log" 2>&1 &
   for _ in $(seq 1 50); do mysqladmin ping --silent >/dev/null 2>&1 && break; sleep 0.2; done
 fi

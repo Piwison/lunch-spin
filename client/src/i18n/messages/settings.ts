@@ -18,9 +18,9 @@ export const zh = {
   "settings.toast.left": "已退出輪盤",
   "settings.toast.saved": "設定已儲存",
   "settings.toast.savedDistance":
-    "設定已儲存，已更新 {computed} 家店的步行時間",
+    "設定已儲存，{computed} 家算好步行時間",
   "settings.toast.savedDistanceSkipped":
-    "設定已儲存，已更新 {computed} 家店；另有 {skipped} 家無法定位",
+    "設定已儲存，{computed} 家算好步行時間，{skipped} 家沒有位置",
   "settings.error.delete": "無法刪除輪盤：{message}",
   "settings.error.leave": "無法退出輪盤：{message}",
   "settings.error.default": "無法設定預設輪盤：{message}",
@@ -51,11 +51,10 @@ export const zh = {
   "settings.create.public": "公開輪盤（拿到連結即可查看）",
   "settings.create.exclusion": "幾天內不重複",
   "settings.create.fairness": "公平模式",
-  "settings.create.fairnessDesc": "越久沒抽到的店，下次抽中的機會越高。",
+  "settings.create.fairnessDesc": "越久沒去吃的店，越容易轉到。",
   "settings.create.rotate": "輪流換口味",
   "settings.create.rotateDesc":
     "剛吃過的料理類型會降低機率，較久沒吃的則會提高。",
-  "settings.create.starter": "加入範例店家",
   "settings.create.creating": "建立中…",
   "settings.create.submit": "建立輪盤",
   "settings.invite.title": "邀請連結",
@@ -134,9 +133,9 @@ export const en: Record<keyof typeof zh, string> = {
   "settings.toast.deleted": "Wheel deleted",
   "settings.toast.left": "You left the wheel",
   "settings.toast.saved": "Wheel settings saved",
-  "settings.toast.savedDistance": "Wheel settings saved — {computed} located",
+  "settings.toast.savedDistance": "Saved — walk times for {computed} places",
   "settings.toast.savedDistanceSkipped":
-    "Wheel settings saved — {computed} located, {skipped} skipped",
+    "Saved — walk times for {computed} places, {skipped} have no location",
   "settings.error.delete": "Failed to delete wheel: {message}",
   "settings.error.leave": "Failed to leave wheel: {message}",
   "settings.error.default": "Failed to set default wheel: {message}",
@@ -171,11 +170,10 @@ export const en: Record<keyof typeof zh, string> = {
   "settings.create.exclusion": "Skip recently-spun for",
   "settings.create.fairness": "Fairness mode",
   "settings.create.fairnessDesc":
-    "Spins lean toward restaurants you haven't picked in a while.",
+    "Places you haven't eaten at in a while come up more often.",
   "settings.create.rotate": "Rotate cuisines",
   "settings.create.rotateDesc":
     "Spins lean away from a cuisine you just had toward neglected ones.",
-  "settings.create.starter": "Add starter restaurants",
   "settings.create.creating": "Creating…",
   "settings.create.submit": "Create wheel",
   "settings.invite.title": "Invite link",

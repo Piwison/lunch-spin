@@ -151,6 +151,12 @@ var restaurants = mysqlTable("restaurants", {
   // restaurant has no resolvable location. Same value for every member — the
   // origin is per-wheel, not per-user.
   walkSeconds: int("walkSeconds"),
+  // Google's own rating and review count, stored when the place is added or its
+  // hours are refreshed; null for hand-typed places and rows added before these
+  // columns existed (they fill in as hours refresh). Display only — the team's
+  // own stars in restaurant_ratings are what weight the spin.
+  googleRating: decimal("googleRating", { precision: 2, scale: 1 }),
+  googleRatingCount: int("googleRatingCount"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 }, (t2) => ({
@@ -192,7 +198,11 @@ var spinHistory = mysqlTable("spin_history", {
   // any more: `spins.rate`, `rateSpin` and `getLatestRatings` are gone, and the
   // weighting that this comment used to claim ("biases future spins") had
   // already moved to `applyStarWeights` long before. Do not build on it.
-  rating: mysqlEnum("rating", ["loved", "ok", "never"])
+  rating: mysqlEnum("rating", ["loved", "ok", "never"]),
+  // "We didn't end up going": set by the person who spun it. A skipped spin is
+  // not a lunch — it excludes nothing and counts in no statistic
+  // (shared/lunch.ts).
+  skipped: boolean("skipped").default(false).notNull()
 }, (t2) => ({
   // The hottest table: the latest spin (WHERE wheelId ORDER BY spunAt DESC, now
   // served by wheels.realtime), history, and exclusion all scope by wheelId +
@@ -221,8 +231,97 @@ var roundMarks = mysqlTable("round_marks", {
   wheelId: int("wheelId").notNull(),
   kind: mysqlEnum("kind", ["veto", "vote", "dietary"]).notNull(),
   refId: int("refId").notNull(),
-  userId: int("userId").notNull()
+  userId: int("userId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
 }, (t2) => ({ pk: primaryKey({ columns: [t2.wheelId, t2.kind, t2.refId, t2.userId] }) }));
+var userDietary = mysqlTable("user_dietary", {
+  userId: int("userId").notNull(),
+  tagId: int("tagId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+}, (t2) => ({ pk: primaryKey({ columns: [t2.userId, t2.tagId] }) }));
+
+// shared/lunch.ts
+var TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1e3;
+var DAY_MS = 24 * 60 * 60 * 1e3;
+function taipeiDayIndex(t2) {
+  return Math.floor((t2.getTime() + TAIPEI_OFFSET_MS) / DAY_MS);
+}
+function startOfTaipeiDay(t2) {
+  return new Date(taipeiDayIndex(t2) * DAY_MS - TAIPEI_OFFSET_MS);
+}
+function endOfTaipeiDay(t2) {
+  return new Date((taipeiDayIndex(t2) + 1) * DAY_MS - TAIPEI_OFFSET_MS);
+}
+function bySpinOrder(a, b) {
+  return a.spunAt.getTime() - b.spunAt.getTime() || a.id - b.id;
+}
+function classifySpins(rows) {
+  const kinds = /* @__PURE__ */ new Map();
+  const lastOfDay = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const key = `${row.spunBy}:${taipeiDayIndex(row.spunAt)}`;
+    const cur = lastOfDay.get(key);
+    if (!cur || bySpinOrder(row, cur) > 0) lastOfDay.set(key, row);
+  }
+  for (const row of rows) {
+    if (row.skipped) kinds.set(row.id, "skipped");
+    else if (row.accepted) kinds.set(row.id, "lunch");
+    else {
+      const last = lastOfDay.get(`${row.spunBy}:${taipeiDayIndex(row.spunAt)}`);
+      kinds.set(row.id, last?.id === row.id ? "lunch" : "respun");
+    }
+  }
+  return kinds;
+}
+function lunchStats(rows) {
+  const kinds = classifySpins(rows);
+  const byRestaurant = /* @__PURE__ */ new Map();
+  const days = /* @__PURE__ */ new Set();
+  for (const row of rows) {
+    if (kinds.get(row.id) !== "lunch") continue;
+    days.add(taipeiDayIndex(row.spunAt));
+    const cur = byRestaurant.get(row.restaurantId);
+    if (!cur) byRestaurant.set(row.restaurantId, { lunchCount: 1, lastLunchAt: row.spunAt });
+    else {
+      cur.lunchCount++;
+      if (row.spunAt > cur.lastLunchAt) cur.lastLunchAt = row.spunAt;
+    }
+  }
+  return { byRestaurant, lunchDays: days.size, placesEaten: byRestaurant.size };
+}
+function todaysLunches(rows, now) {
+  const today = taipeiDayIndex(now);
+  const kinds = classifySpins(rows);
+  return rows.filter((r) => taipeiDayIndex(r.spunAt) === today && kinds.get(r.id) === "lunch").sort(bySpinOrder);
+}
+
+// shared/realtimeState.ts
+function push(map, key, value) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+function isActiveMark(row, now) {
+  return taipeiDayIndex(new Date(row.createdAt)) === taipeiDayIndex(now);
+}
+function buildSessionState(rows, now) {
+  const vetoes = /* @__PURE__ */ new Map();
+  const votes = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (!isActiveMark(r, now)) continue;
+    if (r.kind === "veto") push(vetoes, r.refId, r.userId);
+    else if (r.kind === "vote") push(votes, r.refId, r.userId);
+  }
+  return {
+    vetoes: Array.from(vetoes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
+    votes: Array.from(votes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
+    dietary: []
+  };
+}
+function activePresence(rows, nowMs, ttlMs) {
+  const cutoff = nowMs - ttlMs;
+  return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
+}
 
 // server/_core/env.ts
 var ENV = {
@@ -242,14 +341,6 @@ var ENV = {
 
 // shared/exclusion.ts
 var DEFAULT_EXCLUSION_DAYS = 3;
-var TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1e3;
-var DAY_MS = 24 * 60 * 60 * 1e3;
-function taipeiDayIndex(t2) {
-  return Math.floor((t2.getTime() + TAIPEI_OFFSET_MS) / DAY_MS);
-}
-function endOfTaipeiDay(t2) {
-  return new Date((taipeiDayIndex(t2) + 1) * DAY_MS - TAIPEI_OFFSET_MS);
-}
 function computeExclusions(spins, opts = {}) {
   const now = opts.now ?? /* @__PURE__ */ new Date();
   const windowDays = opts.windowDays ?? DEFAULT_EXCLUSION_DAYS;
@@ -257,16 +348,18 @@ function computeExclusions(spins, opts = {}) {
   const windowMs = windowDays * DAY_MS;
   const cutoff = new Date(now.getTime() - windowMs);
   const nowDay = taipeiDayIndex(now);
-  const recent = spins.filter((s) => s.spunAt > cutoff).sort((a, b) => b.spunAt.getTime() - a.spunAt.getTime());
+  const kinds = classifySpins(spins);
+  const recent = spins.filter((s) => s.spunAt > cutoff).sort((a, b) => b.spunAt.getTime() - a.spunAt.getTime() || b.id - a.id);
   const seen = /* @__PURE__ */ new Set();
   const exclusions = [];
   for (const row of recent) {
     if (seen.has(row.restaurantId)) continue;
     seen.add(row.restaurantId);
     if (row.manuallyReenabled) continue;
-    if (row.accepted) {
+    const kind = kinds.get(row.id);
+    if (kind === "lunch") {
       exclusions.push({ restaurantId: row.restaurantId, excludedUntil: new Date(row.spunAt.getTime() + windowMs) });
-    } else if (taipeiDayIndex(row.spunAt) === nowDay) {
+    } else if (kind === "respun" && taipeiDayIndex(row.spunAt) === nowDay) {
       exclusions.push({ restaurantId: row.restaurantId, excludedUntil: endOfTaipeiDay(row.spunAt) });
     }
   }
@@ -274,15 +367,11 @@ function computeExclusions(spins, opts = {}) {
 }
 
 // shared/stats.ts
-function normalizeStatRow(row) {
-  return {
-    id: Number(row.id),
-    // Defensive: a stray/malformed row must never produce a non-string name,
-    // or the stats UI (which calls name.length) crashes the whole History tab.
-    name: typeof row.name === "string" ? row.name : String(row.name ?? ""),
-    pickCount: Number(row.pickCount ?? 0) || 0,
-    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt) : null
-  };
+function statsFromLunches(rests, lunches) {
+  return rests.map((r) => {
+    const l = lunches.byRestaurant.get(r.id);
+    return { id: r.id, name: r.name, pickCount: l?.lunchCount ?? 0, lastPickedAt: l?.lastLunchAt ?? null };
+  });
 }
 
 // shared/publicWheel.ts
@@ -470,11 +559,37 @@ async function deleteUserAccount(userId) {
     );
   }
   await db.delete(roundMarks).where(eq(roundMarks.userId, userId));
+  await db.delete(userDietary).where(eq(userDietary.userId, userId));
   await db.delete(wheelPresence).where(eq(wheelPresence.userId, userId));
   await db.delete(notifications).where(eq(notifications.actorUserId, userId));
   await db.delete(wheelMembers).where(eq(wheelMembers.userId, userId));
   await db.delete(users).where(eq(users.id, userId));
   return { wheelsDeleted: owned.length };
+}
+async function getOwnedTeamWheels(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ wheelId: wheels.id, wheelName: wheels.name, memberId: users.id, memberName: users.name, memberEmail: users.email }).from(wheels).innerJoin(wheelMembers, eq(wheelMembers.wheelId, wheels.id)).innerJoin(users, eq(users.id, wheelMembers.userId)).where(eq(wheels.ownerId, userId));
+  const byWheel = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    let w = byWheel.get(r.wheelId);
+    if (!w) byWheel.set(r.wheelId, w = { id: r.wheelId, name: r.wheelName, members: [] });
+    w.members.push({ userId: r.memberId, name: r.memberName, email: r.memberEmail });
+  }
+  return Array.from(byWheel.values());
+}
+async function transferWheelOwnership(wheelId, fromUserId, toUserId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [wheel, member] = await Promise.all([
+    getWheelById(wheelId),
+    db.select({ id: wheelMembers.id }).from(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId))).limit(1)
+  ]);
+  if (!wheel || wheel.ownerId !== fromUserId || member.length === 0) return false;
+  await db.update(wheels).set({ ownerId: toUserId }).where(eq(wheels.id, wheelId));
+  await db.insert(wheelMembers).values({ wheelId, userId: fromUserId });
+  await db.delete(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId)));
+  return true;
 }
 async function isWheelMember(wheelId, userId) {
   const db = await getDb();
@@ -547,6 +662,9 @@ async function getRestaurantsByWheel(wheelId) {
 function shapeRestaurant(r) {
   return { ...r, tags: [] };
 }
+function googleRatingValue(rating) {
+  return rating != null && rating >= 1 && rating <= 5 ? rating.toFixed(1) : null;
+}
 async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = null, place = null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -567,6 +685,8 @@ async function addRestaurant(wheelId, addedBy, name, notes, tagIds, mapUrl = nul
       priceLevel: place.priceLevel,
       cuisine: place.cuisine,
       openHours: place.openHours ?? null,
+      googleRating: googleRatingValue(place.rating),
+      googleRatingCount: place.ratingCount ?? null,
       source: "provider"
     } : {}
   });
@@ -604,6 +724,8 @@ async function addProviderRestaurants(wheelId, addedBy, rows) {
       priceLevel: r.place.priceLevel,
       cuisine: r.place.cuisine,
       openHours: r.place.openHours ?? null,
+      googleRating: googleRatingValue(r.place.rating),
+      googleRatingCount: r.place.ratingCount ?? null,
       source: "provider"
     }))
   );
@@ -626,7 +748,7 @@ async function addProviderRestaurants(wheelId, addedBy, rows) {
     return id == null ? [] : [{ id, placeId: r.place.placeId }];
   });
 }
-async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy) {
+async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy, opts = {}) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const source = await db.select().from(restaurants).where(eq(restaurants.wheelId, fromWheelId));
@@ -649,7 +771,10 @@ async function copyWheelRestaurants(fromWheelId, toWheelId, addedBy) {
       openHours: r.openHours,
       hoursUpdatedAt: r.hoursUpdatedAt,
       utcOffsetMinutes: r.utcOffsetMinutes,
-      source: r.source
+      googleRating: r.googleRating,
+      googleRatingCount: r.googleRatingCount,
+      source: r.source,
+      walkSeconds: opts.copyWalkSeconds ? r.walkSeconds : null
     }))
   );
   const inserted = await db.select({ id: restaurants.id }).from(restaurants).where(eq(restaurants.wheelId, toWheelId)).orderBy(restaurants.id);
@@ -701,10 +826,16 @@ async function getRestaurantById(id) {
   const result = await db.select().from(restaurants).where(eq(restaurants.id, id)).limit(1);
   return result[0];
 }
-async function setRestaurantHours(id, openHours, utcOffsetMinutes) {
+async function setRestaurantHours(id, openHours, utcOffsetMinutes, google) {
   const db = await getDb();
   if (!db) return;
-  await db.update(restaurants).set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: /* @__PURE__ */ new Date() }).where(eq(restaurants.id, id));
+  await db.update(restaurants).set({
+    openHours: openHours ?? null,
+    utcOffsetMinutes,
+    hoursUpdatedAt: /* @__PURE__ */ new Date(),
+    // Only when this refresh asked for them — never blanks a stored rating.
+    ...google && google.rating != null ? { googleRating: googleRatingValue(google.rating), googleRatingCount: google.ratingCount } : {}
+  }).where(eq(restaurants.id, id));
 }
 async function setRestaurantPlaceId(id, placeId) {
   const db = await getDb();
@@ -718,7 +849,8 @@ async function getRestaurantsNeedingHours(wheelId, staleAfterMs) {
     id: restaurants.id,
     placeId: restaurants.placeId,
     mapUrl: restaurants.mapUrl,
-    hoursUpdatedAt: restaurants.hoursUpdatedAt
+    hoursUpdatedAt: restaurants.hoursUpdatedAt,
+    googleRating: restaurants.googleRating
   }).from(restaurants).where(eq(restaurants.wheelId, wheelId));
   const cutoff = Date.now() - staleAfterMs;
   return rows.filter(
@@ -742,7 +874,7 @@ async function getWheelRatingRows(wheelId) {
 async function recordSpin(wheelId, restaurantId, spunBy) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
+  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy, spunAt: /* @__PURE__ */ new Date() });
   return result[0].insertId;
 }
 async function getSpinHistory(wheelId) {
@@ -756,7 +888,8 @@ async function getSpinHistory(wheelId) {
     spunByName: users.name,
     spunAt: spinHistory.spunAt,
     manuallyReenabled: spinHistory.manuallyReenabled,
-    rating: spinHistory.rating
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped
   }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(eq(spinHistory.wheelId, wheelId)).orderBy(sql`${spinHistory.spunAt} DESC`);
 }
 async function getExclusions(wheelId, windowDays) {
@@ -764,10 +897,13 @@ async function getExclusions(wheelId, windowDays) {
   if (!db || windowDays <= 0) return /* @__PURE__ */ new Map();
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1e3);
   const recent = await db.select({
+    id: spinHistory.id,
     restaurantId: spinHistory.restaurantId,
+    spunBy: spinHistory.spunBy,
     spunAt: spinHistory.spunAt,
     manuallyReenabled: spinHistory.manuallyReenabled,
-    accepted: spinHistory.accepted
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped
   }).from(spinHistory).where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
   const exclusions = computeExclusions(recent, { windowDays });
   return new Map(exclusions.map((e) => [e.restaurantId, e.excludedUntil]));
@@ -777,6 +913,12 @@ async function reenableRestaurant(wheelId, restaurantId, windowDays) {
   if (!db) throw new Error("DB unavailable");
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1e3);
   await db.update(spinHistory).set({ manuallyReenabled: true }).where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
+}
+async function markSpinSkipped(spinId, wheelId, userId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.update(spinHistory).set({ skipped: true }).where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, userId)));
+  return (result[0]?.affectedRows ?? 0) > 0;
 }
 async function acceptSpin(spinId, wheelId, actorUserId) {
   const db = await getDb();
@@ -819,24 +961,26 @@ async function markNotificationsRead(userId) {
   if (!db) throw new Error("DB unavailable");
   await db.update(users).set({ lastReadNotificationAt: /* @__PURE__ */ new Date() }).where(eq(users.id, userId));
 }
+async function getSpinFacts(wheelId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: spinHistory.id,
+    restaurantId: spinHistory.restaurantId,
+    spunBy: spinHistory.spunBy,
+    spunAt: spinHistory.spunAt,
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped
+  }).from(spinHistory).where(eq(spinHistory.wheelId, wheelId));
+}
 async function getRestaurantStats(wheelId) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.execute(sql`
-    SELECT
-      r.id,
-      r.name,
-      COUNT(sh.id) as pickCount,
-      MAX(sh.spunAt) as lastPickedAt
-    FROM ${restaurants} r
-    LEFT JOIN ${spinHistory} sh ON r.id = sh.restaurantId
-    WHERE r.wheelId = ${wheelId}
-    GROUP BY r.id, r.name
-    ORDER BY pickCount DESC, lastPickedAt DESC
-  `);
-  const raw = result;
-  const rows = Array.isArray(raw) ? Array.isArray(raw[0]) ? raw[0] : raw : [];
-  return rows.map(normalizeStatRow);
+  const [rests, spins] = await Promise.all([
+    db.select({ id: restaurants.id, name: restaurants.name }).from(restaurants).where(eq(restaurants.wheelId, wheelId)),
+    getSpinFacts(wheelId)
+  ]);
+  return statsFromLunches(rests, lunchStats(spins));
 }
 async function pingPresence(wheelId, userId, name) {
   const db = await getDb();
@@ -849,6 +993,12 @@ async function getActivePresence(wheelId, cutoff) {
   if (!db) return [];
   return db.select({ userId: wheelPresence.userId, name: wheelPresence.name, lastSeen: wheelPresence.lastSeen }).from(wheelPresence).where(and(eq(wheelPresence.wheelId, wheelId), gte(wheelPresence.lastSeen, cutoff)));
 }
+async function placeRoundMark(wheelId, kind, refId, userId) {
+  const db = await getDb();
+  if (!db) return;
+  const now = /* @__PURE__ */ new Date();
+  await db.insert(roundMarks).values({ wheelId, kind, refId, userId, createdAt: now }).onDuplicateKeyUpdate({ set: { createdAt: now } });
+}
 async function toggleRoundMark(wheelId, kind, refId, userId) {
   const db = await getDb();
   if (!db) return;
@@ -858,40 +1008,75 @@ async function toggleRoundMark(wheelId, kind, refId, userId) {
     eq(roundMarks.refId, refId),
     eq(roundMarks.userId, userId)
   );
-  const existing = await db.select({ userId: roundMarks.userId }).from(roundMarks).where(where).limit(1);
-  if (existing.length > 0) {
+  const now = /* @__PURE__ */ new Date();
+  const existing = await db.select({ createdAt: roundMarks.createdAt }).from(roundMarks).where(where).limit(1);
+  if (existing.length > 0 && isActiveMark(existing[0], now)) {
     await db.delete(roundMarks).where(where);
   } else {
-    await db.insert(roundMarks).values({ wheelId, kind, refId, userId }).onDuplicateKeyUpdate({ set: { userId } });
+    await db.insert(roundMarks).values({ wheelId, kind, refId, userId, createdAt: now }).onDuplicateKeyUpdate({ set: { createdAt: now } });
   }
 }
 async function getRoundMarks(wheelId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId }).from(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1e3);
+  return db.select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId, createdAt: roundMarks.createdAt }).from(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), gte(roundMarks.createdAt, since), inArray(roundMarks.kind, ["veto", "vote"])));
+}
+async function getUserDietary(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ tagId: userDietary.tagId }).from(userDietary).where(eq(userDietary.userId, userId));
+  return rows.map((r) => r.tagId);
+}
+async function setUserDietary(userId, tagIds) {
+  const db = await getDb();
+  if (!db) return;
+  const unique = Array.from(new Set(tagIds));
+  await db.delete(userDietary).where(
+    unique.length > 0 ? and(eq(userDietary.userId, userId), sql`${userDietary.tagId} NOT IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})`) : eq(userDietary.userId, userId)
+  );
+  if (unique.length > 0) {
+    await db.insert(userDietary).values(unique.map((tagId) => ({ userId, tagId }))).onDuplicateKeyUpdate({ set: { tagId: sql`${userDietary.tagId}` } });
+  }
+}
+async function getPresentDietary(wheelId, since, spinnerId) {
+  const db = await getDb();
+  if (!db) return { prefs: [], presentUserIds: [] };
+  const here = gte(wheelPresence.lastSeen, since);
+  const rows = await db.select({ userId: userDietary.userId, tagId: userDietary.tagId, lastSeen: wheelPresence.lastSeen }).from(userDietary).leftJoin(wheelPresence, and(eq(wheelPresence.userId, userDietary.userId), eq(wheelPresence.wheelId, wheelId))).where(spinnerId != null ? or(here, eq(userDietary.userId, spinnerId)) : here);
+  const sinceMs = since.getTime();
+  return {
+    prefs: rows.map((r) => ({ userId: r.userId, tagId: r.tagId })),
+    presentUserIds: Array.from(new Set(rows.filter((r) => r.lastSeen && new Date(r.lastSeen).getTime() >= sinceMs).map((r) => r.userId)))
+  };
 }
 async function clearRoundVotes(wheelId) {
   const db = await getDb();
   if (!db) return;
   await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.kind, "vote")));
 }
-async function clearRoundAll(wheelId) {
+async function clearRoundMarks(wheelId) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), inArray(roundMarks.kind, ["veto", "vote"])));
 }
-async function getLatestSpin(wheelId) {
+async function getSpinsSince(wheelId, since) {
   const db = await getDb();
-  if (!db) return null;
-  const rows = await db.select({
+  if (!db) return [];
+  return db.select({
     id: spinHistory.id,
     restaurantId: spinHistory.restaurantId,
     restaurantName: restaurants.name,
     spunBy: spinHistory.spunBy,
     spunByName: users.name,
-    spunAt: spinHistory.spunAt
-  }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(eq(spinHistory.wheelId, wheelId)).orderBy(desc(spinHistory.id)).limit(1);
-  return rows[0] ?? null;
+    spunAt: spinHistory.spunAt,
+    accepted: spinHistory.accepted,
+    skipped: spinHistory.skipped,
+    walkSeconds: restaurants.walkSeconds,
+    openHours: restaurants.openHours,
+    utcOffsetMinutes: restaurants.utcOffsetMinutes,
+    mapUrl: restaurants.mapUrl
+  }).from(spinHistory).innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id)).innerJoin(users, eq(spinHistory.spunBy, users.id)).where(and(eq(spinHistory.wheelId, wheelId), gte(spinHistory.spunAt, since)));
 }
 
 // server/_core/cookies.ts
@@ -1576,6 +1761,18 @@ function pickWeighted(weights, rng = Math.random) {
 }
 
 // shared/session.ts
+function dietaryForPresent(prefs, presentUserIds, spinnerId) {
+  const here = new Set(presentUserIds);
+  if (spinnerId != null) here.add(spinnerId);
+  const byUser = /* @__PURE__ */ new Map();
+  for (const p of prefs) {
+    if (!here.has(p.userId)) continue;
+    const list = byUser.get(p.userId);
+    if (list) list.push(p.tagId);
+    else byUser.set(p.userId, [p.tagId]);
+  }
+  return Array.from(byUser, ([userId, tagIds]) => ({ userId, tagIds })).sort((a, b) => a.userId - b.userId);
+}
 function vetoedIds(state) {
   return state.vetoes.filter((m) => m.userIds.length > 0).map((m) => m.restaurantId);
 }
@@ -1737,10 +1934,111 @@ function openState(periods, now, utcOffsetMinutes) {
   }
   return { status: "open", minutesUntilClose: left };
 }
-function isSpinnableNow(rawOpenHours, utcOffsetMinutes, now = /* @__PURE__ */ new Date()) {
-  const state = openState(parsePeriods(rawOpenHours), now, utcOffsetMinutes ?? 0);
-  return state.status !== "closed";
+var TOO_LATE_BUFFER_MINUTES = 20;
+function tooLateToGo({ minutesUntilClose: minutesUntilClose2, walkSeconds }, bufferMin = TOO_LATE_BUFFER_MINUTES) {
+  if (minutesUntilClose2 == null) return false;
+  return minutesUntilClose2 < (walkSeconds ?? 0) / 60 + bufferMin;
 }
+function closesAtLabel(periods, now, utcOffsetMinutes) {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  let best = null;
+  let bestLeft = Number.POSITIVE_INFINITY;
+  for (const p of periods) {
+    const left = activeMinutesLeft(p, nowMinutes);
+    if (left === null || !Number.isFinite(left)) continue;
+    if (left < bestLeft) {
+      bestLeft = left;
+      best = p;
+    }
+  }
+  if (!best?.close) return null;
+  return `${best.close.time.slice(0, 2)}:${best.close.time.slice(2, 4)}`;
+}
+function hoursView(rawOpenHours, utcOffsetMinutes, walkSeconds, now = /* @__PURE__ */ new Date()) {
+  const periods = parsePeriods(rawOpenHours);
+  const offset = utcOffsetMinutes ?? 0;
+  const state = openState(periods, now, offset);
+  return {
+    openStatus: state.status,
+    minutesUntilClose: state.minutesUntilClose,
+    tooLate: state.status !== "closed" && tooLateToGo({ minutesUntilClose: state.minutesUntilClose, walkSeconds }),
+    closesAt: closesAtLabel(periods, now, offset)
+  };
+}
+
+// shared/wheelGeometry.ts
+var SPIN_TIMELINE = {
+  /** Disc counter-rotates slightly. `--ease-exit`. */
+  windupMs: 100,
+  /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
+   *  server is still choosing — this is the floor, not the ceiling.
+   *
+   *  2600 -> 1900. The old spin read as long, and the reason was not only its
+   *  length: with the old decay curve the wheel finished 96% of its rotation in
+   *  the first half of the decay, so most of what you sat through was a disc
+   *  that had already stopped moving. Shortening the phase and spreading the
+   *  deceleration across it are the same fix.
+   *
+   *  1900 -> 600 (2026-11). Still too long, and the owner asked for it to lose
+   *  more than half. Measured in the replica with a 64ms server reply: tap ->
+   *  disc at rest went from 2389ms to about a second. The spin is shorter
+   *  because it turns fewer times at a higher speed (MIN_LAND_TURNS,
+   *  FREE_SPIN_SPEED), not because the decay was squeezed: decayDurationMs
+   *  still sizes the deceleration so it never outruns the free spin. */
+  travelMs: 600,
+  /** Lands the winning pane on the pointer. `--ease-settle`. */
+  settleMs: 180,
+  /** Disc drops back 52px and blurs to 14px at 50% opacity. */
+  recedeMs: 320,
+  /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
+  unrollDelayMs: 160,
+  /** Winning pane becomes full-bleed display type. */
+  unrollMs: 460,
+  /** Camera push into the wheel. `--ease-zoom`. */
+  zoomMs: 420,
+  /** Reduced motion: no zoom, no blur, no unroll — same result, no theatre. */
+  reducedMs: 400
+};
+var SPIN_TOTAL_MS = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs;
+var FREE_SPIN_SPEED = 2.4;
+var MIN_LAND_TURNS = 2;
+var SETTLE_DEG = 12;
+var MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
+function cubicBezier(x1, y1, x2, y2) {
+  const curve = (a, b, t2) => {
+    const u = 1 - t2;
+    return 3 * u * u * t2 * a + 3 * u * t2 * t2 * b + t2 * t2 * t2;
+  };
+  return (p) => {
+    if (p <= 0) return 0;
+    if (p >= 1) return 1;
+    let lo = 0;
+    let hi = 1;
+    let t2 = p;
+    for (let i = 0; i < 24; i++) {
+      const x = curve(x1, x2, t2);
+      if (Math.abs(x - p) < 1e-6) break;
+      if (x < p) lo = t2;
+      else hi = t2;
+      t2 = (lo + hi) / 2;
+    }
+    return curve(y1, y2, t2);
+  };
+}
+var EASE_STANDARD = cubicBezier(0.2, 0.9, 0.1, 1);
+var EASE_EXIT = cubicBezier(0.4, 0, 1, 1);
+var EASE_SETTLE = cubicBezier(0.34, 1.26, 0.64, 1);
+var EASE_DECAY = cubicBezier(0.3, 0.45, 0.5, 1);
+var DECAY_PEAK = 1.684;
+function decayDurationMs(arcDeg, freeSpinSpeed) {
+  if (freeSpinSpeed <= 0) return 0;
+  return Math.abs(arcDeg) * DECAY_PEAK / freeSpinSpeed;
+}
+var REPLY_ALLOWANCE_MS = 500;
+var SPIN_REVEAL_DELAY_MS = Math.ceil(
+  REPLY_ALLOWANCE_MS + SPIN_TIMELINE.windupMs + Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs
+);
 
 // shared/bootstrap.ts
 function resolveBootstrapWheelId(accessibleWheelIds, requestedWheelId, defaultWheelId) {
@@ -1884,32 +2182,6 @@ function rankNearby(places, filters = {}, opts = {}) {
   return { segments, weights, chainsGrouped, lowDensity: isLowDensity(segments.length, min) };
 }
 
-// shared/realtimeState.ts
-function push(map, key, value) {
-  const list = map.get(key);
-  if (list) list.push(value);
-  else map.set(key, [value]);
-}
-function buildSessionState(rows) {
-  const vetoes = /* @__PURE__ */ new Map();
-  const votes = /* @__PURE__ */ new Map();
-  const dietary = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    if (r.kind === "veto") push(vetoes, r.refId, r.userId);
-    else if (r.kind === "vote") push(votes, r.refId, r.userId);
-    else push(dietary, r.userId, r.refId);
-  }
-  return {
-    vetoes: Array.from(vetoes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
-    votes: Array.from(votes, ([restaurantId, userIds]) => ({ restaurantId, userIds })),
-    dietary: Array.from(dietary, ([userId, tagIds]) => ({ userId, tagIds }))
-  };
-}
-function activePresence(rows, nowMs, ttlMs) {
-  const cutoff = nowMs - ttlMs;
-  return rows.filter((r) => new Date(r.lastSeen).getTime() >= cutoff).map((r) => ({ userId: r.userId, name: r.name }));
-}
-
 // shared/candidates.ts
 var CANDIDATE_POOL = 20;
 function isCandidate(p) {
@@ -2024,7 +2296,8 @@ function toNearbyPlace(raw, origin) {
     address: raw.vicinity ?? raw.formatted_address ?? null,
     rating: normalizeRating(raw.rating),
     ratingCount: normalizeRatingCount(raw.user_ratings_total),
-    permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY"
+    permanentlyClosed: raw.business_status === "CLOSED_PERMANENTLY",
+    temporarilyClosed: raw.business_status === "CLOSED_TEMPORARILY"
   };
 }
 function mapProviderResults(rows, origin) {
@@ -2088,6 +2361,44 @@ function matchCuisineTag(label, tags2) {
     foodType ??= t2;
   }
   return foodType;
+}
+
+// shared/cuisineGuess.ts
+var RULES = [
+  { cuisine: "Brunch", han: ["\u65E9\u5348\u9910"], latin: ["brunch"] },
+  { cuisine: "Bakery", han: ["\u9EB5\u5305", "\u70D8\u7119"], latin: ["bakery", "boulangerie"] },
+  { cuisine: "Korean", han: ["\u97D3\u5F0F", "\u97D3\u570B", "\u97D3"], latin: ["korean", "seoul", "bibimbap"] },
+  {
+    cuisine: "Japanese",
+    han: ["\u62C9\u9EB5", "\u58FD\u53F8", "\u65E5\u5F0F", "\u65E5\u672C", "\u4E3C", "\u5C45\u9152\u5C4B", "\u70CF\u9F8D\u9EB5", "\u5B9A\u98DF"],
+    latin: ["japanese", "sushi", "sushiro", "ramen", "udon", "izakaya", "donburi", "yoshinoya"]
+  },
+  { cuisine: "Thai", han: ["\u6CF0\u5F0F", "\u6CF0\u570B"], latin: ["thai"] },
+  { cuisine: "Vietnamese", han: ["\u8D8A\u5357", "\u6CB3\u7C89"], latin: ["vietnamese", "pho", "banh"] },
+  { cuisine: "Italian", han: ["\u7FA9\u5927\u5229", "\u7FA9\u5F0F"], latin: ["italian", "pasta", "trattoria"] },
+  { cuisine: "Pizza", han: ["\u62AB\u85A9", "\u6BD4\u85A9"], latin: ["pizza", "pizzeria"] },
+  { cuisine: "Burgers", han: ["\u6F22\u5821"], latin: ["burger", "burgers"] },
+  { cuisine: "Indian", han: ["\u5370\u5EA6"], latin: ["indian"] },
+  { cuisine: "Mexican", han: ["\u58A8\u897F\u54E5"], latin: ["mexican", "taco", "tacos", "burrito"] },
+  { cuisine: "Steakhouse", han: ["\u725B\u6392"], latin: ["steak", "steakhouse"] },
+  { cuisine: "Seafood", han: ["\u6D77\u9BAE"], latin: ["seafood"] },
+  { cuisine: "Vegetarian", han: ["\u7D20\u98DF", "\u852C\u98DF"], latin: ["vegetarian"] },
+  { cuisine: "Vegan", latin: ["vegan"] },
+  { cuisine: "Salad", han: ["\u6C99\u62C9"], latin: ["salad", "salads"] },
+  { cuisine: "Sandwiches", han: ["\u4E09\u660E\u6CBB"], latin: ["sandwich", "sandwiches", "subway"] },
+  { cuisine: "Dessert", han: ["\u751C\u9EDE", "\u751C\u54C1"], latin: ["dessert", "desserts"] },
+  { cuisine: "Cafe", han: ["\u5496\u5561"], latin: ["cafe", "caf\xE9", "coffee"] },
+  { cuisine: "Breakfast", han: ["\u65E9\u9910"], latin: ["breakfast"] },
+  { cuisine: "Noodles", han: ["\u9EB5"], latin: ["noodle", "noodles"] }
+];
+function guessCuisine(name) {
+  const text2 = name.normalize("NFKC");
+  const words = new Set(text2.toLowerCase().split(/[^a-zé]+/).filter(Boolean));
+  for (const rule of RULES) {
+    if (rule.han?.some((k) => text2.includes(k))) return rule.cuisine;
+    if (rule.latin?.some((k) => words.has(k))) return rule.cuisine;
+  }
+  return null;
 }
 
 // shared/walkTime.ts
@@ -2328,13 +2639,13 @@ async function placeDetails(placeId, apiKey, language) {
   if (data.status !== "OK" || !data.result) return null;
   return mapGooglePlace(data.result);
 }
-async function fetchPlaceHours(placeId) {
+async function fetchPlaceHours(placeId, opts = {}) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
   const url = new URL(PLACE_DETAILS_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("place_id", placeId);
-  url.searchParams.set("fields", "opening_hours,utc_offset");
+  url.searchParams.set("fields", opts.withRating ? "opening_hours,utc_offset,rating,user_ratings_total" : "opening_hours,utc_offset");
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6e3);
   try {
@@ -2342,11 +2653,13 @@ async function fetchPlaceHours(placeId) {
     if (!res.ok) throw new Error(`Place Details (hours) failed (${res.status})`);
     const data = await res.json();
     if (data.status !== "OK" || !data.result) return null;
-    const periods = data.result.opening_hours?.periods ?? null;
-    if (!periods) return null;
+    const r = data.result;
     return {
-      periods,
-      utcOffsetMinutes: typeof data.result.utc_offset === "number" ? data.result.utc_offset : null
+      // No published hours stays null (= unknown, kept on the wheel).
+      periods: r.opening_hours?.periods ?? null,
+      utcOffsetMinutes: typeof r.utc_offset === "number" ? r.utc_offset : null,
+      rating: typeof r.rating === "number" ? r.rating : null,
+      ratingCount: typeof r.user_ratings_total === "number" ? r.user_ratings_total : null
     };
   } finally {
     clearTimeout(timer);
@@ -2540,8 +2853,8 @@ async function refreshWheelHours(wheelId) {
         await setRestaurantHours(t2.id, null, null);
         continue;
       }
-      const hours = await fetchPlaceHours(placeId);
-      await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+      const hours = await fetchPlaceHours(placeId, { withRating: t2.googleRating == null });
+      await setRestaurantHours(t2.id, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null, hours);
       updated += 1;
     } catch (err) {
       providerFailed = true;
@@ -2550,17 +2863,48 @@ async function refreshWheelHours(wheelId) {
   }
   return { updated, providerFailed };
 }
-async function maybeFetchOneRestaurantHours(restaurantId, placeId) {
+async function maybeFetchOneRestaurantHours(restaurantId, placeId, opts = {}) {
   if (!placeId || !isPlacesConfigured()) return;
   try {
-    const hours = await fetchPlaceHours(placeId);
-    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null);
+    const hours = await fetchPlaceHours(placeId, opts);
+    await setRestaurantHours(restaurantId, hours?.periods ?? null, hours?.utcOffsetMinutes ?? null, hours);
   } catch (err) {
     console.error(`[openHours] initial fetch failed for restaurant ${restaurantId}`, err);
   }
 }
 
 // server/routers.ts
+function todayView(rows, now, viewerId) {
+  const revealed = (r) => r.spunBy === viewerId || now.getTime() - r.spunAt.getTime() >= SPIN_REVEAL_DELAY_MS;
+  const today = todaysLunches(rows, now).filter(revealed).map((r) => {
+    const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+    return {
+      spinId: r.id,
+      restaurantId: r.restaurantId,
+      name: r.restaurantName,
+      spunBy: r.spunBy,
+      spunByName: r.spunByName,
+      spunAt: r.spunAt,
+      accepted: r.accepted,
+      walkSeconds: r.walkSeconds,
+      openStatus: h.openStatus,
+      minutesUntilClose: h.minutesUntilClose,
+      closesAt: h.closesAt,
+      mapUrl: r.mapUrl
+    };
+  });
+  const last = rows.reduce((a, b) => !a || bySpinOrder(b, a) > 0 ? b : a, null);
+  const latestSpin = last ? {
+    id: last.id,
+    restaurantId: last.restaurantId,
+    restaurantName: last.restaurantName,
+    spunBy: last.spunBy,
+    spunByName: last.spunByName,
+    spunAt: last.spunAt,
+    ageMs: now.getTime() - last.spunAt.getTime()
+  } : null;
+  return { today, latestSpin };
+}
 var PRESENCE_TTL_MS = 25e3;
 var nearbyPlaceSchema = z2.object({
   placeId: z2.string().min(1).max(256),
@@ -2570,7 +2914,11 @@ var nearbyPlaceSchema = z2.object({
   address: z2.string().max(512).nullable(),
   priceLevel: z2.number().int().min(1).max(4).nullable(),
   cuisine: z2.string().max(64).nullable(),
-  mapUrl: z2.string().max(512).nullable().optional()
+  mapUrl: z2.string().max(512).nullable().optional(),
+  // Google's rating and review count from the same search result — stored for
+  // display (the team's own stars are what weight a spin).
+  rating: z2.number().min(1).max(5).nullable().optional(),
+  ratingCount: z2.number().int().min(0).nullable().optional()
 });
 async function addNearbyPlaces(wheelId, userId, places) {
   const [existing, wheelTags] = await Promise.all([
@@ -2591,7 +2939,7 @@ async function addNearbyPlaces(wheelId, userId, places) {
     wheelId,
     userId,
     fresh.map((place) => {
-      const cuisineTag = matchCuisineTag(place.cuisine, wheelTags);
+      const cuisineTag = matchCuisineTag(place.cuisine ?? guessCuisine(place.name), wheelTags);
       return {
         name: place.name,
         mapUrl: place.mapUrl ?? null,
@@ -2602,13 +2950,19 @@ async function addNearbyPlaces(wheelId, userId, places) {
           lng: place.lng,
           address: place.address,
           priceLevel: place.priceLevel,
-          cuisine: place.cuisine
+          cuisine: place.cuisine,
+          rating: place.rating ?? null,
+          ratingCount: place.ratingCount ?? null
         }
       };
     })
   );
   await Promise.allSettled([
-    ...rows.map((r) => maybeFetchOneRestaurantHours(r.id, r.placeId)),
+    ...rows.map(
+      (r) => maybeFetchOneRestaurantHours(r.id, r.placeId, {
+        withRating: fresh.find((f) => f.placeId === r.placeId)?.rating == null
+      })
+    ),
     computeDistancesFor(wheelId, rows.map((r) => r.id))
   ]);
   return { added: rows.length, duplicates, ids: rows.map((r) => r.id) };
@@ -2639,8 +2993,23 @@ var appRouter = router({
       return { success: true, ...result };
     })
   }),
+  // ─── Account ────────────────────────────────────────────────────────────────
+  account: router({
+    // Team wheels deleting this account would take away from teammates.
+    ownedTeamWheels: protectedProcedure.query(async ({ ctx }) => getOwnedTeamWheels(ctx.user.id))
+  }),
   // ─── Wheels ─────────────────────────────────────────────────────────────────
   wheels: router({
+    // Give a wheel to one of its members — the owner only, and only to someone
+    // already on it. How a team keeps its wheel when the owner deletes their account.
+    transferOwnership: protectedProcedure.input(z2.object({ wheelId: z2.number(), toUserId: z2.number() })).mutation(async ({ ctx, input }) => {
+      const wheel = await getWheelById(input.wheelId);
+      if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
+      if (wheel.ownerId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN" });
+      const ok = await transferWheelOwnership(input.wheelId, ctx.user.id, input.toUserId);
+      if (!ok) throw new TRPCError3({ code: "BAD_REQUEST", message: "That person isn't on this wheel." });
+      return { success: true };
+    }),
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
@@ -2691,16 +3060,12 @@ var appRouter = router({
         getExclusions(wheelId, wheel.exclusionDays)
       ]);
       const now = /* @__PURE__ */ new Date();
-      const restaurants2 = rests.map((r) => {
-        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-        return {
-          ...r,
-          isExcluded: exclusions.has(r.id),
-          excludedUntil: exclusions.get(r.id) ?? null,
-          openStatus: hours.status,
-          minutesUntilClose: hours.minutesUntilClose
-        };
-      });
+      const restaurants2 = rests.map((r) => ({
+        ...r,
+        isExcluded: exclusions.has(r.id),
+        excludedUntil: exclusions.get(r.id) ?? null,
+        ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now)
+      }));
       return {
         user,
         wheels: wheels2,
@@ -2767,12 +3132,18 @@ var appRouter = router({
     realtime: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const [members, session, latestSpin] = await Promise.all([
+      const now = /* @__PURE__ */ new Date();
+      const [members, marks, spinsToday, dietary] = await Promise.all([
         getWheelMembers(input.wheelId),
-        getRoundMarks(input.wheelId).then(buildSessionState),
-        getLatestSpin(input.wheelId)
+        getRoundMarks(input.wheelId),
+        getSpinsSince(input.wheelId, startOfTaipeiDay(now)),
+        getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id)
       ]);
-      return { members, session, latestSpin };
+      const session = {
+        ...buildSessionState(marks, now),
+        dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id)
+      };
+      return { members, session, ...todayView(spinsToday, now, ctx.user.id) };
     }),
     create: protectedProcedure.input(z2.object({
       name: z2.string().min(1).max(128),
@@ -2890,7 +3261,8 @@ var appRouter = router({
         source.fairnessMode,
         source.rotateCuisines
       );
-      if (source.distanceEnabled && source.originLat != null && source.originLng != null) {
+      const sameOrigin = source.distanceEnabled && source.originLat != null && source.originLng != null;
+      if (sameOrigin) {
         await setWheelOrigin(newId, {
           distanceEnabled: true,
           originLat: Number(source.originLat),
@@ -2899,7 +3271,7 @@ var appRouter = router({
         });
       }
       await updateWheel(newId, { sourceWheelId: input.id });
-      const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
+      const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id, { copyWalkSeconds: sameOrigin });
       return { id: newId, name, restaurants: copied };
     }),
     // "12 teams started from this wheel" — social proof for the owner, and the
@@ -3067,16 +3439,12 @@ var appRouter = router({
       const rests = await getRestaurantsByWheel(input.wheelId);
       const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
       const now = /* @__PURE__ */ new Date();
-      return rests.map((r) => {
-        const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-        return {
-          ...r,
-          isExcluded: exclusions.has(r.id),
-          excludedUntil: exclusions.get(r.id) ?? null,
-          openStatus: hours.status,
-          minutesUntilClose: hours.minutesUntilClose
-        };
-      });
+      return rests.map((r) => ({
+        ...r,
+        isExcluded: exclusions.has(r.id),
+        excludedUntil: exclusions.get(r.id) ?? null,
+        ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now)
+      }));
     }),
     // The restaurant half of a public wheel (guests spin everything — no exclusion
     // state), public-safe fields only. The /w/:id page reads both halves through
@@ -3117,7 +3485,7 @@ var appRouter = router({
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
-      await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
+      await maybeFetchOneRestaurantHours(id, input.placeId ?? null, { withRating: true });
       return { id };
     }),
     addBulk: protectedProcedure.input(z2.object({ wheelId: z2.number(), text: z2.string().max(1e4) })).mutation(async ({ ctx, input }) => {
@@ -3272,6 +3640,7 @@ var appRouter = router({
         cuisine: p.cuisine,
         priceLevel: p.priceLevel,
         open: p.open ?? null,
+        temporarilyClosed: p.temporarilyClosed,
         lat: p.lat,
         lng: p.lng,
         address: p.address,
@@ -3293,16 +3662,7 @@ var appRouter = router({
     addNearby: protectedProcedure.input(
       z2.object({
         wheelId: z2.number(),
-        place: z2.object({
-          placeId: z2.string().min(1).max(256),
-          name: z2.string().min(1).max(128),
-          lat: z2.number().min(-90).max(90).nullable(),
-          lng: z2.number().min(-180).max(180).nullable(),
-          address: z2.string().max(512).nullable(),
-          priceLevel: z2.number().int().min(1).max(4).nullable(),
-          cuisine: z2.string().max(64).nullable(),
-          mapUrl: z2.string().max(512).nullable().optional()
-        })
+        place: nearbyPlaceSchema
       })
     ).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
@@ -3314,7 +3674,7 @@ var appRouter = router({
         return { id: null, duplicate: true };
       }
       const wheelTags = await getTagsForWheel(input.wheelId);
-      const cuisineTag = matchCuisineTag(input.place.cuisine, wheelTags);
+      const cuisineTag = matchCuisineTag(input.place.cuisine ?? guessCuisine(input.place.name), wheelTags);
       const id = await addRestaurant(
         input.wheelId,
         ctx.user.id,
@@ -3328,14 +3688,16 @@ var appRouter = router({
           lng: input.place.lng,
           address: input.place.address,
           priceLevel: input.place.priceLevel,
-          cuisine: input.place.cuisine
+          cuisine: input.place.cuisine,
+          rating: input.place.rating ?? null,
+          ratingCount: input.place.ratingCount ?? null
         }
       );
       try {
         await maybeComputeOneDistance(input.wheelId, id);
       } catch {
       }
-      await maybeFetchOneRestaurantHours(id, input.place.placeId);
+      await maybeFetchOneRestaurantHours(id, input.place.placeId, { withRating: input.place.rating == null });
       return { id, duplicate: false, taggedAs: cuisineTag?.name ?? null };
     }),
     // Batch of the above. The dialog lets you tick several spots and add them
@@ -3460,23 +3822,30 @@ var appRouter = router({
       ]);
       if (!wheel) throw new TRPCError3({ code: "NOT_FOUND" });
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      const [rests, exclusions, roundMarks2, ratingRows, spinStats, history] = await Promise.all([
+      const now = /* @__PURE__ */ new Date();
+      const [rests, exclusions, roundMarks2, ratingRows, spinFacts, dietary] = await Promise.all([
         getRestaurantsByWheel(input.wheelId),
         getExclusions(input.wheelId, wheel.exclusionDays),
         getRoundMarks(input.wheelId),
         getWheelRatingRows(input.wheelId),
-        wheel.fairnessMode ? getRestaurantStats(input.wheelId) : void 0,
-        wheel.rotateCuisines ? getSpinHistory(input.wheelId) : void 0
+        wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : void 0,
+        getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id)
       ]);
       const valid = new Set(rests.map((r) => r.id));
-      const session = buildSessionState(roundMarks2);
+      const session = {
+        ...buildSessionState(roundMarks2, now),
+        dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id)
+      };
       const vetoed = new Set(vetoedIds(session));
       const avoidedTags = new Set(excludedDietaryTagIds(session));
       const dietaryBlocked = new Set(
         avoidedTags.size === 0 ? [] : rests.filter((r) => r.tags.some((t2) => avoidedTags.has(t2.id))).map((r) => r.id)
       );
       const closedNow = new Set(
-        rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id)
+        rests.filter((r) => {
+          const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+          return h.openStatus === "closed" || h.tooLate;
+        }).map((r) => r.id)
       );
       const eligible = input.candidateIds.filter(
         (id2) => valid.has(id2) && !exclusions.has(id2) && !vetoed.has(id2) && !dietaryBlocked.has(id2) && !closedNow.has(id2)
@@ -3496,23 +3865,24 @@ var appRouter = router({
       const hasRatings = ratings.size > 0;
       let restaurantId;
       if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
+        const lunches = spinFacts ? lunchStats(spinFacts).byRestaurant : /* @__PURE__ */ new Map();
         let base;
         if (wheel.fairnessMode) {
-          const lastPicked = new Map((spinStats ?? []).map((s) => [s.id, s.lastPickedAt]));
-          base = computeWeights(eligible.map((id2) => ({ restaurantId: id2, lastPickedAt: lastPicked.get(id2) ?? null })));
+          base = computeWeights(
+            eligible.map((id2) => ({ restaurantId: id2, lastPickedAt: lunches.get(id2)?.lastLunchAt ?? null }))
+          );
         } else {
           base = eligible.map((id2) => ({ restaurantId: id2, weight: 1 }));
         }
         if (wheel.rotateCuisines) {
           const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t2) => t2.category === "cuisine")?.id ?? null]));
           const cuisineLastPicked = /* @__PURE__ */ new Map();
-          for (const h of history ?? []) {
-            const c = cuisineOf.get(h.restaurantId);
-            if (c == null) continue;
-            const at = new Date(h.spunAt);
+          lunches.forEach(({ lastLunchAt }, restaurantId2) => {
+            const c = cuisineOf.get(restaurantId2);
+            if (c == null) return;
             const cur = cuisineLastPicked.get(c);
-            if (!cur || at > cur) cuisineLastPicked.set(c, at);
-          }
+            if (!cur || lastLunchAt > cur) cuisineLastPicked.set(c, lastLunchAt);
+          });
           base = applyCuisineRotation(
             base,
             eligible.map((id2) => ({ restaurantId: id2, cuisineId: cuisineOf.get(id2) ?? null })),
@@ -3535,6 +3905,14 @@ var appRouter = router({
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       return getSpinHistory(input.wheelId);
     }),
+    // The today card on a personal wheel. Shared wheels get the same rows from
+    // wheels.realtime, which they already poll — they never call this.
+    today: protectedProcedure.input(z2.object({ wheelId: z2.number() })).query(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const now = /* @__PURE__ */ new Date();
+      return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now, ctx.user.id).today;
+    }),
     // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
     // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
     // acceptSpin no-ops (and creates no duplicate notification) if it's already
@@ -3544,6 +3922,15 @@ var appRouter = router({
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
       const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
       return { success: result != null };
+    }),
+    // "We didn't go." Only the person who spun it can say so — it changes what
+    // the whole team is excluded from and what History counts.
+    markSkipped: protectedProcedure.input(z2.object({ wheelId: z2.number(), spinId: z2.number() })).mutation(async ({ ctx, input }) => {
+      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
+      const ok = await markSpinSkipped(input.spinId, input.wheelId, ctx.user.id);
+      if (!ok) throw new TRPCError3({ code: "NOT_FOUND" });
+      return { success: true };
     }),
     reenable: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
       const wheel = await getWheelById(input.wheelId);
@@ -3592,23 +3979,30 @@ var appRouter = router({
       await toggleRoundMark(input.wheelId, "veto", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
-    vote: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number() })).mutation(async ({ ctx, input }) => {
+    vote: protectedProcedure.input(z2.object({ wheelId: z2.number(), restaurantId: z2.number(), on: z2.literal(true).optional() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+      if (input.on) await placeRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+      else await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
       return { success: true };
     }),
-    dietary: protectedProcedure.input(z2.object({ wheelId: z2.number(), tagId: z2.number() })).mutation(async ({ ctx, input }) => {
-      const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-      if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      await toggleRoundMark(input.wheelId, "dietary", input.tagId, ctx.user.id);
-      return { success: true };
-    }),
+    // Today's votes and vetoes only. Anyone's "I don't eat" is theirs, and a
+    // teammate pressing Clear used to wipe it.
     clear: protectedProcedure.input(z2.object({ wheelId: z2.number() })).mutation(async ({ ctx, input }) => {
       const isMember = await isWheelMember(input.wheelId, ctx.user.id);
       if (!isMember) throw new TRPCError3({ code: "FORBIDDEN" });
-      await clearRoundAll(input.wheelId);
+      await clearRoundMarks(input.wheelId);
       return { success: true };
+    })
+  }),
+  // ─── The signed-in person's own settings ─────────────────────────────────────
+  me: router({
+    // "I don't eat": set once, applies on every wheel, but only on the days
+    // this person opens that wheel (shared/session `dietaryForPresent`).
+    dietary: protectedProcedure.query(({ ctx }) => getUserDietary(ctx.user.id)),
+    setDietary: protectedProcedure.input(z2.object({ tagIds: z2.array(z2.number().int().positive()).max(64) })).mutation(async ({ ctx, input }) => {
+      await setUserDietary(ctx.user.id, input.tagIds);
+      return { tagIds: Array.from(new Set(input.tagIds)) };
     })
   }),
   // ─── Statistics ─────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, Check, Tag, MapPin, Navigation, Footprints, RefreshCw, ArrowDownWideNarrow, MoreVertical, Star, Clock3, Search, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Drawer, DrawerContent } from "@/components/ui/drawer";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +29,10 @@ import NearbyDialog from "@/components/NearbyDialog";
 import { useLang } from "@/i18n";
 import { originLabelText, tagLabel } from "@/lib/tagLabel";
 import { walkLabel } from "@/lib/timeLabels";
+import { walkDisplayMinutes } from "@shared/nearby";
 import { userError } from "@/lib/userError";
+import { devicePlaceLanguage } from "@/lib/placeLanguage";
+import { DAY_MS, taipeiDayIndex } from "@shared/lunch";
 
 /** Loose check: does this string look like a Google Maps link worth resolving? */
 const looksLikeMapLink = (s: string) =>
@@ -120,6 +123,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
   );
   // The restaurant whose detail sheet is open (null = closed).
   const [detailId, setDetailId] = useState<number | null>(null);
+  // "Last lunch 9/8" in the detail sheet: lunches, not spins (shared/lunch.ts).
+  // Only fetched once a sheet opens — the list itself does not need it.
+  const { data: lunchStats } = trpc.stats.getRestaurantStats.useQuery({ wheelId }, { enabled: detailId !== null });
   /** The place the owner is being asked to confirm removing, held by id+name so
    *  the dialog still has something to name after the detail sheet closes. */
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
@@ -208,7 +214,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       // Reuses this session's fix (lib/geo) — no second permission prompt if
       // ADD NEARBY or first-run already asked.
       const at = await requestCoords();
-      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword, language: lang });
+      nameSearch.mutate({ wheelId, lat: at.lat, lng: at.lng, keyword, language: devicePlaceLanguage() });
     } catch (err) {
       const kind = err instanceof GeoError ? err.kind : "failed";
       setNameGeoError(
@@ -657,12 +663,6 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                       {t("places.row.excluded")}
                     </span>
                   )}
-                  {distanceEnabled && (
-                    <span className="flex items-center gap-1 type-meta px-2 py-0.5 rounded-full flex-shrink-0 font-medium text-muted-foreground" style={{ background: "var(--muted)" }}>
-                      <Footprints size={10} className="flex-shrink-0" />
-                      {r.walkSeconds != null ? walkLabel(t, r.walkSeconds / 60) : t("places.row.noLocation")}
-                    </span>
-                  )}
                   {/* Opening hours. "unknown" shows nothing — those places stay on
                       the wheel, so a chip would just be noise. */}
                   {r.openStatus === "closed" && (
@@ -689,6 +689,17 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     </span>
                   )}
                 </div>
+                <PlaceFacts
+                  className="mt-0.5"
+                  facts={[
+                    googleStars(r.googleRating),
+                    priceLabel(r.priceLevel),
+                    // Just "3 min" here: the row is narrow beside its rating chip, and
+                    // "walk" is said once in the header's "from Office".
+                    distanceEnabled ? (r.walkSeconds != null ? t("places.facts.walk", { n: walkDisplayMinutes(r.walkSeconds / 60) }) : t("places.row.noLocation")) : null,
+                    r.openStatus === "open" && r.closesAt ? t("places.facts.openTill", { time: r.closesAt }) : null,
+                  ]}
+                />
                 {r.notes && <p className="type-meta text-muted-foreground mt-0.5 line-clamp-1">{r.notes}</p>}
                 {r.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
@@ -730,7 +741,9 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
       {/* Restaurant detail sheet — glance chip on the row opens this. Holds the
           team rating, the member's own star control, and (owner) Edit/Delete. */}
       <Drawer open={detailId !== null} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <DrawerContent>
+        {/* No description sentence exists for a place's detail; Radix's
+            documented way to say so is an explicit undefined. */}
+        <DrawerContent aria-describedby={undefined}>
           {(() => {
             const r = (restaurants ?? []).find((x) => x.id === detailId);
             if (!r) return null;
@@ -742,29 +755,42 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
               <div className="mx-auto w-full max-w-md px-5 pb-8 pt-1">
                 {/* Detail card title — 17px/600 per the CJK type pass; the old
                     20px display face set Chinese names far heavier than Latin. */}
-                <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
+                {/* The drawer's accessible title (Radix warns, and a screen
+                    reader announces an unnamed dialog, without one). */}
+                <DrawerTitle asChild>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: "var(--ink-warm)" }}>{r.name}</h3>
+                </DrawerTitle>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {r.tags.map((tag) => (
                     <span key={tag.id} className="px-2.5 py-1" style={{ borderRadius: "var(--radius-chip)", background: tag.color + "18", color: tag.color, border: `1px solid ${tag.color}35`, fontSize: 15, fontWeight: 500 }}>{tagLabel(tag.name, t, tag.category)}</span>
                   ))}
-                  {distanceEnabled && r.walkSeconds != null && (
-                    <span
-                      className="flex items-center gap-1.5 px-2.5 py-1"
-                      style={{ borderRadius: "var(--radius-chip)", background: "var(--muted)", color: "var(--body-warm)", fontSize: 15, fontWeight: 400 }}
-                    >
-                      <Footprints size={12} />{walkLabel(t, r.walkSeconds / 60)}
-                    </span>
-                  )}
                   {r.mapUrl && (
                     <a href={r.mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-1" style={{ color: "var(--brand-text)", fontSize: 15, fontWeight: 500 }}>
                       <Navigation size={12} />{t("places.detail.directions")}
                     </a>
                   )}
                 </div>
+                {r.address && <p className="type-meta text-muted-foreground mt-2">{r.address}</p>}
+                <PlaceFacts
+                  className="mt-1.5"
+                  facts={[
+                    googleStars(r.googleRating, r.googleRatingCount),
+                    priceLabel(r.priceLevel),
+                    distanceEnabled && r.walkSeconds != null ? walkLabel(t, r.walkSeconds / 60) : null,
+                    r.openStatus === "open" && r.closesAt ? t("places.facts.openTill", { time: r.closesAt }) : null,
+                    (() => {
+                      const last = lunchStats?.find((s) => s.id === r.id)?.lastPickedAt;
+                      return last ? t("places.facts.lastLunch", { date: taipeiDate(new Date(last)) }) : null;
+                    })(),
+                  ]}
+                />
                 {r.notes && <p className="type-meta text-muted-foreground mt-2">{r.notes}</p>}
 
                 {/* Opening hours — states mirror shared/openHours.ts. "unknown" is
-                    stated plainly so nobody thinks the place was dropped. */}
+                    stated plainly so nobody thinks the place was dropped. An open
+                    place with a known closing time already says "open till 14:30"
+                    in the facts line above. */}
+                {!(r.openStatus === "open" && r.closesAt) && (
                 <div className="mt-5 flex items-center gap-2 type-meta">
                   <Clock3 size={13} className="flex-shrink-0 text-muted-foreground" />
                   {r.openStatus === "closed" ? (
@@ -779,6 +805,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                     <span className="text-muted-foreground">{t("places.detail.hoursUnknown")}</span>
                   )}
                 </div>
+                )}
 
                 <div className="mt-6">
                   <div className="type-eyebrow mb-2" style={{ color: "var(--ink-warm)" }}>{t("places.detail.teamRating")}</div>
@@ -948,7 +975,7 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
                   type="button"
                   variant="outline"
                   size="md"
-                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim(), language: lang }); }}
+                  onClick={() => { setFormError(null); resolveLink.mutate({ wheelId, url: form.mapUrl.trim(), language: devicePlaceLanguage() }); }}
                   disabled={!looksLikeMapLink(form.mapUrl) || resolveLink.isPending}
                   title={t("places.form.lookupTitle")}
                 >
@@ -1044,5 +1071,42 @@ export default function RestaurantTab({ wheelId, isOwner, onRestaurantsChange, d
         }
       />
     </div>
+  );
+}
+
+/** "Google ★4.3" / "Google ★4.3 (812)" — Google's own rating, named as Google's
+ *  so it is not read as the team's stars beside it. */
+function googleStars(rating: string | number | null, count?: number | null): string | null {
+  if (rating == null) return null;
+  const value = Number(rating);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return `Google ★${value.toFixed(1)}${count ? ` (${count.toLocaleString()})` : ""}`;
+}
+
+/** Google's price level as "$" to "$$$$"; nothing when unknown or free. */
+function priceLabel(level: number | null): string | null {
+  return level != null && level >= 1 ? "$".repeat(Math.min(level, 4)) : null;
+}
+
+/** "9/8" — the Taipei calendar date, which is the team's. */
+function taipeiDate(t: Date): string {
+  const d = new Date(taipeiDayIndex(t) * DAY_MS);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+
+/** One line of " · "-separated facts. Each fact stays on one line; the line
+ *  breaks between facts, never inside "open till 14:30". */
+function PlaceFacts({ facts, className = "" }: { facts: (string | null)[]; className?: string }) {
+  const shown = facts.filter((f): f is string => !!f);
+  if (shown.length === 0) return null;
+  return (
+    <p className={`type-meta ${className}`} style={{ color: "var(--body)" }}>
+      {shown.map((f, i) => (
+        <Fragment key={i}>
+          {i > 0 && " · "}
+          <span className="whitespace-nowrap">{f}</span>
+        </Fragment>
+      ))}
+    </p>
   );
 }

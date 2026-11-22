@@ -13,6 +13,7 @@ import {
   relaxations,
   walkBand,
   type Candidate,
+  nextSelection,
 } from "./candidates";
 import { MAX_SEGMENTS } from "./nearby";
 
@@ -275,5 +276,34 @@ describe("arrivalTicks", () => {
 
   it("never pushes the wheel past its cap", () => {
     expect(arrivalTicks(arrivals, MAX_SEGMENTS - 1, 20)).toEqual(["x"]);
+  });
+});
+
+describe("nextSelection — one selection across every list (plan B2)", () => {
+  const base = ["a", "b", "c", "d", "e", "f", "g"];
+  it("the plain list's first arrival ticks the nearest ones", () => {
+    expect(nextSelection([], { type: "arrive", list: "base", ticked: base })).toEqual(base);
+  });
+  it("a search does not change the count: its results are never auto-ticked", () => {
+    expect(nextSelection(base, { type: "arrive", list: "search", ticked: ["n1", "n2"] })).toEqual(base);
+  });
+  it("ticking a search result adds one", () => {
+    expect(nextSelection(base, { type: "toggle", id: "n1", atCap: false })).toHaveLength(8);
+  });
+  it("going back to the plain list keeps it: nothing is keyed by query any more", () => {
+    const after = nextSelection(base, { type: "toggle", id: "n1", atCap: false });
+    // "Back to all" is a view change, not a selection event.
+    expect(after).toContain("n1");
+    expect(after).toHaveLength(8);
+  });
+  it("removing a chip from the selected row takes one away", () => {
+    const after = nextSelection([...base, "n1"], { type: "remove", id: "n1" });
+    expect(after).toEqual(base);
+  });
+  it("toggling an unselected place at the cap does nothing", () => {
+    expect(nextSelection(base, { type: "toggle", id: "z", atCap: true })).toEqual(base);
+  });
+  it("toggling a selected place removes it even at the cap", () => {
+    expect(nextSelection(base, { type: "toggle", id: "a", atCap: true })).not.toContain("a");
   });
 });

@@ -295,13 +295,22 @@ async function placeDetails(
  */
 export async function fetchPlaceHours(
   placeId: string,
-): Promise<{ periods: unknown; utcOffsetMinutes: number | null } | null> {
+  opts: { withRating?: boolean } = {},
+): Promise<{
+  periods: unknown;
+  utcOffsetMinutes: number | null;
+  rating: number | null;
+  ratingCount: number | null;
+} | null> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY not configured");
   const url = new URL(PLACE_DETAILS_URL);
   url.searchParams.set("key", apiKey);
   url.searchParams.set("place_id", placeId);
-  url.searchParams.set("fields", "opening_hours,utc_offset");
+  // rating/user_ratings_total are billed as Atmosphere data on top of the
+  // hours' Contact data, so they are asked for only while a row has none —
+  // each place pays for its rating once, not on every hours refresh.
+  url.searchParams.set("fields", opts.withRating ? "opening_hours,utc_offset,rating,user_ratings_total" : "opening_hours,utc_offset");
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 6000);
   try {
@@ -309,15 +318,21 @@ export async function fetchPlaceHours(
     if (!res.ok) throw new Error(`Place Details (hours) failed (${res.status})`);
     const data = (await res.json()) as {
       status?: string;
-      result?: { opening_hours?: { periods?: unknown }; utc_offset?: number };
+      result?: {
+        opening_hours?: { periods?: unknown };
+        utc_offset?: number;
+        rating?: number;
+        user_ratings_total?: number;
+      };
     };
     if (data.status !== "OK" || !data.result) return null;
-    const periods = data.result.opening_hours?.periods ?? null;
-    if (!periods) return null;
+    const r = data.result;
     return {
-      periods,
-      utcOffsetMinutes:
-        typeof data.result.utc_offset === "number" ? data.result.utc_offset : null,
+      // No published hours stays null (= unknown, kept on the wheel).
+      periods: r.opening_hours?.periods ?? null,
+      utcOffsetMinutes: typeof r.utc_offset === "number" ? r.utc_offset : null,
+      rating: typeof r.rating === "number" ? r.rating : null,
+      ratingCount: typeof r.user_ratings_total === "number" ? r.user_ratings_total : null,
     };
   } finally {
     clearTimeout(timer);

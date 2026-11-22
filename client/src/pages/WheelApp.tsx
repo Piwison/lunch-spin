@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import SpinWheel, { WheelSegment } from "@/components/SpinWheel";
 import WinnerSurface from "@/components/WinnerSurface";
-import { labelTier } from "@shared/wheelGeometry";
+import TodayCard, { type TodayEntry } from "@/components/TodayCard";
+import RecentLunchPrompt from "@/components/RecentLunchPrompt";
+import { labelTier, SPIN_REVEAL_DELAY_MS } from "@shared/wheelGeometry";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import RestaurantTab from "@/components/RestaurantTab";
 import FilterBar, { FilterTrigger } from "@/components/FilterBar";
@@ -14,7 +16,6 @@ import { SpinWheelIcon } from "@/components/SpinWheelIcon";
 import BrandLoader from "@/components/BrandLoader";
 import HistoryTab from "@/components/HistoryTab";
 import OnboardingFlow from "@/components/OnboardingFlow";
-import { StarRating } from "@/components/StarRating";
 import WheelSelector from "@/components/WheelSelector";
 import WheelMembers from "@/components/WheelMembers";
 import { TabRail, type TabRailItem } from "@/components/TabRail";
@@ -31,6 +32,7 @@ import { segmentColor } from "@/lib/palette";
 import { primaryTag } from "@shared/primaryTag";
 import { ErrorChip } from "@/components/StatusChip";
 import ConfirmDangerDialog from "@/components/ConfirmDangerDialog";
+import TeamWheelHandover, { type Handover } from "@/components/TeamWheelHandover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -114,14 +116,21 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  // "New wheel" when one already exists: the first-run flow again, in place of
+  // the tabs, until a wheel is made or the person goes back (see onNewWheel).
+  const [creatingWheel, setCreatingWheel] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
+  // Replaying a teammate's spin on this wheel: the server already chose, so this
+  // only animates to their result. Null for every spin of your own.
+  const [replay, setReplay] = useState<{ restaurantId: number; name: string; by: string } | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [presentUserIds, setPresentUserIds] = useState<number[]>([]);
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [spinError, setSpinError] = useState<string | null>(null);
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [handover, setHandover] = useState<Handover>({});
   // Spins completed in this browser, read once. The exclusion explainer is for
   // people who have never seen it; after a couple of spins it's noise.
   const [spinsSeen, setSpinsSeen] = useState(() => {
@@ -362,6 +371,25 @@ export default function WheelApp() {
   // leaving. A hard navigation, not navigate(): the in-memory React Query caches
   // still hold the deleted user's wheels, and the persisted boot cache would
   // otherwise seed them straight back on the landing page.
+  // Team wheels the account owns: each needs a new owner or a "delete it too"
+  // before the account can go (plan A10).
+  const teamWheelsQuery = trpc.account.ownedTeamWheels.useQuery(undefined, { enabled: confirmDeleteAccount });
+  const teamWheels = teamWheelsQuery.data ?? [];
+  const handoverPending = !teamWheelsQuery.data || teamWheels.some((w) => handover[w.id] === undefined);
+  const transferOwnership = trpc.wheels.transferOwnership.useMutation();
+  const deleteAccountWithHandover = async () => {
+    try {
+      for (const w of teamWheels) {
+        const choice = handover[w.id];
+        if (typeof choice === "number") await transferOwnership.mutateAsync({ wheelId: w.id, toUserId: choice });
+      }
+    } catch (e) {
+      toast.error(t("app.account.handoverError", { message: userError(e as Parameters<typeof userError>[0], t) }));
+      teamWheelsQuery.refetch();
+      return;
+    }
+    deleteAccount.mutate();
+  };
   const deleteAccount = trpc.auth.deleteAccount.useMutation({
     onSuccess: () => {
       clearBootCache();
@@ -392,10 +420,12 @@ export default function WheelApp() {
   });
   const acceptSpin = trpc.spins.accept.useMutation({
     onSuccess: () => {
-      // Accepting flips this spin to the full-window exclusion tier, so the wheel
-      // and history both need to refetch to drop the now-eaten restaurant.
+      // Accepting pins this lunch (a later respin no longer replaces it), which
+      // changes the today card's offer to decide again.
       refetchRestaurants();
       utils.spins.history.invalidate();
+      utils.spins.today.invalidate();
+      utils.wheels.realtime.invalidate();
     },
   });
   const isShared = !!wheelData?.isShared;
@@ -533,14 +563,14 @@ export default function WheelApp() {
   }, [params.wheelId, selectedWheelId, copyPending, bootstrapQuery.data?.wheelId, navigate]);
 
   // WheelSelector registers its create-dialog opener here so the first-run card
-  // can launch it (sample vs blank). Ref keeps the callback identity stable.
+  // can launch it. Ref keeps the callback identity stable.
   // Relies on WheelSelector rendering (and registering) before the first-run card
   // becomes interactive — it's an always-mounted sibling above the tab content, so
   // the ref is populated by the time a button can be clicked. Keep that ordering if
   // WheelSelector ever becomes conditionally rendered.
-  const createOpenerRef = useRef<((withStarter: boolean) => void) | null>(null);
+  const createOpenerRef = useRef<(() => void) | null>(null);
   const registerCreateOpener = useCallback(
-    (open: (withStarter: boolean) => void) => {
+    (open: () => void) => {
       createOpenerRef.current = open;
     },
     [],
@@ -612,25 +642,89 @@ export default function WheelApp() {
       refetchInterval: isSpinning || showResult ? false : 3000,
     }
   );
-  const session: SessionState = realtimeQuery.data?.session ?? EMPTY_SESSION;
+  // My standing "I don't eat" (user_dietary). On a shared wheel the realtime
+  // session already carries it, with everyone else's who is here today; on a
+  // personal wheel it is the only one, and spins.create applies it either way,
+  // so the wheel has to drop the same places or it shows ones that can't win.
+  const myDietaryQuery = trpc.me.dietary.useQuery(undefined, { enabled: !!user });
+  const myDietary = useMemo(() => myDietaryQuery.data ?? [], [myDietaryQuery.data]);
+  const setDietary = trpc.me.setDietary.useMutation({
+    onSuccess: (res) => {
+      utils.me.dietary.setData(undefined, res.tagIds);
+      if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
+    },
+    onError: (e) => toast.error(userError(e, t)),
+  });
+  const toggleMyDietary = (tagId: number) =>
+    setDietary.mutate({ tagIds: myDietary.includes(tagId) ? myDietary.filter((id) => id !== tagId) : [...myDietary, tagId] });
+  const session: SessionState = useMemo(
+    () =>
+      isShared
+        ? (realtimeQuery.data?.session ?? EMPTY_SESSION)
+        : { ...EMPTY_SESSION, dietary: user && myDietary.length > 0 ? [{ userId: user.id, tagIds: myDietary }] : [] },
+    [isShared, realtimeQuery.data?.session, myDietary, user],
+  );
 
-  // Latest spin: surface a teammate's spin (skip our own).
+  // Today's lunches. A shared wheel already polls wheels.realtime, which carries
+  // them; a personal wheel has nobody else spinning, so it reads once and
+  // refreshes after its own spins (the pending refresh below).
+  const todayQuery = trpc.spins.today.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && !isShared && seeded && !!user },
+  );
+  const todayEntries: TodayEntry[] = (isShared ? realtimeQuery.data?.today : todayQuery.data) ?? [];
+  /** My newest decision today, if a spin by me now would replace it. */
+  const myReplaceable = useMemo(() => {
+    const mine = todayEntries.filter((e) => e.spunBy === user?.id);
+    const last = mine[mine.length - 1];
+    return last && !last.accepted ? last : null;
+  }, [todayEntries, user?.id]);
+
+  // Latest spin: surface a teammate's spin (skip our own) — but only once their
+  // own wheel has landed. The toast names who, never what; the answer is theirs
+  // to see first (plan 7d), and [See result] replays it here.
   const lastSpinIdRef = useRef<number | null>(null);
+  const revealTimers = useRef<number[]>([]);
   useEffect(() => {
     lastSpinIdRef.current = null;
+    return () => {
+      revealTimers.current.forEach((id) => window.clearTimeout(id));
+      revealTimers.current = [];
+    };
   }, [selectedWheelId]);
+  /** Always the current render's replay starter, for toast actions that fire later. */
+  const startReplayRef = useRef<(r: { restaurantId: number; name: string; by: string }) => void>(() => {});
   useEffect(() => {
-    const latest = realtimeQuery.data?.latestSpin;
-    if (!latest) return;
+    if (!realtimeQuery.data) return;
+    const latest = realtimeQuery.data.latestSpin;
+    // Baseline on the first load, even when nobody has spun yet today (latest is
+    // null) — otherwise the day's first spin would become the baseline and never
+    // be announced. 0 is never a spin id.
     if (lastSpinIdRef.current === null) {
-      lastSpinIdRef.current = latest.id; // baseline on first load — don't toast history
+      lastSpinIdRef.current = latest?.id ?? 0;
       return;
     }
+    if (!latest) return;
     if (latest.id !== lastSpinIdRef.current) {
       lastSpinIdRef.current = latest.id;
       if (user && latest.spunBy !== user.id) {
-        toast(t("app.realtime.spin", { name: latest.spunByName ?? t("app.teammate"), restaurant: latest.restaurantName }), { icon: "🎡" });
-        refetchRestaurants();
+        const by = latest.spunByName ?? t("app.teammate");
+        const target = { restaurantId: latest.restaurantId, name: latest.restaurantName, by };
+        // ageMs is the server's own measure of how old the spin is, so a phone
+        // whose clock is off by seconds still waits the right amount.
+        const wait = Math.max(0, SPIN_REVEAL_DELAY_MS - latest.ageMs);
+        const timer = window.setTimeout(() => {
+          toast(t("app.realtime.spun", { name: by }), {
+            icon: "🎡",
+            // Long enough to reach for: the button is the point of this toast.
+            duration: 12_000,
+            action: { label: t("app.realtime.see"), onClick: () => startReplayRef.current(target) },
+          });
+          // Deferred with the toast: the refetch drops the winner off this
+          // wheel, and a pane vanishing is the answer too.
+          refetchRestaurants();
+        }, wait);
+        revealTimers.current.push(timer);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -642,22 +736,43 @@ export default function WheelApp() {
     if (selectedWheelId) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
   };
 
-  // Post-spin rating capture: the result modal lets you star the winner right
-  // there. Reads the viewer's current star so re-opening shows it pre-filled.
+  // The viewer's own stars, for the "how was it?" prompt (which never asks about
+  // a place you have already rated).
   const { data: ratingSummaries } = trpc.restaurants.ratings.useQuery(
     { wheelId: selectedWheelId! },
     { enabled: !!selectedWheelId && seeded && !!user },
   );
-  const myStarsFor = (restaurantId: number) =>
-    ratingSummaries?.find((s) => s.restaurantId === restaurantId)?.myStars ?? null;
   const rateRestaurant = trpc.restaurants.rate.useMutation({
     onSuccess: () => {
-      if (selectedWheelId) utils.restaurants.ratings.invalidate({ wheelId: selectedWheelId });
+      if (selectedWheelId) {
+        utils.restaurants.ratings.invalidate({ wheelId: selectedWheelId });
+        utils.stats.tasteProfile.invalidate({ wheelId: selectedWheelId });
+      }
     },
+  });
+  const ratedRestaurantIds = useMemo(
+    () => new Set((ratingSummaries ?? []).filter((s) => s.myStars != null).map((s) => s.restaurantId)),
+    [ratingSummaries],
+  );
+  // The history the "how was it?" prompt reads (already prefetched on entry).
+  const { data: spinHistory } = trpc.spins.history.useQuery(
+    { wheelId: selectedWheelId! },
+    { enabled: !!selectedWheelId && seeded && !!user },
+  );
+  const markSkipped = trpc.spins.markSkipped.useMutation({
+    onSuccess: () => {
+      // A skipped spin stops excluding its place and drops out of every count.
+      refetchRestaurants();
+      utils.spins.history.invalidate();
+      utils.stats.getRestaurantStats.invalidate();
+      utils.spins.today.invalidate();
+      utils.wheels.realtime.invalidate();
+      toast.success(t("app.skipped"));
+    },
+    onError: (e) => toast.error(userError(e, t)),
   });
   const vetoMutation = trpc.session.veto.useMutation({ onSuccess: refreshSession });
   const voteMutation = trpc.session.vote.useMutation({ onSuccess: refreshSession });
-  const dietaryMutation = trpc.session.dietary.useMutation({ onSuccess: refreshSession });
   const clearRound = trpc.session.clear.useMutation({ onSuccess: refreshSession });
 
   const addShared = trpc.restaurants.addBulk.useMutation({
@@ -669,14 +784,15 @@ export default function WheelApp() {
     onError: (e) => toast.error(userError(e, t)),
   });
 
-  // Closed-right-now restaurants come off the wheel entirely (the server enforces
-  // the same rule in spins.create — this just keeps the visual honest). Unknown
-  // hours stay on: most wheels have hand-typed places with no provider hours.
+  // Closed-right-now restaurants, and ones that close before you'd get there with
+  // time to eat, come off the wheel entirely (the server enforces the same rule
+  // in spins.create — this just keeps the visual honest). Unknown hours stay on:
+  // most wheels have hand-typed places with no provider hours.
   const roundCandidates = useMemo(
     () => filterRestaurantsByDistance(
       filterRestaurantsByTags(restaurants ?? [], selectedTagIds),
       maxWalkMinutes,
-    ).filter((r) => r.openStatus !== "closed"),
+    ).filter((r) => r.openStatus !== "closed" && !r.tooLate),
     [restaurants, selectedTagIds, maxWalkMinutes]
   );
 
@@ -685,6 +801,11 @@ export default function WheelApp() {
   const closedCount = useMemo(
     () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds)
       .filter((r) => r.openStatus === "closed").length,
+    [restaurants, selectedTagIds]
+  );
+  const closingSoonCount = useMemo(
+    () => filterRestaurantsByTags(restaurants ?? [], selectedTagIds)
+      .filter((r) => r.openStatus !== "closed" && r.tooLate).length,
     [restaurants, selectedTagIds]
   );
 
@@ -716,17 +837,29 @@ export default function WheelApp() {
     [restaurants, selectedTagIds, maxWalkMinutes, session],
   );
 
-  const wheelSegments: WheelSegment[] = useMemo(() =>
-    filteredRestaurants.map((r, i) => ({
+  const wheelSegments: WheelSegment[] = useMemo(() => {
+    const segs = filteredRestaurants.map((r, i) => ({
       id: r.id,
       label: r.name,
       color: segmentColor(primaryTag(r)?.color, i),
-    })),
-    [filteredRestaurants]
-  );
+    }));
+    // A replayed winner is already excluded — picking it excluded it — so it is
+    // not on this wheel any more. Put it back for the replay, or the disc would
+    // have no pane to land on (failure mode 51). SpinWheel freezes this list for
+    // as long as the replay is on screen.
+    if (replay && !segs.some((s) => s.id === replay.restaurantId)) {
+      const r = restaurants?.find((x) => x.id === replay.restaurantId);
+      segs.push({
+        id: replay.restaurantId,
+        label: replay.name,
+        color: segmentColor(r ? primaryTag(r)?.color : undefined, segs.length),
+      });
+    }
+    return segs;
+  }, [filteredRestaurants, replay, restaurants]);
 
   /** A restaurant refresh that is owed but must wait for the camera to pull out
-   *  — see handleSpinEnd. Every exit from the result (Lock it in, Respin, [x],
+   *  — see handleSpinEnd. Every exit from the result (accept, Respin, [x],
    *  Esc, backdrop) lands in the effect below, so none of them needs to
    *  remember to do this for itself. */
   const pendingRestaurantRefresh = useRef(false);
@@ -735,6 +868,10 @@ export default function WheelApp() {
     if (resultOnScreen || !pendingRestaurantRefresh.current) return;
     pendingRestaurantRefresh.current = false;
     refetchRestaurants();
+    if (selectedWheelId) {
+      if (isShared) utils.wheels.realtime.invalidate({ wheelId: selectedWheelId });
+      else utils.spins.today.invalidate({ wheelId: selectedWheelId });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultOnScreen]);
 
@@ -742,8 +879,9 @@ export default function WheelApp() {
     setIsSpinning(false);
     setSpinResult(segment);
     setShowResult(true);
-    // The counter that retires the one-time exclusion explainer.
-    setSpinsSeen((n) => {
+    // The counter that retires the one-time exclusion explainer. A replay is not
+    // your spin and shows no explainer.
+    if (!replay) setSpinsSeen((n) => {
       const next = n + 1;
       try {
         localStorage.setItem(SPINS_SEEN_KEY, String(next));
@@ -767,6 +905,7 @@ export default function WheelApp() {
   };
 
   const handleSpin = async () => {
+    setReplay(null);
     if (wheelSegments.length === 0) {
       setSpinError(t("app.spin.noRestaurants"));
       return;
@@ -798,6 +937,78 @@ export default function WheelApp() {
     }
   };
 
+  /**
+   * First run ends in a spin (plan C4): "Spin these 8" builds the wheel and
+   * spins it, with no second tap on a Spin button. The wheel id is recorded when
+   * OnboardingFlow reports the wheel created; the spin waits until that wheel's
+   * own list has loaded and nothing else is on screen, then fires once.
+   * One ref, cleared before firing, so a re-render or a later wheel switch can
+   * never spin again (failure modes 14, 51).
+   */
+  const autoSpinFor = useRef<number | null>(null);
+  /** A tab is a way out of the "New wheel" flow, like the picker is. */
+  const switchTab = (tab: Tab) => {
+    setCreatingWheel(false);
+    setActiveTab(tab);
+  };
+  /** OnboardingFlow built a wheel — first run or a later "New wheel". */
+  const handleFlowCreated = (wheelId: number) => {
+    autoSpinFor.current = wheelId;
+    utils.wheels.list.invalidate();
+    utils.wheels.bootstrap.invalidate();
+    setCreatingWheel(false);
+    setSelectedWheelId(wheelId);
+    setActiveTab("wheel");
+    navigate(`/app/${wheelId}`, { replace: true });
+  };
+  useEffect(() => {
+    const id = autoSpinFor.current;
+    if (id == null || selectedWheelId !== id) return;
+    if (restaurantsLoading || !restaurants || wheelSegments.length === 0) return;
+    if (isSpinning || showResult || createSpin.isPending) return;
+    autoSpinFor.current = null;
+    void handleSpin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWheelId, restaurantsLoading, restaurants, wheelSegments.length, isSpinning, showResult]);
+
+  /** Play a teammate's spin on this wheel, landing where theirs did. The server
+   *  decided it already — this only animates; spins.create is never called. */
+  const startReplay = (r: { restaurantId: number; name: string; by: string }) => {
+    if (isSpinning || showResult || createSpin.isPending) return;
+    setActiveTab("wheel");
+    setShowResult(false);
+    setSpinResult(null);
+    setSpinId(null);
+    setSpinError(null);
+    setReplay(r);
+    setTargetId(r.restaurantId);
+    setIsSpinning(true);
+  };
+  startReplayRef.current = startReplay;
+
+  /**
+   * One place left: no wheel to spin, just the decision. Still recorded through
+   * spins.create — the server re-validates and picks from a list of one, so the
+   * lunch rule, exclusion and History treat it like any other spin — but the
+   * result comes up without a one-pane wheel pretending to be random.
+   */
+  const handleGoThere = async () => {
+    const only = wheelSegments[0];
+    if (!selectedWheelId || !only || createSpin.isPending || isSpinning) return;
+    setReplay(null);
+    setSpinError(null);
+    try {
+      const { id } = await createSpin.mutateAsync({ wheelId: selectedWheelId, candidateIds: [only.id] });
+      setSpinId(id);
+      setSpinResult(only);
+      setShowResult(true);
+      pendingRestaurantRefresh.current = true;
+    } catch (e) {
+      const code = (e as { data?: { code?: string } | null } | null)?.data?.code;
+      setSpinError(t(code === "BAD_REQUEST" ? "app.block.default" : "app.spin.failed"));
+    }
+  };
+
   const handleReSpin = () => {
     setShowResult(false);
     setSpinResult(null);
@@ -805,10 +1016,11 @@ export default function WheelApp() {
     requestAnimationFrame(() => handleSpin());
   };
 
-  // ACCEPT — "we're eating here". Records the accept (full-window exclusion +
-  // team notification on shared wheels) then closes. [x] / backdrop / Esc skip
-  // this: the spin was already recorded as a rejected (today-only) result, so
-  // closing without accepting is the "skip this one today" path.
+  // ACCEPT — "Tell the team" on a shared wheel, "Sounds good" on a personal one.
+  // Closing the result any other way already leaves this spin as today's lunch
+  // (shared/lunch.ts: the last spin of the day counts). Accepting pins it — a
+  // later respin by the same person no longer replaces it — and on a shared
+  // wheel notifies the team.
   const handleAccept = () => {
     if (selectedWheelId && spinId != null) {
       acceptSpin.mutate({ wheelId: selectedWheelId, spinId });
@@ -869,12 +1081,16 @@ export default function WheelApp() {
     switch (reason) {
       case "round":
         return t("app.block.round", { n: counts.round });
+      case "diet":
+        return t("app.block.diet", { n: counts.diet });
       case "filters":
         return maxWalkMinutes != null && selectedTagIds.length === 0
           ? t("app.block.distance", { n: maxWalkMinutes })
           : t("app.block.filters");
       case "closed":
         return t("app.block.closed", { n: counts.closed });
+      case "closingSoon":
+        return t("app.block.closingSoon", { n: counts.closingSoon });
       case "excluded":
         return t("app.block.excluded", { n: counts.excluded });
       default:
@@ -1086,15 +1302,27 @@ export default function WheelApp() {
 
       <ConfirmDangerDialog
         open={confirmDeleteAccount}
-        onOpenChange={(open) => { if (!open && !deleteAccount.isPending) setConfirmDeleteAccount(false); }}
+        onOpenChange={(open) => {
+          if (!open && !deleteAccount.isPending && !transferOwnership.isPending) {
+            setConfirmDeleteAccount(false);
+            setHandover({});
+          }
+        }}
         title={t("app.account.deleteTitle")}
         confirmWord={t("app.account.deleteWord")}
         confirmLabel={t("app.account.deleteConfirm")}
-        pending={deleteAccount.isPending}
-        onConfirm={() => deleteAccount.mutate()}
+        pending={deleteAccount.isPending || transferOwnership.isPending}
+        blocked={handoverPending}
+        onConfirm={() => void deleteAccountWithHandover()}
         body={
           <>
             <p>{t("app.account.deleteBody", { account: user.email || user.name || "" })}</p>
+            <TeamWheelHandover
+              wheels={teamWheels}
+              choices={handover}
+              disabled={transferOwnership.isPending || deleteAccount.isPending}
+              onChoose={(wheelId, choice) => setHandover((h) => ({ ...h, [wheelId]: choice }))}
+            />
             <p>{t("app.account.deleteInvited")}</p>
             <p style={{ color: "var(--destructive)" }}>{t("app.irreversible")}</p>
           </>
@@ -1105,7 +1333,7 @@ export default function WheelApp() {
         {/* ── WHEEL SWITCHER (desktop rail · mobile pill+sheet) ── */}
         <WheelSelector
           selectedWheelId={selectedWheelId}
-          onSelect={(id: number) => { setSelectedWheelId(id); navigate(`/app/${id}`); }}
+          onSelect={(id: number) => { setCreatingWheel(false); setSelectedWheelId(id); navigate(`/app/${id}`); }}
           onDeleted={(id: number) => {
             // Mark it dead before releasing the selection: the refreshed entry
             // payload may not have landed yet, and the auto-open effect would
@@ -1116,6 +1344,13 @@ export default function WheelApp() {
             navigate("/app", { replace: true });
           }}
           registerCreateOpener={registerCreateOpener}
+          onNewWheel={() => {
+            // A wheel mid-spin is not abandoned for a new one; the button is
+            // also behind the winner sheet while a result is up.
+            if (isSpinning) return;
+            setShowResult(false);
+            setCreatingWheel(true);
+          }}
           registerSettingsOpener={registerSettingsOpener}
           pickerHidden={firstRun}
           /* The Wheel tab spends this slot on the filter instead of the gear.
@@ -1124,7 +1359,7 @@ export default function WheelApp() {
              below it is gone (the picker already says which wheel you are on).
              That is what gets Spin above the fold on a 390x844 phone. */
           trailing={
-            activeTab === "wheel" && selectedWheelId ? (
+            activeTab === "wheel" && selectedWheelId && !creatingWheel ? (
               <FilterBar
                 variant="sheet"
                 open={showFilters}
@@ -1152,14 +1387,14 @@ export default function WheelApp() {
           {/* The page's one h1, for screen readers: the wheel's name. The
               visible title was dropped on purpose (the picker already shows
               it), and first run renders its own h1 in this same region. */}
-          {!firstRun && <h1 className="sr-only">{wheelData?.name ?? t("app.brand")}</h1>}
+          {!firstRun && !creatingWheel && <h1 className="sr-only">{wheelData?.name ?? t("app.brand")}</h1>}
 
           {/* ── VIEW TABS (desktop) — floating glass segmented control ──
               Ember: one glass bar, solid persimmon on the active segment (no
               gradient, no glow — persimmon is the only saturated colour and it
               is flat), and 56px of height like every other control. */}
           <div className="hidden md:flex px-4 py-2.5 flex-shrink-0 md:justify-center xl:justify-start">
-            <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="rail" />
+            <TabRail items={tabConfig} value={activeTab} onChange={switchTab} variant="rail" />
           </div>
 
           {/* ── SHARED TEXT BANNER ── */}
@@ -1199,10 +1434,21 @@ export default function WheelApp() {
               both directions. */}
           <div
             className={`flex-1 overflow-y-auto overflow-x-clip pb-dock${
-              !selectedWheelId ? " flex flex-col" : ""
+              !selectedWheelId || creatingWheel ? " flex flex-col" : ""
             }`}
           >
-            {!selectedWheelId ? (
+            {creatingWheel && !firstRun ? (
+              /* "New wheel" with wheels already made: the same nearby flow as
+                 first run, so a second wheel takes one tap and a list, not
+                 the seven-field dialog. That dialog is still "I'll add places
+                 myself". */
+              <OnboardingFlow
+                another
+                onCreated={handleFlowCreated}
+                onManualCreate={() => createOpenerRef.current?.()}
+                onCancel={() => setCreatingWheel(false)}
+              />
+            ) : !selectedWheelId ? (
               decidingWheel ? (
                 /* Held until the app knows which wheel to open — see
                    `decidingWheel`. Labelled, like the wheel-switch loader: an
@@ -1218,14 +1464,8 @@ export default function WheelApp() {
                    fictional restaurants — see OnboardingFlow. Anyone who declines
                    to share their location falls through to that same dialog. */
                 <OnboardingFlow
-                  onCreated={(wheelId) => {
-                    utils.wheels.list.invalidate();
-                    utils.wheels.bootstrap.invalidate();
-                    setSelectedWheelId(wheelId);
-                    setActiveTab("wheel");
-                    navigate(`/app/${wheelId}`, { replace: true });
-                  }}
-                  onManualCreate={() => createOpenerRef.current?.(false)}
+                  onCreated={handleFlowCreated}
+                  onManualCreate={() => createOpenerRef.current?.()}
                 />
               ) : (
                 /* Empty state — has wheels, none selected */
@@ -1289,6 +1529,38 @@ export default function WheelApp() {
                       </div>
                     )}
 
+                    {/* "How was yesterday's lunch?" — asked after the meal. */}
+                    {spinHistory && user && selectedWheelId && (
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        <RecentLunchPrompt
+                          spins={spinHistory}
+                          ratedRestaurantIds={ratedRestaurantIds}
+                          currentUserId={user.id}
+                          rating={rateRestaurant.isPending}
+                          onRate={(restaurantId, stars) =>
+                            rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId, stars })
+                          }
+                          skipping={markSkipped.isPending}
+                          onSkipped={(spinId) => markSkipped.mutate({ wheelId: selectedWheelId, spinId })}
+                        />
+                      </div>
+                    )}
+
+                    {/* Today's decisions — first, because it answers the question
+                        people open the app with. Hidden while the camera is in. */}
+                    {todayEntries.length > 0 && user && (
+                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        <TodayCard
+                          entries={todayEntries}
+                          currentUserId={user.id}
+                          showWalk={!!wheelData?.distanceEnabled}
+                          onDirections={(e) => openDirections({ id: e.restaurantId, label: e.name, color: "" })}
+                          onRedecide={handleSpin}
+                          redecideDisabled={spinDisabled}
+                        />
+                      </div>
+                    )}
+
                     {/* Team roster */}
                     {isShared && wheelData && (
                       <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
@@ -1307,13 +1579,19 @@ export default function WheelApp() {
                     {isShared && (
                       <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
                         <RoundPanel
-                          restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name }))}
+                          restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name, tagIds: r.tags.map((tag) => tag.id) }))}
                           tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color, category: t.category }))}
                           session={session}
                           currentUserId={user.id}
+                          people={[
+                            ...(wheelData?.owner ? [{ userId: wheelData.owner.id, name: wheelData.owner.name, email: wheelData.owner.email }] : []),
+                            ...(realtimeQuery.data?.members ?? wheelData?.members ?? []),
+                          ]}
+                          onAddCuisines={() => setActiveTab("restaurants")}
                           onVote={(id) => selectedWheelId && voteMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
                           onVeto={(id) => selectedWheelId && vetoMutation.mutate({ wheelId: selectedWheelId, restaurantId: id })}
-                          onDietary={(tagId) => selectedWheelId && dietaryMutation.mutate({ wheelId: selectedWheelId, tagId })}
+                          myDietary={myDietary}
+                          onToggleDietary={toggleMyDietary}
                           onClear={() => selectedWheelId && clearRound.mutate({ wheelId: selectedWheelId })}
                           collapsible
                         />
@@ -1406,12 +1684,23 @@ export default function WheelApp() {
 
                             {/* A spent or empty Spin goes grey, not pale persimmon —
                                 the same state override GuestWheel's Spin carries. */}
+                            {wheelSegments.length === 1 && !isSpinning && (
+                              <p className="type-meta text-center" style={{ color: "var(--body)" }}>
+                                {t("app.wheel.onlyOne", { name: wheelSegments[0].label })}
+                              </p>
+                            )}
                             <Button
-                              onClick={handleSpin}
+                              onClick={wheelSegments.length === 1 && !isSpinning ? handleGoThere : handleSpin}
                               disabled={spinDisabled}
                               className={cn("w-full", spinDisabled && "bg-none bg-muted text-muted-foreground")}
                             >
-                              {isSpinning || createSpin.isPending ? t("app.wheel.spinning") : t("app.wheel.spin")}
+                              {isSpinning || createSpin.isPending
+                                ? t("app.wheel.spinning")
+                                : wheelSegments.length === 1
+                                  ? t("app.wheel.goThere")
+                                  : myReplaceable
+                                  ? t("app.wheel.spinReplace", { name: myReplaceable.name })
+                                  : t("app.wheel.spin")}
                             </Button>
 
                             {/* The muted line under the stack: how many are on the
@@ -1453,6 +1742,15 @@ export default function WheelApp() {
                                     <span className="inline-flex items-center gap-1">
                                       <Clock3 size={12} className="flex-shrink-0" />
                                       {t("app.wheel.closed", { n: closedCount })}
+                                    </span>
+                                  </>
+                                )}
+                                {closingSoonCount > 0 && (
+                                  <>
+                                    {" · "}
+                                    <span className="inline-flex items-center gap-1">
+                                      <Clock3 size={12} className="flex-shrink-0" />
+                                      {t("app.wheel.closingSoon", { n: closingSoonCount })}
                                     </span>
                                   </>
                                 )}
@@ -1546,9 +1844,6 @@ export default function WheelApp() {
                   <HistoryTab
                     wheelId={selectedWheelId}
                     onReenabled={refetchRestaurants}
-                    isShared={isShared}
-                    exclusionDays={wheelData?.exclusionDays}
-                    currentUserId={user.id}
                     onGoToWheel={() => setActiveTab("wheel")}
                   />
                 )}
@@ -1575,7 +1870,7 @@ export default function WheelApp() {
                 blurred flat gradient is the same flat gradient, so the dock
                 could only ever read as a slightly paler rectangle. The list
                 running under it IS the material. */}
-            <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="dock" />
+            <TabRail items={tabConfig} value={activeTab} onChange={switchTab} variant="dock" />
           </nav>
         </main>
       </div>
@@ -1603,12 +1898,18 @@ export default function WheelApp() {
               ) : null
             }
             onAccept={handleAccept}
+            acceptLabel={t(isShared ? "wheel.result.tellTeam" : "wheel.result.soundsGood")}
+            readOnly={!!replay}
+            eyebrow={replay ? t("app.realtime.theirPick", { name: replay.by }) : undefined}
             onRespin={handleReSpin}
             respinDisabled={wheelSegments.length === 0}
             onDirections={() => openDirections(spinResult)}
-            onDismiss={() => setShowResult(false)}
+            onDismiss={() => {
+              setShowResult(false);
+              setReplay(null);
+            }}
           >
-            {isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
+            {!replay && isEarlySpin && wheelData && wheelData.exclusionDays > 0 && (
               <div className="glass-chip flex items-start gap-2.5 px-4 py-3 w-full text-left">
                 <Clock size={14} className="flex-shrink-0 mt-0.5" style={{ color: "var(--brand-text)" }} />
                 <span className="type-meta" style={{ color: "var(--body)" }}>
@@ -1619,20 +1920,6 @@ export default function WheelApp() {
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-3 w-full">
-              <span className="type-eyebrow" style={{ color: "var(--muted-foreground)" }}>
-                {t("app.result.rate")}
-              </span>
-              <StarRating
-                value={myStarsFor(spinResult.id)}
-                size={26}
-                disabled={rateRestaurant.isPending}
-                onChange={(stars) =>
-                  selectedWheelId &&
-                  rateRestaurant.mutate({ wheelId: selectedWheelId, restaurantId: spinResult.id, stars })
-                }
-              />
-            </div>
           </WinnerSurface>
         );
       })()}

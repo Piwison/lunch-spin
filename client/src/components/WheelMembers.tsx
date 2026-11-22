@@ -1,6 +1,7 @@
 import { Crown, Users, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { useLang } from "@/i18n";
+import { initials } from "@/lib/initials";
 
 interface Member {
   userId: number;
@@ -17,13 +18,6 @@ interface WheelMembersProps {
   presentUserIds?: number[];
   /** When true, the roster collapses behind its header (collapsed by default). */
   collapsible?: boolean;
-}
-
-function initials(name: string | null, email: string | null): string {
-  const source = name?.trim() || email?.split("@")[0] || "?";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
-  return source.slice(0, 2).toUpperCase();
 }
 
 /**

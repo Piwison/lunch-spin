@@ -2,6 +2,10 @@
  * Pure restaurant-stats shaping. Shared by the stats UI and its tests.
  */
 
+import type { LunchStats } from "./lunch";
+
+/** One place on the wheel. Counts lunches (shared/lunch.ts), never raw spins:
+ *  a respun or skipped spin is not a visit. */
 export interface RestaurantStat {
   id: number;
   name: string;
@@ -9,52 +13,20 @@ export interface RestaurantStat {
   lastPickedAt: Date | null;
 }
 
-/**
- * Coerce a raw stats row (MySQL returns COUNT as a string in some drivers) into
- * a well-typed stat.
- */
-export function normalizeStatRow(row: {
-  id: number;
-  name: string;
-  pickCount: unknown;
-  lastPickedAt: unknown;
-}): RestaurantStat {
-  return {
-    id: Number(row.id),
-    // Defensive: a stray/malformed row must never produce a non-string name,
-    // or the stats UI (which calls name.length) crashes the whole History tab.
-    name: typeof row.name === "string" ? row.name : String(row.name ?? ""),
-    pickCount: Number(row.pickCount ?? 0) || 0,
-    lastPickedAt: row.lastPickedAt ? new Date(row.lastPickedAt as string) : null,
-  };
-}
-
-/** Most-picked first; ties broken by most-recently picked. */
-export function rankStats(stats: RestaurantStat[]): RestaurantStat[] {
-  return [...stats].sort((a, b) => {
-    if (b.pickCount !== a.pickCount) return b.pickCount - a.pickCount;
-    const at = a.lastPickedAt?.getTime() ?? 0;
-    const bt = b.lastPickedAt?.getTime() ?? 0;
-    return bt - at;
+/** Every place on the wheel, eaten at or not, with its lunch count. */
+export function statsFromLunches(rests: { id: number; name: string }[], lunches: LunchStats): RestaurantStat[] {
+  return rests.map((r) => {
+    const l = lunches.byRestaurant.get(r.id);
+    return { id: r.id, name: r.name, pickCount: l?.lunchCount ?? 0, lastPickedAt: l?.lastLunchAt ?? null };
   });
 }
 
-export function topRestaurants(stats: RestaurantStat[], n = 5): RestaurantStat[] {
-  return rankStats(stats).slice(0, n);
-}
-
-export function totalPicks(stats: RestaurantStat[]): number {
-  return stats.reduce((sum, r) => sum + r.pickCount, 0);
-}
-
-export function averagePicks(stats: RestaurantStat[]): number {
-  return stats.length > 0 ? totalPicks(stats) / stats.length : 0;
-}
-
-/** Whole days since a restaurant was last picked; null if it never has been. */
+/** Whole days since a restaurant was last picked; null if it never has been.
+ *  Never negative: a viewer whose clock runs a little behind the server's would
+ *  otherwise see "-1d". */
 export function daysSinceLastPick(lastPickedAt: Date | null, now: Date = new Date()): number | null {
   if (!lastPickedAt) return null;
-  return Math.floor((now.getTime() - lastPickedAt.getTime()) / 86400000);
+  return Math.max(0, Math.floor((now.getTime() - lastPickedAt.getTime()) / 86400000));
 }
 
 export interface OverdueEntry {
@@ -86,24 +58,4 @@ export function overdueRestaurants(
     if (b.daysSince === null) return 1;
     return b.daysSince - a.daysSince; // longest-overdue first
   });
-}
-
-export interface PersonPicks {
-  userId: number;
-  name: string | null;
-  count: number;
-}
-
-/**
- * Group fairness: how many spins each member has driven. Most-active first.
- * A lopsided list is the signal that one person is always deciding.
- */
-export function picksByPerson(history: { spunBy: number; spunByName: string | null }[]): PersonPicks[] {
-  const byUser = new Map<number, PersonPicks>();
-  for (const h of history) {
-    const cur = byUser.get(h.spunBy);
-    if (cur) cur.count++;
-    else byUser.set(h.spunBy, { userId: h.spunBy, name: h.spunByName, count: 1 });
-  }
-  return Array.from(byUser.values()).sort((a, b) => b.count - a.count);
 }

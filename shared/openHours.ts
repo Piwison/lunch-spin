@@ -149,3 +149,68 @@ export function isSpinnableNow(
   const state = openState(parsePeriods(rawOpenHours), now, utcOffsetMinutes ?? 0);
   return state.status !== "closed";
 }
+
+/** Minutes a place must stay open beyond the walk, to be worth spinning. */
+export const TOO_LATE_BUFFER_MINUTES = 20;
+
+/**
+ * Would you get there with time to eat? A place that closes within the walk
+ * plus a buffer comes off the wheel like a closed one. Unknown hours are never
+ * too late (same rule as everywhere else here); an unknown walk counts as zero,
+ * so only the buffer applies.
+ */
+export function tooLateToGo(
+  { minutesUntilClose, walkSeconds }: { minutesUntilClose: number | null; walkSeconds: number | null },
+  bufferMin: number = TOO_LATE_BUFFER_MINUTES,
+): boolean {
+  if (minutesUntilClose == null) return false;
+  return minutesUntilClose < (walkSeconds ?? 0) / 60 + bufferMin;
+}
+
+/**
+ * "14:30": when the opening you are in right now ends, in the place's own
+ * local time. Null when it is closed, open around the clock, or hours are
+ * unknown.
+ */
+export function closesAtLabel(periods: OpenPeriod[] | null, now: Date, utcOffsetMinutes: number): string | null {
+  if (!periods || periods.length === 0) return null;
+  const nowMinutes = localWeekMinutes(now, utcOffsetMinutes);
+  let best: OpenPeriod | null = null;
+  let bestLeft = Number.POSITIVE_INFINITY;
+  for (const p of periods) {
+    const left = activeMinutesLeft(p, nowMinutes);
+    if (left === null || !Number.isFinite(left)) continue;
+    if (left < bestLeft) {
+      bestLeft = left;
+      best = p;
+    }
+  }
+  if (!best?.close) return null;
+  return `${best.close.time.slice(0, 2)}:${best.close.time.slice(2, 4)}`;
+}
+
+export interface HoursView {
+  openStatus: OpenStatus;
+  minutesUntilClose: number | null;
+  tooLate: boolean;
+  closesAt: string | null;
+}
+
+/** Everything the wheel and the lists show about a place's hours, computed once
+ *  server-side so the wheel a person sees is the wheel spins.create allows. */
+export function hoursView(
+  rawOpenHours: unknown,
+  utcOffsetMinutes: number | null,
+  walkSeconds: number | null,
+  now: Date = new Date(),
+): HoursView {
+  const periods = parsePeriods(rawOpenHours);
+  const offset = utcOffsetMinutes ?? 0;
+  const state = openState(periods, now, offset);
+  return {
+    openStatus: state.status,
+    minutesUntilClose: state.minutesUntilClose,
+    tooLate: state.status !== "closed" && tooLateToGo({ minutesUntilClose: state.minutesUntilClose, walkSeconds }),
+    closesAt: closesAtLabel(periods, now, offset),
+  };
+}

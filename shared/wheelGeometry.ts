@@ -19,7 +19,7 @@
 /** The spin, end to end (spec §3). */
 export const SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
-  windupMs: 180,
+  windupMs: 100,
   /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
    *  server is still choosing — this is the floor, not the ceiling.
    *
@@ -27,10 +27,17 @@ export const SPIN_TIMELINE = {
    *  length: with the old decay curve the wheel finished 96% of its rotation in
    *  the first half of the decay, so most of what you sat through was a disc
    *  that had already stopped moving. Shortening the phase and spreading the
-   *  deceleration across it are the same fix. */
-  travelMs: 1900,
+   *  deceleration across it are the same fix.
+   *
+   *  1900 -> 600 (2026-11). Still too long, and the owner asked for it to lose
+   *  more than half. Measured in the replica with a 64ms server reply: tap ->
+   *  disc at rest went from 2389ms to about a second. The spin is shorter
+   *  because it turns fewer times at a higher speed (MIN_LAND_TURNS,
+   *  FREE_SPIN_SPEED), not because the decay was squeezed: decayDurationMs
+   *  still sizes the deceleration so it never outruns the free spin. */
+  travelMs: 600,
   /** Lands the winning pane on the pointer. `--ease-settle`. */
-  settleMs: 220,
+  settleMs: 180,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -44,12 +51,12 @@ export const SPIN_TIMELINE = {
 } as const;
 
 /**
- * 3.62s, as the spec quotes.
+ * Tap to the winner's name fully unrolled, on a fast reply.
  *
- * Laid end to end the five phases come to 3080ms, so they only reconcile with
- * the stated total if the unroll begins 160ms into the 320ms recede — which is
- * also what it should look like, the type resolving while the disc is still on
- * its way back. The overlap is the reason this constant is not a sum.
+ * Laid end to end the phases overshoot this, so they only reconcile if the
+ * unroll begins 160ms into the 320ms recede — which is also what it should look
+ * like, the type resolving while the disc is still on its way back. The overlap
+ * is the reason the recede is not in the sum.
  */
 export const SPIN_TOTAL_MS =
   SPIN_TIMELINE.windupMs +
@@ -57,6 +64,42 @@ export const SPIN_TOTAL_MS =
   SPIN_TIMELINE.settleMs +
   SPIN_TIMELINE.unrollDelayMs +
   SPIN_TIMELINE.unrollMs;
+
+/**
+ * Constant free-spin speed, deg/ms (~6.7 turns/s).
+ *
+ * 1.49 -> 2.4 with the shorter spin. The decay may never turn faster than this
+ * (DECAY_PEAK), so this number is what lets the same arc be covered in less
+ * time without a kick at the handover. Kept under one 8-place pane-pair (90deg)
+ * per two 60Hz frames, so the alternating glass does not strobe backwards.
+ */
+export const FREE_SPIN_SPEED = 2.4;
+
+/**
+ * Whole turns the landing must cover, so the stop reads as a decision.
+ *
+ * Five, then four, now two (2026-11, the "under half" spin): the spin is
+ * shorter because it turns less, not because it hurries. Two whole turns plus
+ * up to one of alignment is still well past the point where anyone could track
+ * which pane is coming. The handover speed is `decayMs`'s job, not this
+ * constant's — see `decayDurationMs`, which sizes the deceleration to whatever
+ * arc the landing picks.
+ */
+export const MIN_LAND_TURNS = 2;
+
+/**
+ * The final arc handed to the settle, where the overshoot lives.
+ *
+ * Kept well under a half-pane (22.5° at eight places) so the bounce never
+ * carries the pointer off the winning pane and back — the wheel wavers between
+ * two panes during the decay, which is intended, but once it has landed it has
+ * landed.
+ */
+export const SETTLE_DEG = 12;
+
+/** The longest arc a landing's decay can cover: the minimum turns plus up to a
+ *  full turn of alignment, less the settle (landingRotationDeg). */
+export const MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
 
 /** Full size out to here; beyond FAR_DEG a label is not rendered at all. */
 const SHARP_DEG = 22.5;
@@ -488,3 +531,26 @@ export function decayDurationMs(arcDeg: number, freeSpinSpeed: number): number {
   if (freeSpinSpeed <= 0) return 0;
   return (Math.abs(arcDeg) * DECAY_PEAK) / freeSpinSpeed;
 }
+
+/**
+ * How long after a spin is recorded its result may be shown to anyone but the
+ * person who spun it: the longest the spinner's own wheel can take to land and
+ * unroll the name. A teammate who hears the answer before the spinner sees it
+ * spoils the one moment the app exists for (7d in the 2026-09-24 plan).
+ *
+ * Measured from the server's record of the spin, which is written when the
+ * winner is chosen. The spinner's wheel cannot start decelerating until the
+ * reply carrying that winner reaches it, so the trip back is allowed for too —
+ * without it the teammate's toast arrived 125–418ms after the spinner's result
+ * in the replica, which is too close to survive a slow phone network.
+ */
+export const REPLY_ALLOWANCE_MS = 500;
+
+export const SPIN_REVEAL_DELAY_MS = Math.ceil(
+  REPLY_ALLOWANCE_MS +
+  SPIN_TIMELINE.windupMs +
+    Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) +
+    SPIN_TIMELINE.settleMs +
+    SPIN_TIMELINE.unrollDelayMs +
+    SPIN_TIMELINE.unrollMs,
+);

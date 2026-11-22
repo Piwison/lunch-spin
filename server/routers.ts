@@ -9,33 +9,39 @@ import { parseRestaurantList } from "@shared/import";
 import { toPublicRestaurant, toPublicWheel } from "@shared/publicWheel";
 import { pickWinner } from "@shared/pick";
 import { applyCuisineRotation, computeWeights, pickWeighted, type Weighted } from "@shared/weight";
-import { applyVoteWeights, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
+import { applyVoteWeights, dietaryForPresent, excludedDietaryTagIds, vetoedIds, voteCounts } from "@shared/session";
 import { applyStarWeights, averageMapFromRows, clampStars, summarizeRatings } from "@shared/restaurantRating";
 import { buildTasteProfile } from "@shared/tasteProfile";
-import { isSpinnableNow, openState, parsePeriods } from "@shared/openHours";
+import { hoursView } from "@shared/openHours";
+import { SPIN_REVEAL_DELAY_MS } from "@shared/wheelGeometry";
 import { resolveBootstrapWheelId, speculativeWheelId } from "@shared/bootstrap";
 import { deriveAreaName, wheelNameForArea } from "@shared/areaName";
 import { classifyPlacesStatus } from "@shared/placesError";
 import { MAX_SEGMENTS } from "@shared/nearby";
 import { activePresence, buildSessionState } from "@shared/realtimeState";
+import { bySpinOrder, lunchStats, startOfTaipeiDay, todaysLunches, type PlaceLunches } from "@shared/lunch";
 import { DEFAULT_RADIUS_M, rankNearby } from "@shared/nearby";
 import { CANDIDATE_POOL, isCandidate } from "@shared/candidates";
 import { mergeExtraNames } from "@shared/demoDraft";
 import { addProviderRestaurants, copyWheelRestaurants } from "./db";
 import { mapProviderResults } from "@shared/placeMapping";
 import { matchCuisineTag } from "@shared/cuisineTag";
+import { guessCuisine } from "@shared/cuisineGuess";
 import { mergeWalkTimes, routableCoords } from "@shared/walkTime";
 import { isPlacesConfigured, resolvePlaceLink, searchNearbyRestaurants, searchPlacesByText, walkingMatrix } from "./places";
 import { computeDistancesFor, maybeComputeOneDistance, recomputeWheelDistances } from "./distance";
 import { maybeFetchOneRestaurantHours, refreshWheelHours } from "./openHours";
 import {
-  clearRoundAll,
+  clearRoundMarks,
   clearRoundVotes,
   getActivePresence,
-  getLatestSpin,
+  getPresentDietary,
   getRoundMarks,
+  getUserDietary,
   pingPresence,
+  setUserDietary,
   toggleRoundMark,
+  placeRoundMark,
 } from "./db";
 import {
   addRestaurant,
@@ -55,7 +61,9 @@ import {
   getRestaurantsByWheel,
   getWheelCopyCount,
   getRestaurantStats,
+  getSpinFacts,
   getSpinHistory,
+  getSpinsSince,
   markNotificationsRead,
   getTagsForWheel,
   getUserById,
@@ -73,7 +81,54 @@ import {
   updateWheel,
   upsertRestaurantRating,
   getWheelRatingRows,
+  markSpinSkipped,
+  getOwnedTeamWheels,
+  transferWheelOwnership,
 } from "./db";
+
+/** The today card's rows (one per lunch decided today) and the newest spin of
+ *  any kind (for the teammate toast), from one read of today's spins.
+ *
+ *  Someone else's spin stays off `viewerId`'s card until it is
+ *  SPIN_REVEAL_DELAY_MS old — the spinner's own wheel is still turning until
+ *  then, and a teammate must not learn the answer first (plan 7d). It still
+ *  counts for classification, so a fresh respin still retires the lunch it
+ *  replaces. `latestSpin.ageMs` is measured on this clock, so the client can
+ *  time the toast without trusting its own. */
+function todayView(rows: Awaited<ReturnType<typeof getSpinsSince>>, now: Date, viewerId: number) {
+  const revealed = (r: { spunBy: number; spunAt: Date }) =>
+    r.spunBy === viewerId || now.getTime() - r.spunAt.getTime() >= SPIN_REVEAL_DELAY_MS;
+  const today = todaysLunches(rows, now).filter(revealed).map((r) => {
+    const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+    return {
+      spinId: r.id,
+      restaurantId: r.restaurantId,
+      name: r.restaurantName,
+      spunBy: r.spunBy,
+      spunByName: r.spunByName,
+      spunAt: r.spunAt,
+      accepted: r.accepted,
+      walkSeconds: r.walkSeconds,
+      openStatus: h.openStatus,
+      minutesUntilClose: h.minutesUntilClose,
+      closesAt: h.closesAt,
+      mapUrl: r.mapUrl,
+    };
+  });
+  const last = rows.reduce<(typeof rows)[number] | null>((a, b) => (!a || bySpinOrder(b, a) > 0 ? b : a), null);
+  const latestSpin = last
+    ? {
+        id: last.id,
+        restaurantId: last.restaurantId,
+        restaurantName: last.restaurantName,
+        spunBy: last.spunBy,
+        spunByName: last.spunByName,
+        spunAt: last.spunAt,
+        ageMs: now.getTime() - last.spunAt.getTime(),
+      }
+    : null;
+  return { today, latestSpin };
+}
 
 // A presence heartbeat counts as "online" for this long after the last ping.
 // Kept ≥ 2.5× the client's ~10s ping interval so one dropped beat doesn't flicker.
@@ -89,6 +144,10 @@ const nearbyPlaceSchema = z.object({
   priceLevel: z.number().int().min(1).max(4).nullable(),
   cuisine: z.string().max(64).nullable(),
   mapUrl: z.string().max(512).nullable().optional(),
+  // Google's rating and review count from the same search result — stored for
+  // display (the team's own stars are what weight a spin).
+  rating: z.number().min(1).max(5).nullable().optional(),
+  ratingCount: z.number().int().min(0).nullable().optional(),
 });
 type NearbyPlaceInput = z.infer<typeof nearbyPlaceSchema>;
 
@@ -132,7 +191,9 @@ async function addNearbyPlaces(
     wheelId,
     userId,
     fresh.map((place) => {
-      const cuisineTag = matchCuisineTag(place.cuisine, wheelTags);
+      // Google's cuisine when it gave one, else the name's (a suggested tag the
+      // team can change) — "restaurant" is all Google says for most places.
+      const cuisineTag = matchCuisineTag(place.cuisine ?? guessCuisine(place.name), wheelTags);
       return {
         name: place.name,
         mapUrl: place.mapUrl ?? null,
@@ -144,6 +205,8 @@ async function addNearbyPlaces(
           address: place.address,
           priceLevel: place.priceLevel,
           cuisine: place.cuisine,
+          rating: place.rating ?? null,
+          ratingCount: place.ratingCount ?? null,
         },
       };
     }),
@@ -160,7 +223,11 @@ async function addNearbyPlaces(
   // request, so the whole batch is one call via computeDistancesFor. Looping
   // maybeComputeOneDistance here would have billed one request per restaurant.
   await Promise.allSettled([
-    ...rows.map((r) => maybeFetchOneRestaurantHours(r.id, r.placeId)),
+    ...rows.map((r) =>
+      maybeFetchOneRestaurantHours(r.id, r.placeId, {
+        withRating: fresh.find((f) => f.placeId === r.placeId)?.rating == null,
+      }),
+    ),
     computeDistancesFor(wheelId, rows.map((r) => r.id)),
   ]);
 
@@ -196,9 +263,29 @@ export const appRouter = router({
     }),
   }),
 
+  // ─── Account ────────────────────────────────────────────────────────────────
+
+  account: router({
+    // Team wheels deleting this account would take away from teammates.
+    ownedTeamWheels: protectedProcedure.query(async ({ ctx }) => getOwnedTeamWheels(ctx.user.id)),
+  }),
+
   // ─── Wheels ─────────────────────────────────────────────────────────────────
 
   wheels: router({
+    // Give a wheel to one of its members — the owner only, and only to someone
+    // already on it. How a team keeps its wheel when the owner deletes their account.
+    transferOwnership: protectedProcedure
+      .input(z.object({ wheelId: z.number(), toUserId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const wheel = await getWheelById(input.wheelId);
+        if (!wheel) throw new TRPCError({ code: "NOT_FOUND" });
+        if (wheel.ownerId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const ok = await transferWheelOwnership(input.wheelId, ctx.user.id, input.toUserId);
+        if (!ok) throw new TRPCError({ code: "BAD_REQUEST", message: "That person isn't on this wheel." });
+        return { success: true };
+      }),
+
     list: protectedProcedure.query(async ({ ctx }) => {
       return getUserWheels(ctx.user.id);
     }),
@@ -278,16 +365,12 @@ export const appRouter = router({
         ]);
         const now = new Date();
         // Same shape as restaurants.list — the client seeds that cache with it.
-        const restaurants = rests.map((r) => {
-          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-          return {
-            ...r,
-            isExcluded: exclusions.has(r.id),
-            excludedUntil: exclusions.get(r.id) ?? null,
-            openStatus: hours.status,
-            minutesUntilClose: hours.minutesUntilClose,
-          };
-        });
+        const restaurants = rests.map((r) => ({
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now),
+        }));
 
         return {
           user,
@@ -370,12 +453,24 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        const [members, session, latestSpin] = await Promise.all([
+        // Today's spins replace what used to be a separate latest-spin read: the
+        // same one query gives the today card and the teammate-spin toast, so
+        // this 3s poll carries the card without a query more (failure mode 61).
+        // The "I don't eat" of everyone here today rides the same wave, so the
+        // viewer's wheel drops what the spin will drop, and the panel can say
+        // whose setting it was.
+        const now = new Date();
+        const [members, marks, spinsToday, dietary] = await Promise.all([
           getWheelMembers(input.wheelId),
-          getRoundMarks(input.wheelId).then(buildSessionState),
-          getLatestSpin(input.wheelId),
+          getRoundMarks(input.wheelId),
+          getSpinsSince(input.wheelId, startOfTaipeiDay(now)),
+          getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id),
         ]);
-        return { members, session, latestSpin };
+        const session = {
+          ...buildSessionState(marks, now),
+          dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id),
+        };
+        return { members, session, ...todayView(spinsToday, now, ctx.user.id) };
       }),
 
     create: protectedProcedure
@@ -511,7 +606,8 @@ export const appRouter = router({
           source.fairnessMode,
           source.rotateCuisines,
         );
-        if (source.distanceEnabled && source.originLat != null && source.originLng != null) {
+        const sameOrigin = source.distanceEnabled && source.originLat != null && source.originLng != null;
+        if (sameOrigin) {
           await setWheelOrigin(newId, {
             distanceEnabled: true,
             originLat: Number(source.originLat),
@@ -525,7 +621,7 @@ export const appRouter = router({
         // key — nothing in this schema is — so deleting either wheel leaves the
         // other intact and the count simply stops finding it.
         await updateWheel(newId, { sourceWheelId: input.id });
-        const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id);
+        const copied = await copyWheelRestaurants(input.id, newId, ctx.user.id, { copyWalkSeconds: sameOrigin });
         return { id: newId, name, restaurants: copied };
       }),
 
@@ -747,18 +843,14 @@ export const appRouter = router({
         const rests = await getRestaurantsByWheel(input.wheelId);
         const exclusions = await getExclusions(input.wheelId, wheel.exclusionDays);
         const now = new Date();
-        return rests.map((r) => {
-          // Computed server-side so every client agrees on "open now" — and so the
-          // wheel the user sees matches what spins.create will actually allow.
-          const hours = openState(parsePeriods(r.openHours), now, r.utcOffsetMinutes ?? 0);
-          return {
-            ...r,
-            isExcluded: exclusions.has(r.id),
-            excludedUntil: exclusions.get(r.id) ?? null,
-            openStatus: hours.status,
-            minutesUntilClose: hours.minutesUntilClose,
-          };
-        });
+        // Computed server-side so every client agrees on "open now" — and so the
+        // wheel the user sees matches what spins.create will actually allow.
+        return rests.map((r) => ({
+          ...r,
+          isExcluded: exclusions.has(r.id),
+          excludedUntil: exclusions.get(r.id) ?? null,
+          ...hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now),
+        }));
       }),
 
     // The restaurant half of a public wheel (guests spin everything — no exclusion
@@ -811,7 +903,7 @@ export const appRouter = router({
           // adding the restaurant still succeeded; distance is a courtesy
         }
         // Opening hours, same best-effort contract (never throws).
-        await maybeFetchOneRestaurantHours(id, input.placeId ?? null);
+        await maybeFetchOneRestaurantHours(id, input.placeId ?? null, { withRating: true });
         return { id };
       }),
 
@@ -1006,6 +1098,7 @@ export const appRouter = router({
           cuisine: p.cuisine,
           priceLevel: p.priceLevel,
           open: p.open ?? null,
+          temporarilyClosed: p.temporarilyClosed,
           lat: p.lat,
           lng: p.lng,
           address: p.address,
@@ -1029,16 +1122,7 @@ export const appRouter = router({
       .input(
         z.object({
           wheelId: z.number(),
-          place: z.object({
-            placeId: z.string().min(1).max(256),
-            name: z.string().min(1).max(128),
-            lat: z.number().min(-90).max(90).nullable(),
-            lng: z.number().min(-180).max(180).nullable(),
-            address: z.string().max(512).nullable(),
-            priceLevel: z.number().int().min(1).max(4).nullable(),
-            cuisine: z.string().max(64).nullable(),
-            mapUrl: z.string().max(512).nullable().optional(),
-          }),
+          place: nearbyPlaceSchema,
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -1056,7 +1140,7 @@ export const appRouter = router({
         // placeMapping emits). The matched tag becomes the primary tag, so the
         // place gets its wheel-segment color and joins cuisine rotation.
         const wheelTags = await getTagsForWheel(input.wheelId);
-        const cuisineTag = matchCuisineTag(input.place.cuisine, wheelTags);
+        const cuisineTag = matchCuisineTag(input.place.cuisine ?? guessCuisine(input.place.name), wheelTags);
         const id = await addRestaurant(
           input.wheelId,
           ctx.user.id,
@@ -1071,6 +1155,8 @@ export const appRouter = router({
             address: input.place.address,
             priceLevel: input.place.priceLevel,
             cuisine: input.place.cuisine,
+            rating: input.place.rating ?? null,
+            ratingCount: input.place.ratingCount ?? null,
           },
         );
         // Best-effort: this restaurant already has provider coordinates, so
@@ -1083,7 +1169,7 @@ export const appRouter = router({
         }
         // Same contract for opening hours: a provider place has a placeId, so
         // fetch its weekly hours now. Never throws (see server/openHours.ts).
-        await maybeFetchOneRestaurantHours(id, input.place.placeId);
+        await maybeFetchOneRestaurantHours(id, input.place.placeId, { withRating: input.place.rating == null });
         return { id, duplicate: false as const, taggedAs: cuisineTag?.name ?? null };
       }),
 
@@ -1239,32 +1325,46 @@ export const appRouter = router({
         // here rather than inside the branch below because the settings that
         // decide whether they are used are already known — waiting to ask until
         // the branch is reached is what made them a ninth and tenth hop.
-        const [rests, exclusions, roundMarks, ratingRows, spinStats, history] = await Promise.all([
+        // Fairness and cuisine rotation both read the wheel's spins, and both
+        // count only lunches (shared/lunch.ts), so one read serves the two.
+        // "I don't eat" is one more read in the SAME wave: whose settings apply
+        // (here today, plus the spinner) comes back with the settings, in one
+        // query (failure mode 52).
+        const now = new Date();
+        const [rests, exclusions, roundMarks, ratingRows, spinFacts, dietary] = await Promise.all([
           getRestaurantsByWheel(input.wheelId),
           getExclusions(input.wheelId, wheel.exclusionDays),
           getRoundMarks(input.wheelId),
           getWheelRatingRows(input.wheelId),
-          wheel.fairnessMode ? getRestaurantStats(input.wheelId) : undefined,
-          wheel.rotateCuisines ? getSpinHistory(input.wheelId) : undefined,
+          wheel.fairnessMode || wheel.rotateCuisines ? getSpinFacts(input.wheelId) : undefined,
+          getPresentDietary(input.wheelId, startOfTaipeiDay(now), ctx.user.id),
         ]);
         const valid = new Set(rests.map((r) => r.id));
-        // Server reads the live session itself (anti-tamper): vetoed restaurants
-        // are out, votes bias the weighting.
-        const session = buildSessionState(roundMarks);
+        // Server reads the live session itself (anti-tamper): today's vetoes are
+        // out, today's votes bias the weighting.
+        const session = {
+          ...buildSessionState(roundMarks, now),
+          dietary: dietaryForPresent(dietary.prefs, dietary.presentUserIds, ctx.user.id),
+        };
         const vetoed = new Set(vetoedIds(session));
-        // Dietary constraints: any restaurant carrying an avoided tag is out.
+        // "I don't eat": any restaurant carrying a present person's tag is out.
         const avoidedTags = new Set(excludedDietaryTagIds(session));
         const dietaryBlocked = new Set(
           avoidedTags.size === 0
             ? []
             : rests.filter((r) => r.tags.some((t) => avoidedTags.has(t.id))).map((r) => r.id),
         );
-        // Closed right now? Hard filter, decided server-side so a tampered
-        // candidate list can't spin a closed restaurant. Restaurants with unknown
-        // hours are spinnable (isSpinnableNow) — most wheels have hand-typed
+        // Closed right now, or closing before you'd get there with time to eat?
+        // Hard filter, decided server-side so a tampered candidate list can't
+        // spin one. Unknown hours are spinnable — most wheels have hand-typed
         // places with no provider hours, and dropping those would gut the wheel.
         const closedNow = new Set(
-          rests.filter((r) => !isSpinnableNow(r.openHours, r.utcOffsetMinutes)).map((r) => r.id),
+          rests
+            .filter((r) => {
+              const h = hoursView(r.openHours, r.utcOffsetMinutes, r.walkSeconds, now);
+              return h.openStatus === "closed" || h.tooLate;
+            })
+            .map((r) => r.id),
         );
         const eligible = input.candidateIds.filter(
           (id) =>
@@ -1295,24 +1395,25 @@ export const appRouter = router({
         const hasRatings = ratings.size > 0;
         let restaurantId: number;
         if (wheel.fairnessMode || wheel.rotateCuisines || hasVotes || hasRatings) {
+          const lunches = spinFacts ? lunchStats(spinFacts).byRestaurant : new Map<number, PlaceLunches>();
           let base: Weighted[];
           if (wheel.fairnessMode) {
-            const lastPicked = new Map((spinStats ?? []).map((s) => [s.id, s.lastPickedAt]));
-            base = computeWeights(eligible.map((id) => ({ restaurantId: id, lastPickedAt: lastPicked.get(id) ?? null })));
+            base = computeWeights(
+              eligible.map((id) => ({ restaurantId: id, lastPickedAt: lunches.get(id)?.lastLunchAt ?? null })),
+            );
           } else {
             base = eligible.map((id) => ({ restaurantId: id, weight: 1 }));
           }
           if (wheel.rotateCuisines) {
-            // Each restaurant's cuisine, and when that cuisine was last picked.
+            // Each restaurant's cuisine, and when the team last had lunch in it.
             const cuisineOf = new Map(rests.map((r) => [r.id, r.tags.find((t) => t.category === "cuisine")?.id ?? null]));
             const cuisineLastPicked = new Map<number, Date>();
-            for (const h of history ?? []) {
-              const c = cuisineOf.get(h.restaurantId);
-              if (c == null) continue;
-              const at = new Date(h.spunAt);
+            lunches.forEach(({ lastLunchAt }, restaurantId) => {
+              const c = cuisineOf.get(restaurantId);
+              if (c == null) return;
               const cur = cuisineLastPicked.get(c);
-              if (!cur || at > cur) cuisineLastPicked.set(c, at);
-            }
+              if (!cur || lastLunchAt > cur) cuisineLastPicked.set(c, lastLunchAt);
+            });
             base = applyCuisineRotation(
               base,
               eligible.map((id) => ({ restaurantId: id, cuisineId: cuisineOf.get(id) ?? null })),
@@ -1345,6 +1446,17 @@ export const appRouter = router({
         return getSpinHistory(input.wheelId);
       }),
 
+    // The today card on a personal wheel. Shared wheels get the same rows from
+    // wheels.realtime, which they already poll — they never call this.
+    today: protectedProcedure
+      .input(z.object({ wheelId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const now = new Date();
+        return todayView(await getSpinsSince(input.wheelId, startOfTaipeiDay(now)), now, ctx.user.id).today;
+      }),
+
     // ACCEPT — "we're eating here". Flips this spin to the full-window exclusion
     // tier and, on a shared wheel, notifies the rest of the team. Idempotent:
     // acceptSpin no-ops (and creates no duplicate notification) if it's already
@@ -1356,6 +1468,18 @@ export const appRouter = router({
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
         const result = await acceptSpin(input.spinId, input.wheelId, ctx.user.id);
         return { success: result != null };
+      }),
+
+    // "We didn't go." Only the person who spun it can say so — it changes what
+    // the whole team is excluded from and what History counts.
+    markSkipped: protectedProcedure
+      .input(z.object({ wheelId: z.number(), spinId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
+        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
+        const ok = await markSpinSkipped(input.spinId, input.wheelId, ctx.user.id);
+        if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
+        return { success: true };
       }),
 
     reenable: protectedProcedure
@@ -1420,30 +1544,41 @@ export const appRouter = router({
       }),
 
     vote: protectedProcedure
-      .input(z.object({ wheelId: z.number(), restaurantId: z.number() }))
+      // `on: true` only ever adds the vote (History's "due for a comeback"); the
+      // round panel omits it and toggles.
+      .input(z.object({ wheelId: z.number(), restaurantId: z.number(), on: z.literal(true).optional() }))
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+        if (input.on) await placeRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
+        else await toggleRoundMark(input.wheelId, "vote", input.restaurantId, ctx.user.id);
         return { success: true };
       }),
 
-    dietary: protectedProcedure
-      .input(z.object({ wheelId: z.number(), tagId: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const isMember = await isWheelMember(input.wheelId, ctx.user.id);
-        if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await toggleRoundMark(input.wheelId, "dietary", input.tagId, ctx.user.id);
-        return { success: true };
-      }),
-
+    // Today's votes and vetoes only. Anyone's "I don't eat" is theirs, and a
+    // teammate pressing Clear used to wipe it.
     clear: protectedProcedure
       .input(z.object({ wheelId: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const isMember = await isWheelMember(input.wheelId, ctx.user.id);
         if (!isMember) throw new TRPCError({ code: "FORBIDDEN" });
-        await clearRoundAll(input.wheelId);
+        await clearRoundMarks(input.wheelId);
         return { success: true };
+      }),
+  }),
+
+  // ─── The signed-in person's own settings ─────────────────────────────────────
+
+  me: router({
+    // "I don't eat": set once, applies on every wheel, but only on the days
+    // this person opens that wheel (shared/session `dietaryForPresent`).
+    dietary: protectedProcedure.query(({ ctx }) => getUserDietary(ctx.user.id)),
+
+    setDietary: protectedProcedure
+      .input(z.object({ tagIds: z.array(z.number().int().positive()).max(64) }))
+      .mutation(async ({ ctx, input }) => {
+        await setUserDietary(ctx.user.id, input.tagIds);
+        return { tagIds: Array.from(new Set(input.tagIds)) };
       }),
   }),
 

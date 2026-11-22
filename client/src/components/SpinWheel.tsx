@@ -4,6 +4,9 @@ import {
   EASE_EXIT,
   EASE_SETTLE,
   EASE_STANDARD,
+  FREE_SPIN_SPEED,
+  MIN_LAND_TURNS,
+  SETTLE_DEG,
   SPIN_TIMELINE,
   decayDurationMs,
   landingRotationDeg,
@@ -92,28 +95,9 @@ const DISC_CENTER_X = 0.5;
 /** Degrees the disc counter-rotates on the wind-up, before it releases. */
 const WINDUP_DEG = 14;
 
-/** Constant free-spin speed, deg/ms (~4 turns/s). */
-const FREE_SPIN_SPEED = 1.49;
-
-/**
- * Whole turns the landing must cover, so the stop reads as a decision.
- *
- * Four rather than five over the shortened travel: the spin is shorter because
- * it turns less, not because it hurries. The handover speed is `decayMs`'s job,
- * not this constant's — see `decayDurationMs`, which sizes the deceleration to
- * whatever arc the landing picks.
- */
-const MIN_LAND_TURNS = 4;
-
-/**
- * The final arc handed to the settle, where the overshoot lives.
- *
- * Kept well under a half-pane (22.5° at eight places) so the bounce never
- * carries the pointer off the winning pane and back — the wheel wavers between
- * two panes during the decay, which is intended, but once it has landed it has
- * landed.
- */
-const SETTLE_DEG = 12;
+/* FREE_SPIN_SPEED, MIN_LAND_TURNS and SETTLE_DEG live in shared/wheelGeometry:
+   they bound how long a landing can take, which is what SPIN_REVEAL_DELAY_MS —
+   how long teammates wait before they are told — is derived from. */
 
 /** Zoomed disc diameter, as a multiple of the frame width (spec §4). */
 const ZOOM_DISC_TO_FRAME = 1.9;
@@ -348,7 +332,8 @@ export default function SpinWheel({
    *     very next render, because excluding the winner is what a spin DOES and
    *     the effect keyed on the segment count.
    *   · the angle is normalised. `targetAngle` carries the spin's whole travel
-   *     (four turns plus the landing arc — 1957° for a 390px phone at 8 panes),
+   *     (the minimum turns plus the landing arc — 1957° for a 390px phone at 8 panes
+   *     when the minimum was four),
    *     and any later re-seat to an absolute seat angle then reads as the disc
    *     unwinding every one of those turns. Measured: a 1713° snap backwards, on
    *     a disc sitting at 0.72 opacity behind the winner. Rotation is periodic
@@ -463,7 +448,8 @@ export default function SpinWheel({
       // so the wheel speeds up at the one moment nothing is pushing it —
       // measured at 1.46 -> 1.79 deg/ms before this floor existed.
       // This is also the floor when the server answers late: the shortest arc the
-      // landing can produce (4 turns less the settle) needs 1614ms, so there is
+      // landing can produce (MIN_LAND_TURNS less the settle) already needs
+      // decayDurationMs of it — 497ms at two turns and 2.4 deg/ms — so there is
       // no separate MIN_DECAY_MS — a constant that can never win an argument is
       // not a guard.
       const continuousMs = decayDurationMs(settleFromAngle - decayFromAngle, FREE_SPIN_SPEED);

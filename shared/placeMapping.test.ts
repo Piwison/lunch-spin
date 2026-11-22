@@ -136,6 +136,17 @@ describe("toNearbyPlace", () => {
     expect(toNearbyPlace({ place_id: "x" }, ORIGIN).permanentlyClosed).toBe(false);
   });
 
+  it("flags CLOSED_TEMPORARILY on its own, so the card can say 'temporarily closed'", () => {
+    // Showing a paused shop as "Closed now" sent people back at 13:00 to a
+    // shutter. It is still open=false for ranking; only the wording differs.
+    const paused = toNearbyPlace({ ...raw, business_status: "CLOSED_TEMPORARILY" }, ORIGIN);
+    expect(paused.temporarilyClosed).toBe(true);
+    expect(paused.open).toBe(false);
+    expect(toNearbyPlace(raw, ORIGIN).temporarilyClosed).toBe(false);
+    expect(toNearbyPlace({ ...raw, business_status: "CLOSED_PERMANENTLY" }, ORIGIN).temporarilyClosed).toBe(false);
+    expect(toNearbyPlace({ place_id: "x" }, ORIGIN).temporarilyClosed).toBe(false);
+  });
+
   it("falls back gracefully when optional fields are missing", () => {
     const bare: ProviderPlace = { place_id: "x", geometry: { location: ORIGIN } };
     const p = toNearbyPlace(bare, ORIGIN);

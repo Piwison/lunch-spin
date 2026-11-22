@@ -127,7 +127,16 @@ export default function GuestWheel() {
 
   return (
     <Shell>
-      <div className="w-full max-w-md mx-auto flex flex-col items-center gap-6 py-10 px-4">
+      <div className="w-full max-w-md mx-auto flex flex-col items-center gap-6 pt-4 pb-10 px-4">
+        {/* Whose page this is. A public link is mostly opened by people outside
+            the team, and the page never said what product it was. */}
+        <a href="/" className="self-start flex items-center gap-2.5 min-h-11">
+          <span className="w-6 h-6 orb-wheel flex-shrink-0" aria-hidden="true" />
+          <span className="type-section" style={{ fontSize: 16, color: "var(--ink-warm)" }}>
+            {t("app.brand")}
+          </span>
+        </a>
+
         {/* Header */}
         <div className="text-center">
           <div
@@ -144,6 +153,12 @@ export default function GuestWheel() {
           <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
             {wheel.name}
           </h1>
+          {/* The team's own wheel remembers what it ate and steers away from
+              it; this one does neither, and a visitor should know before
+              treating a spin here as the team's pick. */}
+          <p className="type-meta mt-2 text-balance" style={{ color: "var(--body)" }}>
+            {t("app.guest.notRecorded")}
+          </p>
         </div>
 
         {segments.length === 0 ? (

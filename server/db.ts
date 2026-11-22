@@ -10,16 +10,18 @@ import {
   restaurants,
   roundMarks,
   spinHistory,
+  userDietary,
   tags,
   users,
   wheelMembers,
   wheelPresence,
   wheels,
 } from "../drizzle/schema";
-import type { MarkKind, RoundMarkRow } from "@shared/realtimeState";
+import { isActiveMark, type MarkKind, type RoundMarkRow } from "@shared/realtimeState";
 import { ENV } from "./_core/env";
 import { computeExclusions, DEFAULT_EXCLUSION_DAYS } from "@shared/exclusion";
-import { normalizeStatRow } from "@shared/stats";
+import { statsFromLunches, type RestaurantStat } from "@shared/stats";
+import { lunchStats, type SpinFacts } from "@shared/lunch";
 import { rankPopularWheels } from "@shared/publicWheel";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -276,11 +278,61 @@ export async function deleteUserAccount(userId: number) {
     );
   }
   await db.delete(roundMarks).where(eq(roundMarks.userId, userId));
+  await db.delete(userDietary).where(eq(userDietary.userId, userId));
   await db.delete(wheelPresence).where(eq(wheelPresence.userId, userId));
   await db.delete(notifications).where(eq(notifications.actorUserId, userId));
   await db.delete(wheelMembers).where(eq(wheelMembers.userId, userId));
   await db.delete(users).where(eq(users.id, userId));
   return { wheelsDeleted: owned.length };
+}
+
+/**
+ * Wheels this person owns that someone else is also on — what deleting their
+ * account would take away from teammates. Each with its members, for "give it
+ * to Ben" before the delete.
+ */
+export async function getOwnedTeamWheels(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ wheelId: wheels.id, wheelName: wheels.name, memberId: users.id, memberName: users.name, memberEmail: users.email })
+    .from(wheels)
+    .innerJoin(wheelMembers, eq(wheelMembers.wheelId, wheels.id))
+    .innerJoin(users, eq(users.id, wheelMembers.userId))
+    .where(eq(wheels.ownerId, userId));
+  const byWheel = new Map<number, { id: number; name: string; members: { userId: number; name: string | null; email: string | null }[] }>();
+  for (const r of rows) {
+    let w = byWheel.get(r.wheelId);
+    if (!w) byWheel.set(r.wheelId, (w = { id: r.wheelId, name: r.wheelName, members: [] }));
+    w.members.push({ userId: r.memberId, name: r.memberName, email: r.memberEmail });
+  }
+  return Array.from(byWheel.values());
+}
+
+/**
+ * Hand a wheel to one of its members. No foreign keys here (failure modes 15,
+ * 36), so all three rows are named: the wheel's owner changes; the old owner
+ * becomes an ordinary member (a wheel_members row — owners never have one,
+ * createWheel's convention); the new owner's member row goes, for the same
+ * reason. Spin history, ratings and marks stay: the wheel is the same wheel.
+ * Returns false if `fromUserId` does not own it or `toUserId` is not on it.
+ */
+export async function transferWheelOwnership(wheelId: number, fromUserId: number, toUserId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [wheel, member] = await Promise.all([
+    getWheelById(wheelId),
+    db
+      .select({ id: wheelMembers.id })
+      .from(wheelMembers)
+      .where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId)))
+      .limit(1),
+  ]);
+  if (!wheel || wheel.ownerId !== fromUserId || member.length === 0) return false;
+  await db.update(wheels).set({ ownerId: toUserId }).where(eq(wheels.id, wheelId));
+  await db.insert(wheelMembers).values({ wheelId, userId: fromUserId });
+  await db.delete(wheelMembers).where(and(eq(wheelMembers.wheelId, wheelId), eq(wheelMembers.userId, toUserId)));
+  return true;
 }
 
 export async function isWheelMember(wheelId: number, userId: number) {
@@ -305,10 +357,10 @@ export async function addWheelMember(wheelId: number, userId: number) {
  * Remove one member from one wheel — the scoped sibling of `deleteUserAccount`'s
  * "their footprint on wheels they only joined".
  *
- * The owner cannot leave: this app has no ownership transfer, and an ownerless
- * wheel is unreachable for everyone still on it. The caller enforces that; this
- * returns false so a race (ownership changing under a request) cannot orphan a
- * wheel by accident.
+ * The owner cannot leave — an ownerless wheel is unreachable for everyone still
+ * on it; they hand it over first (`transferWheelOwnership`). The caller enforces
+ * that; this returns false so a race (ownership changing under a request) cannot
+ * orphan a wheel by accident.
  *
  * What goes: the membership row, and the two things that are only meaningful
  * while you are in the room — this round's veto/vote/dietary marks, and presence.
@@ -440,6 +492,14 @@ export interface PlaceFields {
   priceLevel: number | null;
   cuisine: string | null;
   openHours?: unknown;
+  /** Google's own rating (1–5) and review count, when the search reported them. */
+  rating?: number | null;
+  ratingCount?: number | null;
+}
+
+/** decimal(2,1) takes a string in drizzle-mysql; out-of-range becomes null. */
+function googleRatingValue(rating: number | null | undefined): string | null {
+  return rating != null && rating >= 1 && rating <= 5 ? rating.toFixed(1) : null;
 }
 
 export async function addRestaurant(
@@ -471,6 +531,8 @@ export async function addRestaurant(
           priceLevel: place.priceLevel,
           cuisine: place.cuisine,
           openHours: place.openHours ?? null,
+          googleRating: googleRatingValue(place.rating),
+          googleRatingCount: place.ratingCount ?? null,
           source: "provider" as const,
         }
       : {}),
@@ -547,6 +609,8 @@ export async function addProviderRestaurants(
       priceLevel: r.place.priceLevel,
       cuisine: r.place.cuisine,
       openHours: r.place.openHours ?? null,
+      googleRating: googleRatingValue(r.place.rating),
+      googleRatingCount: r.place.ratingCount ?? null,
       source: "provider" as const,
     })),
   );
@@ -584,9 +648,10 @@ export async function addProviderRestaurants(
  * staleness window instead of looking brand-new and triggering a fresh round of
  * Place Details calls for restaurants we already have hours for.
  *
- * walkSeconds is deliberately NOT copied: it is measured from the *source*
- * wheel's origin, and the copy's origin is set independently. Leaving it null
- * lets the caller recompute against the right point.
+ * walkSeconds is measured from the source wheel's origin, so it is only valid
+ * on a copy that starts from the same point: pass `copyWalkSeconds` when the
+ * caller copied that origin too, and the copy keeps every walk time without a
+ * Distance Matrix call. Otherwise it stays null, as on any wheel with no origin.
  *
  * Four round trips regardless of size (read rows, read their tags, insert rows,
  * insert tags), same reasoning as addProviderRestaurants.
@@ -595,6 +660,7 @@ export async function copyWheelRestaurants(
   fromWheelId: number,
   toWheelId: number,
   addedBy: number,
+  opts: { copyWalkSeconds?: boolean } = {},
 ): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -624,7 +690,10 @@ export async function copyWheelRestaurants(
       openHours: r.openHours,
       hoursUpdatedAt: r.hoursUpdatedAt,
       utcOffsetMinutes: r.utcOffsetMinutes,
+      googleRating: r.googleRating,
+      googleRatingCount: r.googleRatingCount,
       source: r.source,
+      walkSeconds: opts.copyWalkSeconds ? r.walkSeconds : null,
     })),
   );
 
@@ -700,12 +769,21 @@ export async function setRestaurantHours(
   id: number,
   openHours: unknown,
   utcOffsetMinutes: number | null,
+  google?: { rating: number | null; ratingCount: number | null } | null,
 ) {
   const db = await getDb();
   if (!db) return;
   await db
     .update(restaurants)
-    .set({ openHours: openHours ?? null, utcOffsetMinutes, hoursUpdatedAt: new Date() })
+    .set({
+      openHours: openHours ?? null,
+      utcOffsetMinutes,
+      hoursUpdatedAt: new Date(),
+      // Only when this refresh asked for them — never blanks a stored rating.
+      ...(google && google.rating != null
+        ? { googleRating: googleRatingValue(google.rating), googleRatingCount: google.ratingCount }
+        : {}),
+    })
     .where(eq(restaurants.id, id));
 }
 
@@ -733,6 +811,7 @@ export async function getRestaurantsNeedingHours(wheelId: number, staleAfterMs: 
       placeId: restaurants.placeId,
       mapUrl: restaurants.mapUrl,
       hoursUpdatedAt: restaurants.hoursUpdatedAt,
+      googleRating: restaurants.googleRating,
     })
     .from(restaurants)
     .where(eq(restaurants.wheelId, wheelId));
@@ -779,7 +858,12 @@ export async function getWheelRatingRows(
 export async function recordSpin(wheelId: number, restaurantId: number, spunBy: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy });
+  // spunAt from this server's clock, not the column's DEFAULT now(): everything
+  // that reads it back — today's Taipei day, the exclusion window, and the
+  // teammate reveal delay (SPIN_REVEAL_DELAY_MS) — compares it with this
+  // server's `new Date()`, and two clocks can disagree by more than that delay's
+  // margin.
+  const result = await db.insert(spinHistory).values({ wheelId, restaurantId, spunBy, spunAt: new Date() });
   return (result as any)[0].insertId as number;
 }
 
@@ -795,7 +879,8 @@ export async function getSpinHistory(wheelId: number) {
       spunByName: users.name,
       spunAt: spinHistory.spunAt,
       manuallyReenabled: spinHistory.manuallyReenabled,
-      rating: spinHistory.rating,
+      accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
     })
     .from(spinHistory)
     .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
@@ -812,10 +897,13 @@ export async function getExclusions(wheelId: number, windowDays: number): Promis
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const recent = await db
     .select({
+      id: spinHistory.id,
       restaurantId: spinHistory.restaurantId,
+      spunBy: spinHistory.spunBy,
       spunAt: spinHistory.spunAt,
       manuallyReenabled: spinHistory.manuallyReenabled,
       accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
     })
     .from(spinHistory)
     .where(and(eq(spinHistory.wheelId, wheelId), sql`${spinHistory.spunAt} > ${cutoff}`));
@@ -831,6 +919,19 @@ export async function reenableRestaurant(wheelId: number, restaurantId: number, 
     .update(spinHistory)
     .set({ manuallyReenabled: true })
     .where(and(eq(spinHistory.wheelId, wheelId), eq(spinHistory.restaurantId, restaurantId), sql`${spinHistory.spunAt} > ${cutoff}`));
+}
+
+/** "We didn't end up going": the spinner marks their own spin skipped, which
+ *  takes it out of exclusion and every count (shared/lunch.ts). Scoped to the
+ *  author, like acceptSpin. Returns whether a row matched. */
+export async function markSpinSkipped(spinId: number, wheelId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db
+    .update(spinHistory)
+    .set({ skipped: true })
+    .where(and(eq(spinHistory.id, spinId), eq(spinHistory.wheelId, wheelId), eq(spinHistory.spunBy, userId)));
+  return ((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0) > 0;
 }
 
 // ─── Accept + notifications ───────────────────────────────────────────────────
@@ -919,37 +1020,34 @@ export async function markNotificationsRead(userId: number) {
 
 // ─── Statistics ───────────────────────────────────────────────────────────────
 
-export async function getRestaurantStats(wheelId: number) {
+/** Every spin on a wheel with just what shared/lunch.ts needs to classify it.
+ *  One indexed read (wheelId), no joins. */
+export async function getSpinFacts(wheelId: number): Promise<SpinFacts[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: spinHistory.id,
+      restaurantId: spinHistory.restaurantId,
+      spunBy: spinHistory.spunBy,
+      spunAt: spinHistory.spunAt,
+      accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
+    })
+    .from(spinHistory)
+    .where(eq(spinHistory.wheelId, wheelId));
+}
+
+/** Lunches per place on the wheel (shared/lunch.ts), places never eaten at
+ *  included with zero. */
+export async function getRestaurantStats(wheelId: number): Promise<RestaurantStat[]> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  
-  // Get pick count and last picked date for each restaurant in the wheel
-  const result = await db.execute(sql`
-    SELECT
-      r.id,
-      r.name,
-      COUNT(sh.id) as pickCount,
-      MAX(sh.spunAt) as lastPickedAt
-    FROM ${restaurants} r
-    LEFT JOIN ${spinHistory} sh ON r.id = sh.restaurantId
-    WHERE r.wheelId = ${wheelId}
-    GROUP BY r.id, r.name
-    ORDER BY pickCount DESC, lastPickedAt DESC
-  `);
-
-  // mysql2's `execute` resolves to a `[rows, fields]` tuple; unwrap to the rows
-  // array. (Mapping over the tuple itself yielded malformed rows with no name,
-  // which crashed the stats UI.) Tolerate a driver that already returns rows.
-  // `normalizeStatRow` coerces each field, so the row type only needs to name
-  // the columns the SELECT produces — no `any`.
-  type StatRow = { id: number; name: string; pickCount: unknown; lastPickedAt: unknown };
-  const raw: unknown = result;
-  const rows: StatRow[] = Array.isArray(raw)
-    ? Array.isArray(raw[0])
-      ? (raw[0] as StatRow[])
-      : (raw as StatRow[])
-    : [];
-  return rows.map(normalizeStatRow);
+  const [rests, spins] = await Promise.all([
+    db.select({ id: restaurants.id, name: restaurants.name }).from(restaurants).where(eq(restaurants.wheelId, wheelId)),
+    getSpinFacts(wheelId),
+  ]);
+  return statsFromLunches(rests, lunchStats(spins));
 }
 
 // ─── Serverless realtime (polling-backed) ────────────────────────────────────
@@ -975,7 +1073,25 @@ export async function getActivePresence(wheelId: number, cutoff: Date) {
     .where(and(eq(wheelPresence.wheelId, wheelId), gte(wheelPresence.lastSeen, cutoff)));
 }
 
-/** Toggle one round mark (veto/vote on a restaurant, or dietary on a tag). */
+/** Make sure this person's mark is ON (placed now), without the toggle's risk
+ *  of taking it back — for one-tap actions like "vote for it today" from
+ *  History, where a second tap must not withdraw the vote. */
+export async function placeRoundMark(wheelId: number, kind: MarkKind, refId: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db
+    .insert(roundMarks)
+    .values({ wheelId, kind, refId, userId, createdAt: now })
+    .onDuplicateKeyUpdate({ set: { createdAt: now } });
+}
+
+/**
+ * Toggle one vote or veto. A mark only counts on the Taipei day it was made
+ * (shared/realtimeState `isActiveMark`), so a row found from an EARLIER day is
+ * not "on": it is re-marked for today (createdAt → now), not deleted. Deleting
+ * it would make "Not today" look like it did nothing.
+ */
 export async function toggleRoundMark(wheelId: number, kind: MarkKind, refId: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -985,26 +1101,81 @@ export async function toggleRoundMark(wheelId: number, kind: MarkKind, refId: nu
     eq(roundMarks.refId, refId),
     eq(roundMarks.userId, userId),
   );
-  const existing = await db.select({ userId: roundMarks.userId }).from(roundMarks).where(where).limit(1);
-  if (existing.length > 0) {
+  const now = new Date();
+  const existing = await db.select({ createdAt: roundMarks.createdAt }).from(roundMarks).where(where).limit(1);
+  if (existing.length > 0 && isActiveMark(existing[0], now)) {
     await db.delete(roundMarks).where(where);
   } else {
-    // Idempotent insert so a concurrent double-toggle can't crash on the PK.
+    // Insert, or refresh an expired row. Idempotent so a concurrent double
+    // toggle can't crash on the PK.
     await db
       .insert(roundMarks)
-      .values({ wheelId, kind, refId, userId })
-      .onDuplicateKeyUpdate({ set: { userId } });
+      .values({ wheelId, kind, refId, userId, createdAt: now })
+      .onDuplicateKeyUpdate({ set: { createdAt: now } });
   }
 }
 
-/** All round marks for a wheel (shape consumed by buildSessionState). */
+/** A wheel's votes and vetoes from the last 48 hours — enough to cover "today"
+ *  in Taipei from any server clock; buildSessionState keeps only today's.
+ *  Older rows are left in place, not deleted. */
 export async function getRoundMarks(wheelId: number): Promise<RoundMarkRow[]> {
   const db = await getDb();
   if (!db) return [];
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
   return db
-    .select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId })
+    .select({ kind: roundMarks.kind, refId: roundMarks.refId, userId: roundMarks.userId, createdAt: roundMarks.createdAt })
     .from(roundMarks)
-    .where(eq(roundMarks.wheelId, wheelId));
+    .where(and(eq(roundMarks.wheelId, wheelId), gte(roundMarks.createdAt, since), inArray(roundMarks.kind, ["veto", "vote"])));
+}
+
+/** This person's standing "I don't eat" tags. */
+export async function getUserDietary(userId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ tagId: userDietary.tagId }).from(userDietary).where(eq(userDietary.userId, userId));
+  return rows.map((r) => r.tagId);
+}
+
+/** Replace this person's "I don't eat" tags with exactly `tagIds`. */
+export async function setUserDietary(userId: number, tagIds: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const unique = Array.from(new Set(tagIds));
+  await db.delete(userDietary).where(
+    unique.length > 0
+      ? and(eq(userDietary.userId, userId), sql`${userDietary.tagId} NOT IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})`)
+      : eq(userDietary.userId, userId),
+  );
+  if (unique.length > 0) {
+    await db
+      .insert(userDietary)
+      .values(unique.map((tagId) => ({ userId, tagId })))
+      .onDuplicateKeyUpdate({ set: { tagId: sql`${userDietary.tagId}` } });
+  }
+}
+
+/**
+ * Everyone's "I don't eat" rows that could apply to a spin on this wheel today,
+ * in ONE query: each row says whether its person has opened the wheel since
+ * `since` (the start of the Taipei day). `spinnerId`'s rows come back whether
+ * or not they have a presence row. Filtered by shared/session
+ * `dietaryForPresent` — deliberately not "who is here, then what do they
+ * avoid", which is a second round trip on the spin path (failure mode 52).
+ */
+export async function getPresentDietary(wheelId: number, since: Date, spinnerId: number | null) {
+  const db = await getDb();
+  if (!db) return { prefs: [] as { userId: number; tagId: number }[], presentUserIds: [] as number[] };
+  const here = gte(wheelPresence.lastSeen, since);
+  const rows = await db
+    .select({ userId: userDietary.userId, tagId: userDietary.tagId, lastSeen: wheelPresence.lastSeen })
+    .from(userDietary)
+    .leftJoin(wheelPresence, and(eq(wheelPresence.userId, userDietary.userId), eq(wheelPresence.wheelId, wheelId)))
+    .where(spinnerId != null ? or(here, eq(userDietary.userId, spinnerId)) : here);
+  const sinceMs = since.getTime();
+  return {
+    prefs: rows.map((r) => ({ userId: r.userId, tagId: r.tagId })),
+    presentUserIds: Array.from(new Set(rows.filter((r) => r.lastSeen && new Date(r.lastSeen).getTime() >= sinceMs).map((r) => r.userId))),
+  };
 }
 
 /** Clear just the votes for a wheel (after a spin resolves). */
@@ -1014,18 +1185,21 @@ export async function clearRoundVotes(wheelId: number): Promise<void> {
   await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), eq(roundMarks.kind, "vote")));
 }
 
-/** Clear all round marks for a wheel. */
-export async function clearRoundAll(wheelId: number): Promise<void> {
+/** Clear a wheel's votes and vetoes (Clear in the round panel). Legacy
+ *  `dietary` rows are left alone: they are history, and no longer read. */
+export async function clearRoundMarks(wheelId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(roundMarks).where(eq(roundMarks.wheelId, wheelId));
+  await db.delete(roundMarks).where(and(eq(roundMarks.wheelId, wheelId), inArray(roundMarks.kind, ["veto", "vote"])));
 }
 
 /** Most recent spin on a wheel (for the polled "someone spun" broadcast). */
-export async function getLatestSpin(wheelId: number) {
+/** Every spin on a wheel since `since` (the start of the Taipei day), with what
+ *  the today card shows about its place and who spun it. */
+export async function getSpinsSince(wheelId: number, since: Date) {
   const db = await getDb();
-  if (!db) return null;
-  const rows = await db
+  if (!db) return [];
+  return db
     .select({
       id: spinHistory.id,
       restaurantId: spinHistory.restaurantId,
@@ -1033,12 +1207,16 @@ export async function getLatestSpin(wheelId: number) {
       spunBy: spinHistory.spunBy,
       spunByName: users.name,
       spunAt: spinHistory.spunAt,
+      accepted: spinHistory.accepted,
+      skipped: spinHistory.skipped,
+      walkSeconds: restaurants.walkSeconds,
+      openHours: restaurants.openHours,
+      utcOffsetMinutes: restaurants.utcOffsetMinutes,
+      mapUrl: restaurants.mapUrl,
     })
     .from(spinHistory)
     .innerJoin(restaurants, eq(spinHistory.restaurantId, restaurants.id))
     .innerJoin(users, eq(spinHistory.spunBy, users.id))
-    .where(eq(spinHistory.wheelId, wheelId))
-    .orderBy(desc(spinHistory.id))
-    .limit(1);
-  return rows[0] ?? null;
+    .where(and(eq(spinHistory.wheelId, wheelId), gte(spinHistory.spunAt, since)));
 }
+

@@ -1,5 +1,7 @@
 /**
- * First run: Locate → Pick → Spin.
+ * First run: Locate → Pick → Spin. Also every later "New wheel" (`another`):
+ * a second wheel is made the same way as the first, with the seven-field
+ * dialog still one tap away under "I'll add places myself".
  *
  * The nearby search IS the onboarding. One tap finds real restaurants near you,
  * already ticked; the only job is adjusting the list; then the wheel is built
@@ -7,32 +9,31 @@
  * (shared/areaName) — and anyone who would rather not share a location drops
  * through to the ordinary create dialog via `onManualCreate`.
  *
- * What the list holds and shows (BACKLOG.md 1a–1d, rules in shared/candidates):
+ * The list itself — ranked by distance, a page at a time, chips, the low-rating
+ * cut, "look farther" — is components/NearbyPicker, shared with the Places
+ * tab's Nearby (BACKLOG.md 1a–1d, rules in shared/candidates). Ranked by
+ * DISTANCE, not Google's default prominence: measured at 內湖, the two shared
+ * 2 of 20 places and only distance found the neighbourhood lunch spots.
  *
- *   - Ranked by DISTANCE, not Google's default prominence: measured at 內湖,
- *     the two shared 2 of 20 places and only distance found the neighbourhood
- *     lunch spots.
- *   - A whole page (20), not one wheel's worth (12), so the chips filter on the
- *     client instantly. Walk time, price and open-now never make a request;
- *     only a craving (keyword), "look farther" (the next page) or a list that
- *     has run dry goes back to Google. Each keyword's page is kept, so clearing
- *     it or typing it again costs nothing.
- *   - Judged Google ratings under 3.0 are hidden, and the screen says how many
- *     and brings them back in one tap.
- *   - The wheel is exactly the ticked places that are VISIBLE. A tick hidden
- *     behind a chip does not ride along, so the count on the button always
- *     matches what is on screen (failure modes 38/54).
- *   - Each craving is its own list with its OWN ticks. Ticks used to be one
- *     set across every query, so searching 麵 auto-ticked three noodle shops
- *     and "back to all" came back with 11 ticked where the person had left 8 —
- *     ticks nobody chose, leaking out of a search they had already abandoned.
+ * What this flow adds on top is the selection:
+ *
+ *   - One selection across every list (shared/candidates `nextSelection`): a
+ *     place ticked while searching "noodle" is still on the wheel after "back
+ *     to all". Searching ADDS; it never replaces what was chosen.
+ *   - Only the plain nearby list ticks anything by itself, once, when it first
+ *     arrives. A search's results are never ticked for you — that is what once
+ *     leaked three noodle shops nobody chose into the wheel (failure mode 65).
+ *   - Every selected place sits in the "Selected" row above the button, whether
+ *     or not its list is the one showing, and can be removed there. So the
+ *     number on the button always matches something on screen (failure modes
+ *     38/54), even when a filter or a search hides the card it came from.
  *
  * The motion follows the product's one rule — it answers the person, nothing
  * idles. See the "First run" block in index.css.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { trpc, type RouterOutputs } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc";
 import { providerAlert } from "@/lib/placesError";
 import { useLang } from "@/i18n";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
@@ -45,65 +46,39 @@ import LocateRadar, {
 } from "@/components/onboarding/LocateRadar";
 import PaneWheel from "@/components/onboarding/PaneWheel";
 import { Button } from "@/components/ui/button";
-import { Chip as UiChip } from "@/components/ui/chip";
-import PlaceCard, { placeMapUrl } from "@/components/onboarding/PlaceCard";
-import { MAX_SEGMENTS, MIN_SEGMENTS } from "@shared/nearby";
+import { placeMapUrl } from "@/components/onboarding/PlaceCard";
+import ErrorNote from "@/components/onboarding/ErrorNote";
+import NearbyPicker, { BandHeading, useNearbyPool, type NearbyRow } from "@/components/NearbyPicker";
+import { MAX_SEGMENTS } from "@shared/nearby";
 import { MIN_SPINNABLE, canStartSpinning } from "@shared/onboarding";
 import { DEMO_DRAFT_KEY, parseDemoDraft } from "@shared/demoDraft";
-import {
-  CANDIDATE_POOL,
-  arrivalTicks,
-  filterCandidates,
-  mergeCandidatePages,
-  onWheel,
-  relaxations,
-  walkBand,
-  type CandidateFilters,
-  type RelaxationKind,
-} from "@shared/candidates";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  Loader2,
-  MapPin,
-  PenLine,
-  Radar,
-  Search,
-  X,
-} from "lucide-react";
+import { bestNameMatch } from "@shared/nameMatch";
+import { arrivalTicks, filterCandidates, nextSelection } from "@shared/candidates";
+import { ArrowLeft, ArrowRight, Check, Loader2, MapPin, PenLine, X } from "lucide-react";
+import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
-type Step = "locate" | "pick" | "building";
-type NearbyRow = RouterOutputs["places"]["searchNearby"]["places"][number];
-type SearchResult = RouterOutputs["places"]["searchNearby"];
+type Step = "locate" | "pick" | "building" | "office";
 
-/** One query's candidates. Keyed by keyword; "" is the plain nearby search. */
-interface Pool {
-  rows: NearbyRow[];
-  nextPageToken: string | null;
-}
-
-const WALK_CHIPS = [5, 10] as const;
-const PRICE_CHIPS = [1, 2] as const;
 /** How long the found places sit on the radar before the list takes over. */
 const REVEAL_MS = 1100;
 const CAP_FLASH_MS = 2600;
 
-const toPool = (data: SearchResult): Pool => ({
-  rows: data.places,
-  nextPageToken: data.nextPageToken ?? null,
-});
-
 export default function OnboardingFlow({
   onCreated,
   onManualCreate,
+  another = false,
+  onCancel,
 }: {
   /** A wheel now exists — hand control back to the app. */
   onCreated: (wheelId: number) => void;
   /** "I'll add places myself" — open the ordinary create dialog. */
   onManualCreate: () => void;
+  /** Not the first wheel: the copy stops saying "your first wheel". */
+  another?: boolean;
+  /** Back to the wheel you were on. Absent on first run — there is none. */
+  onCancel?: () => void;
 }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const reducedMotion = useReducedMotion();
 
   const [step, setStep] = useState<Step>("locate");
@@ -111,19 +86,12 @@ export default function OnboardingFlow({
   // (their office) rather than raw geolocation — that name becomes the wheel's
   // office label, so settings shows "台北101" and not a bare "Office".
   const [origin, setOrigin] = useState<PickedLocation | null>(null);
-  const [pools, setPools] = useState<Record<string, Pool>>({});
-  const [query, setQuery] = useState(""); // the keyword whose pool is showing
-  const [draft, setDraft] = useState(""); // what is typed in the craving box
-  const [filters, setFilters] = useState<CandidateFilters>({});
-  // Ticks per query key, like `pools`: "" is the plain nearby list.
-  const [ticks, setTicks] = useState<Record<string, Set<string>>>({});
+  // One ordered selection across every list (see the header).
+  const [selection, setSelection] = useState<string[]>([]);
   const [initialTicks, setInitialTicks] = useState(0);
   // How many of those arrival ticks are places reported closed. Non-zero only
   // in a quiet hour (see preselectPlaceIds), and then the copy has to say so.
   const [initialClosed, setInitialClosed] = useState(0);
-  const [pending, setPending] = useState<null | "base" | "keyword" | "more">(
-    null
-  );
   const [locating, setLocating] = useState(false);
   const [revealDots, setRevealDots] = useState<RadarDot[] | null>(null);
   const [capAt, setCapAt] = useState<number | null>(null);
@@ -140,6 +108,10 @@ export default function OnboardingFlow({
     }
   });
   const [typedOn, setTypedOn] = useState<Set<string>>(() => new Set(typed));
+  // Typed names that turned out to be a place in the nearby list (shared/
+  // nameMatch): typed name → that place's id. A matched name is represented by
+  // the real listing — location, hours, walk time — not sent as a bare name.
+  const [matched, setMatched] = useState<Record<string, string>>({});
 
   const miniWheelRef = useRef<HTMLDivElement>(null);
   const revealTimer = useRef<number | null>(null);
@@ -157,61 +129,58 @@ export default function OnboardingFlow({
     return () => window.clearTimeout(id);
   }, [capAt]);
 
-  const search = trpc.places.searchNearby.useMutation();
+  // The list itself — pools, craving, chips, "look farther" — is the shared
+  // nearby picker's (components/NearbyPicker). This flow owns the selection.
+  const nearby = useNearbyPool(null);
+  const { search, pending, rows, known } = nearby;
   const createWheel = trpc.wheels.createFromNearby.useMutation();
+  const saveOffice = trpc.wheels.setDistanceOrigin.useMutation();
+  // The wheel just built from a raw location fix, while we ask whether that
+  // spot is the office (plan 7c: saved only with a yes).
+  const [builtId, setBuiltId] = useState<number | null>(null);
 
-  const pool = pools[query] ?? null;
-  const selected = useMemo(
-    () => ticks[query] ?? new Set<string>(),
-    [ticks, query]
-  );
-  const updateTicks = (key: string, fn: (prev: Set<string>) => Set<string>) =>
-    setTicks(all => {
-      const prev = all[key] ?? new Set<string>();
-      const next = fn(prev);
-      return next === prev ? all : { ...all, [key]: next };
-    });
-  const rows = useMemo(() => pool?.rows ?? [], [pool]);
-  const view = useMemo(() => filterCandidates(rows, filters), [rows, filters]);
+  const selected = useMemo(() => new Set(selection), [selection]);
   const wheel = useMemo(
-    () => onWheel(view.visible, selected),
-    [view.visible, selected]
+    () => selection.map(id => known.get(id)).filter((r): r is NearbyRow => !!r),
+    [selection, known]
   );
-  const lifts = useMemo(() => relaxations(rows, filters), [rows, filters]);
-  const typedOnWheel = typed.filter(n => typedOn.has(n));
+  const typedOnWheel = typed.filter(n => typedOn.has(n) && !(n in matched));
   // The wheel is the visible ticked nearby places PLUS the typed ones; every
   // count on screen (button, mini wheel, cap) is this one number.
   const total = wheel.length + typedOnWheel.length;
   const atCap = total >= MAX_SEGMENTS;
   const closedOnWheel = wheel.filter(p => p.open === false).length;
-  const thin = view.visible.length < MIN_SEGMENTS;
 
-  const baseInput = (at: PickedLocation) => ({
-    wheelId: null,
-    lat: at.lat,
-    lng: at.lng,
-    rankBy: "distance" as const,
-    limit: CANDIDATE_POOL,
-    language: lang,
-  });
-
-  // ── Requests: only these three ever reach Google ─────────────────────────
+  // ── Requests ─────────────────────────────────────────────────────────────
 
   const searchFrom = (at: PickedLocation) => {
     setOrigin(at);
-    setPending("base");
-    search.mutate(baseInput(at), {
-      onSuccess: data => {
-        const fresh = toPool(data);
-        const preset = arrivalTicks(
-          filterCandidates(fresh.rows, {}).visible,
-          typedOnWheel.length
+    nearby.searchFrom(at, fresh => {
+        // A name typed on the landing page that is really one of these places
+        // ticks that place instead of riding along as a second, location-less
+        // copy of it (P1-F).
+        const matches: Record<string, string> = {};
+        for (const name of typed) {
+          const hit = bestNameMatch(name, fresh.rows);
+          if (hit) matches[name] = hit.placeId;
+        }
+        setMatched(matches);
+        const matchedTicks = typed
+          .filter(n => typedOn.has(n) && n in matches)
+          .map(n => matches[n]);
+        const unmatchedOn = typed.filter(n => typedOn.has(n) && !(n in matches)).length;
+        // Array.from, not a Set spread: the client compiles to a pre-ES2015
+        // target where spreading a Set is TS2802.
+        const preset = Array.from(
+          new Set([
+            ...matchedTicks,
+            ...arrivalTicks(
+              filterCandidates(fresh.rows, {}).visible.filter(r => !matchedTicks.includes(r.placeId)),
+              unmatchedOn + matchedTicks.length
+            ),
+          ])
         );
-        setPools({ "": fresh });
-        setQuery("");
-        setDraft("");
-        setFilters({});
-        setTicks({ "": new Set(preset) });
+        setSelection(nextSelection([], { type: "arrive", list: "base", ticked: preset }));
         setInitialTicks(preset.length);
         const presetIds = new Set(preset);
         setInitialClosed(
@@ -237,111 +206,16 @@ export default function OnboardingFlow({
           setRevealDots(null);
           setStep("pick");
         }, REVEAL_MS);
-      },
-      onSettled: () => setPending(null),
     });
-  };
-
-  /** Tick newly arrived places in one query's list, up to the default size. */
-  const tickArrivals = (
-    key: string,
-    arrivals: NearbyRow[],
-    held: NearbyRow[]
-  ) => {
-    const visibleArrivals = filterCandidates(arrivals, filters).visible;
-    updateTicks(key, prev => {
-      const current =
-        onWheel(filterCandidates(held, filters).visible, prev).length +
-        typedOnWheel.length;
-      const add = arrivalTicks(visibleArrivals, current);
-      if (add.length === 0) return prev;
-      const next = new Set(prev);
-      for (const id of add) next.add(id);
-      return next;
-    });
-  };
-
-  const runCraving = () => {
-    const q = draft.trim();
-    if (q === query) return;
-    // Clearing, or a craving already searched this session: no request.
-    if (!q || pools[q]) {
-      setQuery(q);
-      return;
-    }
-    if (!origin) return;
-    setPending("keyword");
-    search.mutate(
-      { ...baseInput(origin), keyword: q },
-      {
-        onSuccess: data => {
-          const fresh = toPool(data);
-          setPools(prev => ({ ...prev, [q]: fresh }));
-          setQuery(q);
-          tickArrivals(q, fresh.rows, []);
-        },
-        onSettled: () => setPending(null),
-      }
-    );
-  };
-
-  const lookFarther = () => {
-    if (!origin || !pool?.nextPageToken) return;
-    const key = query;
-    const held = pool.rows;
-    setPending("more");
-    search.mutate(
-      {
-        ...baseInput(origin),
-        keyword: key || undefined,
-        pageToken: pool.nextPageToken,
-      },
-      {
-        onSuccess: data => {
-          const heldIds = new Set(held.map(r => r.placeId));
-          const arrivals = data.places.filter(r => !heldIds.has(r.placeId));
-          setPools(prev => ({
-            ...prev,
-            [key]: {
-              rows: mergeCandidatePages(prev[key]?.rows ?? held, data.places),
-              nextPageToken: data.nextPageToken ?? null,
-            },
-          }));
-          tickArrivals(key, arrivals, held);
-        },
-        onSettled: () => setPending(null),
-      }
-    );
   };
 
   // ── Instant: never a request ─────────────────────────────────────────────
 
   const toggle = (placeId: string) => {
-    if (selected.has(placeId)) {
-      updateTicks(query, prev => {
-        const next = new Set(prev);
-        next.delete(placeId);
-        return next;
-      });
-      return;
-    }
-    if (atCap) {
-      setCapAt(Date.now());
-      return;
-    }
-    updateTicks(query, prev => new Set(prev).add(placeId));
+    if (!selected.has(placeId) && atCap) setCapAt(Date.now());
+    setSelection(prev => nextSelection(prev, { type: "toggle", id: placeId, atCap }));
   };
 
-  const lift = (kind: RelaxationKind) =>
-    setFilters(f =>
-      kind === "openOnly"
-        ? { ...f, openOnly: false }
-        : kind === "priceCap"
-          ? { ...f, priceCap: null }
-          : kind === "walkCap"
-            ? { ...f, walkCap: null }
-            : { ...f, showLowRated: true }
-    );
 
   const build = () => {
     if (!canStartSpinning(total) || total > MAX_SEGMENTS) return;
@@ -361,12 +235,14 @@ export default function OnboardingFlow({
           address: p.address,
           priceLevel: p.priceLevel,
           cuisine: p.cuisine,
+          rating: p.rating,
+          ratingCount: p.ratingCount,
           mapUrl: placeMapUrl(p.placeId, p.name),
         })),
         // Only a *named* pick becomes the wheel's office. A raw geolocation fix
         // is where the user happened to be standing, not their office.
         extraNames: typedOnWheel,
-        language: lang,
+        language: devicePlaceLanguage(),
         origin: origin?.label
           ? { lat: origin.lat, lng: origin.lng, label: origin.label }
           : null,
@@ -380,6 +256,14 @@ export default function OnboardingFlow({
           } catch {
             /* nothing to clear */
           }
+          // A raw location fix is where the person happened to stand, so it is
+          // never saved as the office on its own — but it usually IS the
+          // office, and without an origin no place has a walk time. Ask once.
+          if (origin && !origin.label) {
+            setBuiltId(res.id);
+            setStep("office");
+            return;
+          }
           onCreated(res.id);
         },
         // Back to the list with every choice intact; the error shows there.
@@ -388,6 +272,49 @@ export default function OnboardingFlow({
     );
   };
 
+  // ── Save as office? ──────────────────────────────────────────────────────
+  if (step === "office" && builtId !== null && origin) {
+    const done = () => onCreated(builtId);
+    return (
+      <div className="grow flex flex-col items-center justify-center px-5 py-6 w-full">
+        <div className="w-full max-w-sm flex flex-col items-center gap-4 text-center">
+          <MapPin size={28} style={{ color: "var(--brand-text)" }} />
+          <h1 className="type-title" style={{ color: "var(--ink-warm)" }}>
+            {t("onb.office.title")}
+          </h1>
+          <p className="type-meta" style={{ color: "var(--body-warm)" }}>
+            {t("onb.office.body")}
+          </p>
+          {saveOffice.isError && <ErrorNote>{t("onb.office.error")}</ErrorNote>}
+          <div className="w-full flex flex-col gap-2">
+            <Button
+              className="w-full"
+              disabled={saveOffice.isPending}
+              onClick={() =>
+                saveOffice.mutate(
+                  {
+                    id: builtId,
+                    enabled: true,
+                    originLat: origin.lat,
+                    originLng: origin.lng,
+                    originLabel: t("onb.office.label"),
+                  },
+                  { onSuccess: done }
+                )
+              }
+            >
+              {saveOffice.isPending ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+              {t("onb.office.save")}
+            </Button>
+            <Button variant="ghost" className="w-full" disabled={saveOffice.isPending} onClick={done}>
+              {t("onb.office.skip")}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Building ─────────────────────────────────────────────────────────────
   if (step === "building") {
     return <BuildingStep places={building} growFrom={growFrom} />;
@@ -395,9 +322,6 @@ export default function OnboardingFlow({
 
   // ── Pick ─────────────────────────────────────────────────────────────────
   if (step === "pick") {
-    const alert = pending === null ? providerAlert(search.error) : null;
-    const bands = groupByBand(view.visible);
-    let cardIndex = 0;
     const ctaState =
       total > MAX_SEGMENTS
         ? "tooMany"
@@ -410,6 +334,11 @@ export default function OnboardingFlow({
         <div className="w-full max-w-lg mx-auto px-5 pt-6 onb-list-end flex flex-col gap-5">
           {/* Header */}
           <header className="flex flex-col gap-2">
+            {onCancel && (
+              <div className="-ml-3 -mt-2">
+                <CancelButton onCancel={onCancel} />
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <p
                 className="type-eyebrow"
@@ -459,7 +388,7 @@ export default function OnboardingFlow({
             </h1>
             {/* Only the plain list: it describes the ticks WE made on arrival.
                 A craving's list is explained by its own "results for" line. */}
-            {!query && (
+            {!nearby.query && (
               <p className="type-meta" style={{ color: "var(--body-warm)" }}>
                 {initialClosed > 0
                   ? t("onb.pick.descQuiet", {
@@ -473,320 +402,67 @@ export default function OnboardingFlow({
             )}
           </header>
 
-          {/* Craving: the one control here that asks Google a new question. */}
-          <div className="flex flex-col gap-2">
-            <form
-              className="flex gap-2"
-              onSubmit={e => {
-                e.preventDefault();
-                runCraving();
-              }}
-            >
-              <label htmlFor="onb-craving" className="relative flex-1 min-w-0">
-                <span className="sr-only">{t("onb.keyword.placeholder")}</span>
-                <Search
-                  size={16}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: "var(--muted-foreground)" }}
-                />
-                <input
-                  id="onb-craving"
-                  aria-label={t("onb.keyword.placeholder")}
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  maxLength={120}
-                  enterKeyHint="search"
-                  placeholder={t("onb.keyword.placeholder")}
-                  className="w-full outline-none focus-visible:ring-2 pl-11 pr-4"
-                  style={{
-                    minHeight: 48,
-                    borderRadius: "var(--radius-control)",
-                    background: "var(--paper)",
-                    border: "1px solid var(--input)",
-                    color: "var(--ink-warm)",
-                    fontSize: 16,
-                  }}
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={pending !== null || draft.trim() === query}
-                className="flex-none inline-flex items-center justify-center gap-1.5 px-4 transition-opacity disabled:opacity-40"
-                style={{
-                  minHeight: 48,
-                  borderRadius: "var(--radius-control)",
-                  border: "1px solid var(--brand-solid)",
-                  color: "var(--brand-text)",
-                  fontWeight: 600,
-                  fontSize: 15,
-                }}
-              >
-                {pending === "keyword" ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : null}
-                {t("onb.keyword.submit")}
-              </button>
-            </form>
-            {query && (
-              <p
-                className="flex items-center gap-2 type-meta onb-flash"
-                style={{ color: "var(--body-warm)" }}
-              >
-                <span className="truncate">
-                  {t("onb.keyword.active", { q: query })}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraft("");
-                    setQuery("");
-                  }}
-                  className="flex-none inline-flex items-center gap-1 font-semibold underline underline-offset-4"
-                  style={{ color: "var(--ink-warm)", minHeight: 32 }}
-                >
-                  <X size={13} /> {t("onb.keyword.clear")}
-                </button>
-              </p>
-            )}
-          </div>
-
-          {/* Chips: instant, exclusive within a group, no apply button. */}
-          <div
-            role="group"
-            aria-label={t("onb.chips")}
-            className="onb-chips flex items-center gap-2 overflow-x-auto -mx-5 px-5 -my-1 py-1"
-          >
-            {WALK_CHIPS.map(n => (
-              <Chip
-                key={`w${n}`}
-                on={filters.walkCap === n}
-                onClick={() =>
-                  setFilters(f => ({
-                    ...f,
-                    walkCap: f.walkCap === n ? null : n,
-                  }))
-                }
-              >
-                {t("onb.chip.walk", { n })}
-              </Chip>
-            ))}
-            <ChipRule />
-            {PRICE_CHIPS.map(n => (
-              <Chip
-                key={`p${n}`}
-                on={filters.priceCap === n}
-                onClick={() =>
-                  setFilters(f => ({
-                    ...f,
-                    priceCap: f.priceCap === n ? null : n,
-                  }))
-                }
-              >
-                {t(n === 1 ? "onb.chip.price1" : "onb.chip.price2")}
-              </Chip>
-            ))}
-            <ChipRule />
-            <Chip
-              on={!!filters.openOnly}
-              onClick={() => setFilters(f => ({ ...f, openOnly: !f.openOnly }))}
-            >
-              {t("onb.chip.open")}
-            </Chip>
-          </div>
-
-          {view.lowRated.length > 0 && (
-            <p
-              className="flex items-center gap-2 flex-wrap type-meta -mt-1"
-              style={{ color: "var(--body-warm)" }}
-            >
-              <span>
-                {filters.showLowRated
-                  ? t("onb.lowRated.shown", { n: view.lowRated.length })
-                  : t("onb.lowRated.hidden", { n: view.lowRated.length })}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setFilters(f => ({ ...f, showLowRated: !f.showLowRated }))
-                }
-                className="font-semibold underline underline-offset-4"
-                style={{ color: "var(--ink-warm)", minHeight: 32 }}
-              >
-                {filters.showLowRated
-                  ? t("onb.lowRated.hide")
-                  : t("onb.lowRated.show")}
-              </button>
-            </p>
-          )}
-
-          {alert && (
-            <ErrorNote tone={alert.quota ? "warn" : "error"}>
-              {t(alert.messageKey)}
-            </ErrorNote>
-          )}
-          {createWheel.isError && (
-            <ErrorNote>{t("onb.err.create")}</ErrorNote>
-          )}
-
-          {/* The list, sectioned by walk band. */}
-          <div
-            className="flex flex-col gap-5"
-            aria-busy={pending === "keyword"}
-          >
-            {typed.length > 0 && (
-              <section className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-3 px-1">
-                  <h2
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 650,
-                      color: "var(--ink-warm)",
-                      letterSpacing: "0.02em",
-                    }}
-                  >
-                    {t("onb.typed.section")}
-                  </h2>
-                  <span
-                    aria-hidden
-                    className="flex-1 h-px"
-                    style={{ background: "var(--border)" }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: "var(--muted-foreground)",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {t("onb.band.count", { n: typed.length })}
-                  </span>
-                </div>
-                {typed.map((name, i) => {
-                  const on = typedOn.has(name);
-                  return (
-                    <TypedCard
-                      key={`typed:${name}`}
-                      name={name}
-                      on={on}
-                      dimmed={atCap && !on}
-                      index={i}
-                      onToggle={() => {
-                        if (!on && atCap) {
-                          setCapAt(Date.now());
-                          return;
-                        }
-                        setTypedOn(prev => {
-                          const next = new Set(prev);
-                          if (on) next.delete(name);
-                          else next.add(name);
-                          return next;
-                        });
-                      }}
-                    />
-                  );
-                })}
-              </section>
-            )}
-
-            {bands.map(({ band, places }) => (
-              <section key={band ?? "far"} className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-3 px-1">
-                  <h2
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 650,
-                      color: "var(--ink-warm)",
-                      letterSpacing: "0.02em",
-                    }}
-                  >
-                    {band == null
-                      ? t("onb.band.far")
-                      : t("onb.band", { n: band })}
-                  </h2>
-                  <span
-                    aria-hidden
-                    className="flex-1 h-px"
-                    style={{ background: "var(--border)" }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: "var(--muted-foreground)",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {t("onb.band.count", { n: places.length })}
-                  </span>
-                </div>
-                {places.map(p => {
-                  const on = selected.has(p.placeId);
-                  return (
-                    <PlaceCard
-                      key={p.placeId}
-                      place={p}
-                      on={on}
-                      dimmed={atCap && !on}
-                      index={cardIndex++}
-                      onToggle={() => toggle(p.placeId)}
-                    />
-                  );
-                })}
-              </section>
-            ))}
-
-            {thin ? (
-              <ThinCard
-                count={view.visible.length}
-                lifts={lifts}
-                canLookFarther={!!pool?.nextPageToken}
-                looking={pending === "more"}
-                onLift={lift}
-                onLookFarther={lookFarther}
-                onChangePlace={() => {
-                  search.reset();
-                  setStep("locate");
-                }}
-                onManualCreate={onManualCreate}
-              />
-            ) : (
-              pool?.nextPageToken && (
-                <button
-                  type="button"
-                  onClick={lookFarther}
-                  disabled={pending !== null}
-                  className="flex items-center justify-center gap-3 px-5 transition-colors disabled:opacity-60"
-                  style={{
-                    minHeight: 64,
-                    borderRadius: "var(--radius-card)",
-                    border: "1.5px dashed var(--border)",
-                    color: "var(--ink-warm)",
-                  }}
-                >
-                  {pending === "more" ? (
-                    <Loader2
-                      size={18}
-                      className="animate-spin"
-                      style={{ color: "var(--brand-text)" }}
-                    />
-                  ) : (
-                    <Radar size={18} style={{ color: "var(--brand-text)" }} />
-                  )}
-                  <span className="flex flex-col items-start">
-                    <span style={{ fontSize: 15, fontWeight: 600 }}>
-                      {pending === "more"
-                        ? t("onb.more.loading")
-                        : t("onb.more")}
-                    </span>
-                    <span
-                      style={{ fontSize: 12, color: "var(--muted-foreground)" }}
-                    >
-                      {t("onb.more.hint")}
-                    </span>
-                  </span>
-                </button>
+          <NearbyPicker
+            nearby={nearby}
+            selected={selected}
+            atCap={atCap}
+            onToggle={toggle}
+            // Nothing ticked: a search adds places to choose from, not choices.
+            onCraving={() => setSelection(prev => nextSelection(prev, { type: "arrive", list: "search", ticked: [] }))}
+            inputId="onb-craving"
+            notices={createWheel.isError && <ErrorNote>{t("onb.err.create")}</ErrorNote>}
+            onChangePlace={() => {
+              search.reset();
+              setStep("locate");
+            }}
+            onManualCreate={onManualCreate}
+            leading={
+              typed.length > 0 && (
+                  <section className="flex flex-col gap-2.5">
+                    <BandHeading label={t("onb.typed.section")} count={typed.length} />
+                    {typed.map((name, i) => {
+                      const placeId = matched[name];
+                      if (placeId) {
+                        const on = selected.has(placeId);
+                        return (
+                          <TypedCard
+                            key={`typed:${name}`}
+                            name={name}
+                            matchedTo={known.get(placeId)?.name}
+                            on={on}
+                            dimmed={atCap && !on}
+                            index={i}
+                            onToggle={() => toggle(placeId)}
+                          />
+                        );
+                      }
+                      const on = typedOn.has(name);
+                      return (
+                        <TypedCard
+                          key={`typed:${name}`}
+                          name={name}
+                          on={on}
+                          dimmed={atCap && !on}
+                          index={i}
+                          onToggle={() => {
+                            if (!on && atCap) {
+                              setCapAt(Date.now());
+                              return;
+                            }
+                            setTypedOn(prev => {
+                              const next = new Set(prev);
+                              if (on) next.delete(name);
+                              else next.add(name);
+                              return next;
+                            });
+                          }}
+                        />
+                      );
+                    })}
+                  </section>
               )
-            )}
-          </div>
+            }
+          />
         </div>
 
         {/* Commit bar: the wheel being assembled, and the way to spin it. */}
@@ -808,6 +484,61 @@ export default function OnboardingFlow({
               >
                 {t("onb.cap", { n: MAX_SEGMENTS })}
               </p>
+            )}
+            {/* Everything on the wheel, whichever list it was chosen from —
+                the one place the button's number can always be checked
+                against, and the way to drop a place whose card is not the
+                one showing. */}
+            {/* Solid paper: it floats over the scrolling list, and anything
+                less than opaque would put two layers of names on top of each
+                other. Each item is a remove BUTTON, not a toggle chip — its
+                one job is taking the place off. */}
+            {total > 0 && (
+              <div
+                role="group"
+                aria-label={t("onb.selected", { n: total })}
+                className="pointer-events-auto onb-chips w-full flex items-center gap-2 overflow-x-auto px-3 py-2"
+                style={{
+                  borderRadius: "var(--radius-card)",
+                  background: "var(--paper)",
+                  border: "1px solid var(--border)",
+                  boxShadow: "var(--glass-card-shadow)",
+                }}
+              >
+                <span className="type-eyebrow flex-none pl-1" style={{ color: "var(--ink-warm)" }}>
+                  {t("onb.selected", { n: total })}
+                </span>
+                {typedOnWheel.map(name => (
+                  <Button
+                    key={`typed:${name}`}
+                    variant="secondary"
+                    size="md"
+                    className="flex-none whitespace-nowrap"
+                    aria-label={t("onb.selected.remove", { name })}
+                    onClick={() =>
+                      setTypedOn(prev => {
+                        const next = new Set(prev);
+                        next.delete(name);
+                        return next;
+                      })
+                    }
+                  >
+                    {name} <X size={14} />
+                  </Button>
+                ))}
+                {wheel.map(p => (
+                  <Button
+                    key={p.placeId}
+                    variant="secondary"
+                    size="md"
+                    className="flex-none whitespace-nowrap"
+                    aria-label={t("onb.selected.remove", { name: p.name })}
+                    onClick={() => setSelection(prev => nextSelection(prev, { type: "remove", id: p.placeId }))}
+                  >
+                    {p.name} <X size={14} />
+                  </Button>
+                ))}
+              </div>
             )}
             <button
               type="button"
@@ -884,7 +615,15 @@ export default function OnboardingFlow({
   const busy = locating || pending === "base";
 
   return (
-    <div className="grow flex flex-col items-center justify-center px-5 py-6 w-full">
+    <div className="relative grow flex flex-col items-center justify-center px-5 py-6 w-full">
+      {/* Top-left, where "back" lives, and out of the flow: at the foot of the
+          column it sat under the dock on a 390x844 phone, and as a row of its
+          own it pushed "I'll add places myself" under the dock instead. */}
+      {onCancel && (
+        <div className="absolute left-2 top-0">
+          <CancelButton onCancel={onCancel} />
+        </div>
+      )}
       <div className="w-full max-w-sm flex flex-col items-center gap-4 text-center">
         <LocateRadar busy={busy} dots={revealDots} />
 
@@ -911,7 +650,7 @@ export default function OnboardingFlow({
           >
             {busy && !revealDots
               ? t("onb.locate.searching")
-              : t("onb.locate.desc")}
+              : t(another ? "onb.locate.descAnother" : "onb.locate.desc")}
           </p>
           {/* Continuity with the landing page: what they typed there is not
               lost, and they can see that BEFORE choosing a location. */}
@@ -973,15 +712,21 @@ export default function OnboardingFlow({
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
-function groupByBand<P extends { walkMinutes: number }>(places: P[]) {
-  const out: { band: number | null; places: P[] }[] = [];
-  for (const p of places) {
-    const band = walkBand(p.walkMinutes);
-    const last = out[out.length - 1];
-    if (last && last.band === band) last.places.push(p);
-    else out.push({ band, places: [p] });
-  }
-  return out;
+/** The way back out of an additional wheel's flow. A plain text button, the
+ *  same weight as "I'll add places myself": leaving is allowed, not promoted. */
+function CancelButton({ onCancel }: { onCancel: () => void }) {
+  const { t } = useLang();
+  return (
+    <button
+      type="button"
+      onClick={onCancel}
+      aria-label={t("onb.cancel")}
+      className="inline-flex items-center justify-center gap-2 px-3 transition-colors hover:text-foreground self-start"
+      style={{ minHeight: 44, color: "var(--body-warm)", fontSize: 14, fontWeight: 500 }}
+    >
+      <ArrowLeft size={15} /> {t("onb.back")}
+    </button>
+  );
 }
 
 /** The CTA copy with its number rolled in on every change, so the count reads
@@ -1004,156 +749,6 @@ function CountCopy({ text, count }: { text: string; count: number }) {
   );
 }
 
-/** A chip in the scrolling filter row — the design-system Chip, kept from
- *  shrinking or wrapping so the row scrolls instead. */
-function Chip({
-  on,
-  onClick,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <UiChip pressed={on} onClick={onClick} className="flex-none whitespace-nowrap">
-      {children}
-    </UiChip>
-  );
-}
-
-function ChipRule() {
-  return (
-    <span
-      aria-hidden
-      className="flex-none w-px h-6"
-      style={{ background: "var(--border)" }}
-    />
-  );
-}
-
-/**
- * The list has run dry (fewer than a wheel's minimum). Offer the single lifts
- * that put places back, biggest first and all instant, then the one that goes
- * back to Google — labelled as a new search so nobody mistakes it for a filter.
- */
-function ThinCard({
-  count,
-  lifts,
-  canLookFarther,
-  looking,
-  onLift,
-  onLookFarther,
-  onChangePlace,
-  onManualCreate,
-}: {
-  count: number;
-  lifts: { kind: RelaxationKind; gain: number }[];
-  canLookFarther: boolean;
-  looking: boolean;
-  onLift: (kind: RelaxationKind) => void;
-  onLookFarther: () => void;
-  onChangePlace: () => void;
-  onManualCreate: () => void;
-}) {
-  const { t } = useLang();
-  const labels: Record<RelaxationKind, Parameters<typeof t>[0]> = {
-    openOnly: "onb.relax.openOnly",
-    priceCap: "onb.relax.priceCap",
-    walkCap: "onb.relax.walkCap",
-    lowRated: "onb.relax.lowRated",
-  };
-  const exhausted = lifts.length === 0 && !canLookFarther;
-
-  return (
-    <div
-      className="onb-arrive flex flex-col gap-3 p-5"
-      style={{
-        borderRadius: "var(--radius-card)",
-        border: "1.5px dashed var(--border)",
-        background: "var(--paper)",
-      }}
-    >
-      <p style={{ fontSize: 17, fontWeight: 650, color: "var(--ink-warm)" }}>
-        {count === 0
-          ? t("onb.thin.titleNone")
-          : t("onb.thin.title", { n: count })}
-      </p>
-      {exhausted ? (
-        <>
-          <p className="type-meta" style={{ color: "var(--body-warm)" }}>
-            {t("onb.thin.exhausted")}
-          </p>
-          <div className="flex gap-2 flex-wrap">
-            <OutlineButton onClick={onChangePlace}>
-              <MapPin size={15} /> {t("onb.pick.change")}
-            </OutlineButton>
-            <OutlineButton onClick={onManualCreate}>
-              <PenLine size={15} /> {t("onb.locate.manual")}
-            </OutlineButton>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="type-meta" style={{ color: "var(--body-warm)" }}>
-            {t("onb.thin.desc")}
-          </p>
-          <div className="flex gap-2 flex-wrap">
-            {lifts.map(l => (
-              <OutlineButton key={l.kind} onClick={() => onLift(l.kind)}>
-                {t(labels[l.kind])}
-                <span style={{ color: "var(--brand-text)", fontWeight: 700 }}>
-                  {t("onb.relax.gain", { n: l.gain })}
-                </span>
-              </OutlineButton>
-            ))}
-            {canLookFarther && (
-              <OutlineButton onClick={onLookFarther} disabled={looking} accent>
-                {looking ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : (
-                  <Radar size={15} />
-                )}
-                {t("onb.more")}
-                <span style={{ fontSize: 12, opacity: 0.8 }}>
-                  · {t("onb.relax.research")}
-                </span>
-              </OutlineButton>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function OutlineButton({
-  onClick,
-  disabled,
-  accent,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  accent?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      variant={accent ? "brand-outline" : "outline"}
-      size="md"
-      // 14px semibold: these sit three or four to a wrapping row at the end of
-      // the list, one rung under the md label so the row stays one line longer.
-      className="gap-1.5 text-sm font-semibold"
-    >
-      {children}
-    </Button>
-  );
-}
-
 /**
  * A place the visitor typed on the landing page. Same card and same tick as a
  * nearby place, so it reads as one list — but the tile shows a pen instead of
@@ -1161,12 +756,15 @@ function OutlineButton({
  */
 function TypedCard({
   name,
+  matchedTo,
   on,
   dimmed,
   index,
   onToggle,
 }: {
   name: string;
+  /** The Google listing this typed name was matched to, if any. */
+  matchedTo?: string;
   on: boolean;
   dimmed: boolean;
   index: number;
@@ -1246,7 +844,7 @@ function TypedCard({
               color: "var(--body-warm)",
             }}
           >
-            {t("onb.typed.meta")}
+            {matchedTo ? t("onb.typed.matched", { name: matchedTo }) : t("onb.typed.meta")}
           </span>
         </span>
       </button>
@@ -1324,26 +922,3 @@ function BuildingStep({
   );
 }
 
-function ErrorNote({
-  children,
-  tone = "error",
-}: {
-  children: React.ReactNode;
-  tone?: "error" | "warn";
-}) {
-  const token = tone === "warn" ? "--brand" : "--destructive";
-  return (
-    <div
-      className="flex items-start gap-2.5 px-3.5 py-2.5 type-meta w-full text-left"
-      style={{
-        borderRadius: "var(--radius-chip)",
-        background: `oklch(from var(${token}) l c h / 0.10)`,
-        border: `1px solid oklch(from var(${token}) l c h / 0.25)`,
-        color: `var(${token})`,
-      }}
-    >
-      <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-      <span className="leading-relaxed">{children}</span>
-    </div>
-  );
-}

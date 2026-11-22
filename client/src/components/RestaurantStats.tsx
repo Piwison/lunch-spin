@@ -1,199 +1,57 @@
 import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Crown, Sparkles, Users } from "lucide-react";
-import {
-  rankStats,
-  totalPicks as sumPicks,
-  overdueRestaurants,
-  daysSinceLastPick,
-  picksByPerson,
-  type RestaurantStat,
-} from "@shared/stats";
+import { Button } from "@/components/ui/button";
+import { Sparkles } from "lucide-react";
+import { overdueRestaurants, type RestaurantStat } from "@shared/stats";
 import { useLang } from "@/i18n";
 
-interface RestaurantStatsProps {
+interface ComebackCardProps {
+  /** Lunches per place (shared/lunch.ts), places never eaten at included. */
   stats: RestaurantStat[];
-  /** Spin history — enables the "who's been picking" fairness view on shared wheels. */
-  history?: { spunBy: number; spunByName: string | null }[];
-  /** Shared wheel? Controls whether the fairness view is shown. */
-  showPeople?: boolean;
-  isLoading?: boolean;
+  /** Vote for this place in today's round. */
+  onVote: (restaurantId: number, name: string) => void;
+  disabled?: boolean;
 }
 
-// One measure, one hue: bars carry brand warmth (leader at full strength,
-// the rest dimmed) instead of a rank-cycled rainbow. Elsewhere in the app a
-// color IS a restaurant's identity (wheel segment, list dot) — recycling
-// arbitrary hues by rank position here would contradict that language.
-const barColor = (idx: number) =>
-  idx === 0 ? "var(--brand)" : "oklch(from var(--brand) l c h / 0.35)";
-
-export function RestaurantStats({ stats, history, showPeople, isLoading }: RestaurantStatsProps) {
+/**
+ * "Due for a comeback": places the team hasn't eaten at in two weeks, or ever.
+ * Each one is a button now — a tap is a vote for it in today's round, which the
+ * spin already weights (applyVoteWeights). A list of neglected places you could
+ * only read was advice with no way to take it.
+ */
+export function ComebackCard({ stats, onVote, disabled = false }: ComebackCardProps) {
   const { t } = useLang();
-  const lastPickedLabel = (lastPickedAt: Date | null): string => {
-    const days = daysSinceLastPick(lastPickedAt);
-    if (days === null) return t("history.stats.lastNever");
-    if (days === 0) return t("history.stats.lastToday");
-    if (days === 1) return t("history.stats.lastYesterday");
-    return t("history.stats.lastDays", { n: days });
-  };
-  const ranked = useMemo(() => rankStats(stats), [stats]);
-  const total = useMemo(() => sumPicks(stats), [stats]);
-  const placesTried = useMemo(() => stats.filter((s) => s.pickCount > 0).length, [stats]);
-  const top = useMemo(() => ranked.slice(0, 5), [ranked]);
-  const maxPicks = top[0]?.pickCount ?? 0;
-
-  // Decision-grade: places the group is neglecting (never picked, or not in 14d).
-  const overdue = useMemo(
-    () => overdueRestaurants(stats, { thresholdDays: 14 }).slice(0, 6),
-    [stats]
-  );
-
-  const people = useMemo(
-    () => (showPeople && history ? picksByPerson(history) : []),
-    [showPeople, history]
-  );
-  const maxPersonPicks = people[0]?.count ?? 0;
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-    );
-  }
-
-  // No spins yet — restaurants may exist, but there's nothing to summarise.
-  if (total === 0) {
-    return (
-      <Card className="p-6 text-center text-muted-foreground">
-        <div className="text-3xl mb-2 opacity-30">📊</div>
-        <p className="text-sm">{t("history.stats.empty")}</p>
-      </Card>
-    );
-  }
-
-  const favorite = ranked[0];
+  const overdue = useMemo(() => overdueRestaurants(stats, { thresholdDays: 14 }).slice(0, 6), [stats]);
+  if (overdue.length === 0) return null;
 
   return (
-    <div className="space-y-4">
-      {/* Summary row */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.total")}</div>
-          <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>{total}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.tried")}</div>
-          <div className="type-section mt-1.5 tabular-nums" style={{ color: "var(--ink-warm)" }}>
-            {placesTried}<span style={{ fontSize: 16, fontWeight: 400, color: "var(--body-warm)" }}>/{stats.length}</span>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.favorite")}</div>
-          <div
-            className="mt-1.5 leading-tight line-clamp-2 break-words"
-            title={favorite?.name}
-            style={{ fontSize: 15, fontWeight: 600, color: "var(--ink-warm)" }}
-          >
-            {favorite?.name ?? "—"}
-          </div>
-        </Card>
+    <Card className="p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
+        <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>
+          {t("history.stats.comeback")}
+        </h3>
       </div>
-
-      {/* Due for a comeback — the actionable "what should we eat" nudge */}
-      {overdue.length > 0 && (
-        <Card className="p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={15} style={{ color: "var(--brand-text)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.comeback")}</h3>
-          </div>
-          <p className="type-meta text-muted-foreground mb-3">{t("history.stats.comebackBody")}</p>
-          <div className="flex flex-wrap gap-2">
-            {overdue.map(({ stat, daysSince }) => (
-              <span
-                key={stat.id}
-                className="flex items-center gap-1.5 px-3 py-1.5"
-                style={{
-                  borderRadius: "var(--radius-chip)",
-                  background: "oklch(from var(--brand) l c h / 0.08)",
-                  border: "1px solid oklch(from var(--brand) l c h / 0.22)",
-                  color: "var(--ink-warm)",
-                  fontSize: 15,
-                  fontWeight: 500,
-                }}
-              >
-                {stat.name}
-                <span className="type-meta text-muted-foreground">
-                  {daysSince === null ? t("history.stats.never") : t("history.stats.days", { n: daysSince })}
-                </span>
-              </span>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Most picked — horizontal bars (clear even with only a handful of spins) */}
-      <Card className="p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Crown size={15} style={{ color: "var(--brand-text)" }} />
-          <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.mostPicked")}</h3>
-        </div>
-        <div className="space-y-3">
-          {top.map((r, idx) => {
-            const pct = maxPicks > 0 ? (r.pickCount / maxPicks) * 100 : 0;
-            return (
-              <div key={r.id}>
-                <div className="flex items-center justify-between mb-1 gap-2">
-                  <span className="text-sm font-medium truncate">{r.name}</span>
-                  <span className="type-meta text-muted-foreground flex-shrink-0">
-                    {r.pickCount} · {lastPickedLabel(r.lastPickedAt)}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.max(pct, 6)}%`, background: barColor(idx) }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      {/* Who's been picking — fairness on shared wheels */}
-      {people.length > 1 && (
-        <Card className="p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <Users size={15} style={{ color: "var(--brand-text)" }} />
-            <h3 className="type-eyebrow" style={{ color: "var(--ink-warm)" }}>{t("history.stats.people")}</h3>
-          </div>
-          <p className="type-meta text-muted-foreground mb-3">{t("history.stats.peopleBody")}</p>
-          <div className="space-y-3">
-            {people.map((p, idx) => {
-              const pct = maxPersonPicks > 0 ? (p.count / maxPersonPicks) * 100 : 0;
-              return (
-                <div key={p.userId}>
-                  <div className="flex items-center justify-between mb-1 gap-2">
-                    <span className="text-sm font-medium truncate">{p.name ?? t("history.unknown")}</span>
-                    <span className="type-meta text-muted-foreground flex-shrink-0">
-                      {t(p.count === 1 ? "history.stats.spins.one" : "history.stats.spins.other", { n: p.count })}
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.max(pct, 6)}%`, background: barColor(idx) }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-    </div>
+      <p className="type-meta text-muted-foreground mb-3">{t("history.stats.comebackBody")}</p>
+      <div className="flex flex-wrap gap-2">
+        {overdue.map(({ stat, daysSince }) => (
+          // A Button, not a Chip: voting is an action, and Chip is a toggle
+          // whose aria-pressed would announce a state this does not have.
+          <Button
+            key={stat.id}
+            variant="outline"
+            size="md"
+            disabled={disabled}
+            onClick={() => onVote(stat.id, stat.name)}
+            aria-label={t("history.stats.voteAria", { name: stat.name })}
+          >
+            {stat.name}
+            <span className="type-meta text-muted-foreground">
+              {daysSince === null ? t("history.stats.never") : t("history.stats.days", { n: daysSince })}
+            </span>
+          </Button>
+        ))}
+      </div>
+    </Card>
   );
 }

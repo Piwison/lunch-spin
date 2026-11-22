@@ -46,7 +46,7 @@ export const zh = {
   "features.2.title": "最近吃過的自動跳過",
   "features.2.desc": "自己設幾天內不重複，不用再回想上禮拜吃了什麼",
   "features.3.title": "整組同事一起轉",
-  "features.3.desc": "分享一個連結，大家同時看到同一個結果",
+  "features.3.desc": "分享一個連結，誰轉的結果大家都看得到",
   "features.4.title": "不吃的先排除",
   "features.4.desc": "有人不吃牛、有人不吃辣，標記過就不會再轉到",
 
@@ -99,7 +99,7 @@ export const en: Record<keyof typeof zh, string> = {
   "features.2.title": "Recently eaten is skipped",
   "features.2.desc": "Set your own no-repeat window and stop remembering last week",
   "features.3.title": "The whole team spins",
-  "features.3.desc": "Share one link and everyone watches the same result land",
+  "features.3.desc": "Share one link, and whoever spins, everyone sees the result",
   "features.4.title": "Veto what you don't eat",
   "features.4.desc": "No beef, no chilli — mark it once and it stops coming up",
 

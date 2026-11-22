@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   DECAY_PEAK,
+  FREE_SPIN_SPEED,
+  MAX_LAND_ARC_DEG,
+  MIN_LAND_TURNS,
+  SETTLE_DEG,
+  SPIN_REVEAL_DELAY_MS,
   decayDurationMs,
   EASE_DECAY,
   EASE_EXIT,
@@ -34,13 +39,30 @@ const POINTER = 270;
 const POINTER_ANGLES = [270, 180, 0, 90, 37.5];
 
 describe("timeline", () => {
-  it("sums to the 2.92s total, which only works if recede and unroll overlap", () => {
+  it("sums to the total only because recede and unroll overlap", () => {
     const { windupMs, travelMs, settleMs, recedeMs, unrollDelayMs, unrollMs } = SPIN_TIMELINE;
-    // Phases listed end to end come to 3080ms, not 2920ms. They reconcile when
-    // the unroll starts 160ms into the 320ms recede.
-    expect(windupMs + travelMs + settleMs + recedeMs + unrollMs).toBe(3080);
+    // The phases end to end overshoot the total by the part of the recede the
+    // unroll runs over: the unroll starts partway into the recede.
+    expect(windupMs + travelMs + settleMs + recedeMs + unrollMs - SPIN_TOTAL_MS).toBe(recedeMs - unrollDelayMs);
     expect(windupMs + travelMs + settleMs + unrollDelayMs + unrollMs).toBe(SPIN_TOTAL_MS);
-    expect(SPIN_TOTAL_MS).toBe(2920);
+  });
+
+  // The owner's call (2026-11): the spin was too long and had to lose MORE than
+  // half. Measured before the change in the replica, with the server answering
+  // in 64ms: tap -> disc at rest 2389ms. A fast reply's landing is wind-up, the
+  // longer of the travel floor and the decay over the arc it drew, then the
+  // settle — and the longest arc is the worst case, so that is what is pinned.
+  // A slow server still lengthens the free spin; that part is the network's.
+  it("lands in under half the old 2.39s, even on the longest arc", () => {
+    const worst =
+      SPIN_TIMELINE.windupMs +
+      Math.max(SPIN_TIMELINE.travelMs, decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED)) +
+      SPIN_TIMELINE.settleMs;
+    expect(worst).toBeLessThan(2389 / 2);
+  });
+
+  it("still turns at least twice before it lands, so the stop reads as a draw", () => {
+    expect(MIN_LAND_TURNS).toBeGreaterThanOrEqual(2);
   });
 
   it("finishes the recede before the unroll finishes, so the disc is behind the type", () => {
@@ -93,10 +115,11 @@ describe("timeline", () => {
   });
 
   it("gives the decay enough time that it never turns faster than the free spin", () => {
-    const freeSpin = 1.49; // deg/ms, SpinWheel's FREE_SPIN_SPEED
-    // Four turns plus anything up to a full turn of residual arc: the range the
-    // landing actually produces.
-    for (const arc of [1440, 1600, 1800, 2160, 2520]) {
+    const freeSpin = FREE_SPIN_SPEED;
+    // The minimum turns plus anything up to a full turn of residual arc: the
+    // range the landing actually produces, and some way beyond it.
+    const shortest = MIN_LAND_TURNS * 360 - SETTLE_DEG;
+    for (const arc of [shortest, shortest + 180, MAX_LAND_ARC_DEG, 1800, 2520]) {
       const ms = decayDurationMs(arc, freeSpin);
       // Sample the real curve rather than trusting the constant.
       let fastest = 0;
@@ -562,5 +585,29 @@ describe("cubicBezier", () => {
 
   it("exits: slow to start, so the wind-up reads as loading up", () => {
     expect(EASE_EXIT(0.25)).toBeLessThan(0.2);
+  });
+});
+
+describe("SPIN_REVEAL_DELAY_MS — teammates never learn the result first", () => {
+  it("covers the longest landing: wind-up, the decay over the longest arc, the settle and the unroll", () => {
+    const longestDecay = decayDurationMs(MAX_LAND_ARC_DEG, FREE_SPIN_SPEED);
+    expect(SPIN_REVEAL_DELAY_MS).toBeGreaterThanOrEqual(
+      SPIN_TIMELINE.windupMs +
+        Math.max(SPIN_TIMELINE.travelMs, longestDecay) +
+        SPIN_TIMELINE.settleMs +
+        SPIN_TIMELINE.unrollDelayMs +
+        SPIN_TIMELINE.unrollMs,
+    );
+  });
+
+  it("the longest arc is the minimum turns plus a full alignment remainder, less the settle", () => {
+    expect(MAX_LAND_ARC_DEG).toBe((MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG);
+    // landingRotationDeg never exceeds it, at any pointer angle or target.
+    for (const pointerDeg of POINTER_ANGLES) {
+      for (let target = 0; target < 8; target++) {
+        const to = landingRotationDeg({ fromDeg: 13, targetIndex: target, count: 8, pointerDeg, minTurns: MIN_LAND_TURNS });
+        expect(to - SETTLE_DEG - 13).toBeLessThanOrEqual(MAX_LAND_ARC_DEG);
+      }
+    }
   });
 });

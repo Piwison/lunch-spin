@@ -3,6 +3,7 @@ import {
   applyDietary,
   applyVetoes,
   applyVoteWeights,
+  dietaryForPresent,
   excludedDietaryTagIds,
   vetoedIds,
   voteCounts,
@@ -25,6 +26,48 @@ const state: SessionState = {
     { userId: 20, tagIds: [101] },
   ],
 };
+
+describe("dietaryForPresent", () => {
+  // Amy (1) doesn't eat beef (100); Ben (2) doesn't eat Korean (200) or lamb (201);
+  // Chloe (3) doesn't eat pork (300).
+  const prefs = [
+    { userId: 1, tagId: 100 },
+    { userId: 2, tagId: 200 },
+    { userId: 2, tagId: 201 },
+    { userId: 3, tagId: 300 },
+  ];
+
+  it("applies only the people who opened the wheel today", () => {
+    expect(dietaryForPresent(prefs, [2], null)).toEqual([{ userId: 2, tagIds: [200, 201] }]);
+  });
+
+  it("leaves out someone who isn't here today — their setting doesn't shrink the wheel", () => {
+    expect(dietaryForPresent(prefs, [1, 3], null).map((m) => m.userId)).toEqual([1, 3]);
+  });
+
+  it("always applies the person spinning, present row or not", () => {
+    expect(dietaryForPresent(prefs, [2], 1)).toEqual([
+      { userId: 1, tagIds: [100] },
+      { userId: 2, tagIds: [200, 201] },
+    ]);
+  });
+
+  it("is empty when nobody present has a setting", () => {
+    expect(dietaryForPresent(prefs, [9], null)).toEqual([]);
+    expect(dietaryForPresent([], [1, 2], 1)).toEqual([]);
+  });
+
+  it("feeds applyDietary through the same union as before", () => {
+    const rests = [
+      { id: 1, tags: [{ id: 200 }] }, // Korean
+      { id: 2, tags: [{ id: 100 }] }, // beef
+      { id: 3, tags: [] },
+    ];
+    const marks = dietaryForPresent(prefs, [2], null);
+    const off = excludedDietaryTagIds({ vetoes: [], votes: [], dietary: marks });
+    expect(applyDietary(rests, off).map((r) => r.id)).toEqual([2, 3]);
+  });
+});
 
 describe("vetoedIds", () => {
   it("returns only restaurants with at least one veto", () => {

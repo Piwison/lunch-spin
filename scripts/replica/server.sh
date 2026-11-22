@@ -13,4 +13,4 @@ export NODE_ENV=development
 export GOOGLE_MAPS_API_KEY=replica-fake
 export APP_ORIGIN="http://localhost:$PORT"
 export NODE_OPTIONS="--import $REPLICA_DIR/fake-google.mjs --import $REPLICA_DIR/mariadb-json.mjs"
-exec faketime -f "+${offset}" node_modules/.bin/tsx watch server/_core/index.ts
+exec faketime -f "$(printf '%+d' "$offset")" node_modules/.bin/tsx watch server/_core/index.ts

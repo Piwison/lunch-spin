@@ -1,8 +1,9 @@
 /**
- * Pure logic for per-session group decisions: vetoes ("not today") and votes
- * ("I want this"). The session is the current decision moment for a shared
- * wheel; marks are ephemeral and live in server memory (see server/realtime.ts),
- * but the shaping here is pure so it can be unit-tested and shared client/server.
+ * Pure logic for a shared wheel's day of decisions: vetoes ("not today") and
+ * votes ("want it"), which count only on the Taipei day they were made
+ * (shared/realtimeState `isActiveMark`, rows in `round_marks`), and each
+ * person's standing "I don't eat" (`user_dietary`), which applies on the days
+ * that person is actually here (`dietaryForPresent`).
  */
 
 import type { Weighted } from "./weight";
@@ -20,9 +21,39 @@ export interface DietaryMarks {
 export interface SessionState {
   vetoes: SessionMarks[];
   votes: SessionMarks[];
-  // Per-member "avoid today" tag exclusions (dietary constraints). The group
-  // respects the union: a restaurant carrying anyone's avoided tag is out.
+  // The "I don't eat" settings of everyone here today (dietaryForPresent). The
+  // group respects the union: a restaurant carrying anyone's tag is out.
   dietary: DietaryMarks[];
+}
+
+/** One row of someone's standing "I don't eat" setting. */
+export interface DietaryPref {
+  userId: number;
+  tagId: number;
+}
+
+/**
+ * Whose "I don't eat" shapes the wheel: everyone who has opened it today, plus
+ * the person spinning. A teammate who is not at lunch today does not shrink
+ * everyone else's wheel — that was the trouble with a setting that lasts — and
+ * the spinner always counts, present row or not, since they are here by
+ * definition.
+ */
+export function dietaryForPresent(
+  prefs: readonly DietaryPref[],
+  presentUserIds: Iterable<number>,
+  spinnerId: number | null,
+): DietaryMarks[] {
+  const here = new Set(presentUserIds);
+  if (spinnerId != null) here.add(spinnerId);
+  const byUser = new Map<number, number[]>();
+  for (const p of prefs) {
+    if (!here.has(p.userId)) continue;
+    const list = byUser.get(p.userId);
+    if (list) list.push(p.tagId);
+    else byUser.set(p.userId, [p.tagId]);
+  }
+  return Array.from(byUser, ([userId, tagIds]) => ({ userId, tagIds })).sort((a, b) => a.userId - b.userId);
 }
 
 export const EMPTY_SESSION: SessionState = { vetoes: [], votes: [], dietary: [] };
