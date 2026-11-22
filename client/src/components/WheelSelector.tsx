@@ -38,6 +38,10 @@ interface WheelSelectorProps {
   onDeleted: (id: number) => void;
   /** Lets a parent (first run's "I'll add places myself") open the create dialog. */
   registerCreateOpener?: (open: () => void) => void;
+  /** "New wheel" from the rail or the sheet. When set, the parent runs the
+   *  nearby flow (OnboardingFlow) instead of opening the create dialog, which
+   *  stays reachable through `registerCreateOpener`. */
+  onNewWheel?: () => void;
   /**
    * Lets a parent (the Wheel tab's gear icon) open the settings dialog for a
    * given wheel without duplicating its form state/mutations — same pattern
@@ -228,6 +232,7 @@ export default function WheelSelector({
   onSelect,
   onDeleted,
   registerCreateOpener,
+  onNewWheel,
   registerSettingsOpener,
   trailing,
   pickerHidden = false,
@@ -640,7 +645,7 @@ export default function WheelSelector({
         {wheels?.map((wheel) => renderRow(wheel, "rail"))}
 
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={() => (onNewWheel ? onNewWheel() : setShowCreate(true))}
           className="mt-1 flex items-center gap-2.5 px-3 text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors duration-150"
           style={{ minHeight: 56, borderRadius: "var(--radius-control)" }}
         >
@@ -686,7 +691,11 @@ export default function WheelSelector({
                 {t("settings.myWheels")}
               </SheetTitle>
               <button
-                onClick={() => { setShowSwitcher(false); setShowCreate(true); }}
+                onClick={() => {
+                  setShowSwitcher(false);
+                  if (onNewWheel) onNewWheel();
+                  else setShowCreate(true);
+                }}
                 className="ml-auto flex items-center gap-1.5 px-4 hover:bg-white/10 transition-colors"
                 style={{ minHeight: 56, borderRadius: "var(--radius-control)", fontSize: 15, fontWeight: 500, color: "var(--ink-warm)" }}
               >

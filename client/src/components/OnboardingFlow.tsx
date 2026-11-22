@@ -1,5 +1,7 @@
 /**
- * First run: Locate → Pick → Spin.
+ * First run: Locate → Pick → Spin. Also every later "New wheel" (`another`):
+ * a second wheel is made the same way as the first, with the seven-field
+ * dialog still one tap away under "I'll add places myself".
  *
  * The nearby search IS the onboarding. One tap finds real restaurants near you,
  * already ticked; the only job is adjusting the list; then the wheel is built
@@ -52,7 +54,7 @@ import { MIN_SPINNABLE, canStartSpinning } from "@shared/onboarding";
 import { DEMO_DRAFT_KEY, parseDemoDraft } from "@shared/demoDraft";
 import { bestNameMatch } from "@shared/nameMatch";
 import { arrivalTicks, filterCandidates, nextSelection } from "@shared/candidates";
-import { ArrowRight, Check, Loader2, MapPin, PenLine, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Loader2, MapPin, PenLine, X } from "lucide-react";
 import { devicePlaceLanguage } from "@/lib/placeLanguage";
 
 type Step = "locate" | "pick" | "building" | "office";
@@ -64,11 +66,17 @@ const CAP_FLASH_MS = 2600;
 export default function OnboardingFlow({
   onCreated,
   onManualCreate,
+  another = false,
+  onCancel,
 }: {
   /** A wheel now exists — hand control back to the app. */
   onCreated: (wheelId: number) => void;
   /** "I'll add places myself" — open the ordinary create dialog. */
   onManualCreate: () => void;
+  /** Not the first wheel: the copy stops saying "your first wheel". */
+  another?: boolean;
+  /** Back to the wheel you were on. Absent on first run — there is none. */
+  onCancel?: () => void;
 }) {
   const { t } = useLang();
   const reducedMotion = useReducedMotion();
@@ -326,6 +334,11 @@ export default function OnboardingFlow({
         <div className="w-full max-w-lg mx-auto px-5 pt-6 onb-list-end flex flex-col gap-5">
           {/* Header */}
           <header className="flex flex-col gap-2">
+            {onCancel && (
+              <div className="-ml-3 -mt-2">
+                <CancelButton onCancel={onCancel} />
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <p
                 className="type-eyebrow"
@@ -602,7 +615,15 @@ export default function OnboardingFlow({
   const busy = locating || pending === "base";
 
   return (
-    <div className="grow flex flex-col items-center justify-center px-5 py-6 w-full">
+    <div className="relative grow flex flex-col items-center justify-center px-5 py-6 w-full">
+      {/* Top-left, where "back" lives, and out of the flow: at the foot of the
+          column it sat under the dock on a 390x844 phone, and as a row of its
+          own it pushed "I'll add places myself" under the dock instead. */}
+      {onCancel && (
+        <div className="absolute left-2 top-0">
+          <CancelButton onCancel={onCancel} />
+        </div>
+      )}
       <div className="w-full max-w-sm flex flex-col items-center gap-4 text-center">
         <LocateRadar busy={busy} dots={revealDots} />
 
@@ -629,7 +650,7 @@ export default function OnboardingFlow({
           >
             {busy && !revealDots
               ? t("onb.locate.searching")
-              : t("onb.locate.desc")}
+              : t(another ? "onb.locate.descAnother" : "onb.locate.desc")}
           </p>
           {/* Continuity with the landing page: what they typed there is not
               lost, and they can see that BEFORE choosing a location. */}
@@ -690,6 +711,23 @@ export default function OnboardingFlow({
 }
 
 // ── Pieces ─────────────────────────────────────────────────────────────────
+
+/** The way back out of an additional wheel's flow. A plain text button, the
+ *  same weight as "I'll add places myself": leaving is allowed, not promoted. */
+function CancelButton({ onCancel }: { onCancel: () => void }) {
+  const { t } = useLang();
+  return (
+    <button
+      type="button"
+      onClick={onCancel}
+      aria-label={t("onb.cancel")}
+      className="inline-flex items-center justify-center gap-2 px-3 transition-colors hover:text-foreground self-start"
+      style={{ minHeight: 44, color: "var(--body-warm)", fontSize: 14, fontWeight: 500 }}
+    >
+      <ArrowLeft size={15} /> {t("onb.back")}
+    </button>
+  );
+}
 
 /** The CTA copy with its number rolled in on every change, so the count reads
  *  as moving without the sentence around it jumping. `\u0000` marks where the

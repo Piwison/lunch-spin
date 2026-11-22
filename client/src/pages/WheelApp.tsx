@@ -116,6 +116,9 @@ export default function WheelApp() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState<WheelSegment | null>(null);
   const [showResult, setShowResult] = useState(false);
+  // "New wheel" when one already exists: the first-run flow again, in place of
+  // the tabs, until a wheel is made or the person goes back (see onNewWheel).
+  const [creatingWheel, setCreatingWheel] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const [spinId, setSpinId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -943,6 +946,21 @@ export default function WheelApp() {
    * never spin again (failure modes 14, 51).
    */
   const autoSpinFor = useRef<number | null>(null);
+  /** A tab is a way out of the "New wheel" flow, like the picker is. */
+  const switchTab = (tab: Tab) => {
+    setCreatingWheel(false);
+    setActiveTab(tab);
+  };
+  /** OnboardingFlow built a wheel — first run or a later "New wheel". */
+  const handleFlowCreated = (wheelId: number) => {
+    autoSpinFor.current = wheelId;
+    utils.wheels.list.invalidate();
+    utils.wheels.bootstrap.invalidate();
+    setCreatingWheel(false);
+    setSelectedWheelId(wheelId);
+    setActiveTab("wheel");
+    navigate(`/app/${wheelId}`, { replace: true });
+  };
   useEffect(() => {
     const id = autoSpinFor.current;
     if (id == null || selectedWheelId !== id) return;
@@ -1315,7 +1333,7 @@ export default function WheelApp() {
         {/* ── WHEEL SWITCHER (desktop rail · mobile pill+sheet) ── */}
         <WheelSelector
           selectedWheelId={selectedWheelId}
-          onSelect={(id: number) => { setSelectedWheelId(id); navigate(`/app/${id}`); }}
+          onSelect={(id: number) => { setCreatingWheel(false); setSelectedWheelId(id); navigate(`/app/${id}`); }}
           onDeleted={(id: number) => {
             // Mark it dead before releasing the selection: the refreshed entry
             // payload may not have landed yet, and the auto-open effect would
@@ -1326,6 +1344,13 @@ export default function WheelApp() {
             navigate("/app", { replace: true });
           }}
           registerCreateOpener={registerCreateOpener}
+          onNewWheel={() => {
+            // A wheel mid-spin is not abandoned for a new one; the button is
+            // also behind the winner sheet while a result is up.
+            if (isSpinning) return;
+            setShowResult(false);
+            setCreatingWheel(true);
+          }}
           registerSettingsOpener={registerSettingsOpener}
           pickerHidden={firstRun}
           /* The Wheel tab spends this slot on the filter instead of the gear.
@@ -1334,7 +1359,7 @@ export default function WheelApp() {
              below it is gone (the picker already says which wheel you are on).
              That is what gets Spin above the fold on a 390x844 phone. */
           trailing={
-            activeTab === "wheel" && selectedWheelId ? (
+            activeTab === "wheel" && selectedWheelId && !creatingWheel ? (
               <FilterBar
                 variant="sheet"
                 open={showFilters}
@@ -1362,14 +1387,14 @@ export default function WheelApp() {
           {/* The page's one h1, for screen readers: the wheel's name. The
               visible title was dropped on purpose (the picker already shows
               it), and first run renders its own h1 in this same region. */}
-          {!firstRun && <h1 className="sr-only">{wheelData?.name ?? t("app.brand")}</h1>}
+          {!firstRun && !creatingWheel && <h1 className="sr-only">{wheelData?.name ?? t("app.brand")}</h1>}
 
           {/* ── VIEW TABS (desktop) — floating glass segmented control ──
               Ember: one glass bar, solid persimmon on the active segment (no
               gradient, no glow — persimmon is the only saturated colour and it
               is flat), and 56px of height like every other control. */}
           <div className="hidden md:flex px-4 py-2.5 flex-shrink-0 md:justify-center xl:justify-start">
-            <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="rail" />
+            <TabRail items={tabConfig} value={activeTab} onChange={switchTab} variant="rail" />
           </div>
 
           {/* ── SHARED TEXT BANNER ── */}
@@ -1409,10 +1434,21 @@ export default function WheelApp() {
               both directions. */}
           <div
             className={`flex-1 overflow-y-auto overflow-x-clip pb-dock${
-              !selectedWheelId ? " flex flex-col" : ""
+              !selectedWheelId || creatingWheel ? " flex flex-col" : ""
             }`}
           >
-            {!selectedWheelId ? (
+            {creatingWheel && !firstRun ? (
+              /* "New wheel" with wheels already made: the same nearby flow as
+                 first run, so a second wheel takes one tap and a list, not
+                 the seven-field dialog. That dialog is still "I'll add places
+                 myself". */
+              <OnboardingFlow
+                another
+                onCreated={handleFlowCreated}
+                onManualCreate={() => createOpenerRef.current?.()}
+                onCancel={() => setCreatingWheel(false)}
+              />
+            ) : !selectedWheelId ? (
               decidingWheel ? (
                 /* Held until the app knows which wheel to open — see
                    `decidingWheel`. Labelled, like the wheel-switch loader: an
@@ -1428,14 +1464,7 @@ export default function WheelApp() {
                    fictional restaurants — see OnboardingFlow. Anyone who declines
                    to share their location falls through to that same dialog. */
                 <OnboardingFlow
-                  onCreated={(wheelId) => {
-                    autoSpinFor.current = wheelId;
-                    utils.wheels.list.invalidate();
-                    utils.wheels.bootstrap.invalidate();
-                    setSelectedWheelId(wheelId);
-                    setActiveTab("wheel");
-                    navigate(`/app/${wheelId}`, { replace: true });
-                  }}
+                  onCreated={handleFlowCreated}
                   onManualCreate={() => createOpenerRef.current?.()}
                 />
               ) : (
@@ -1841,7 +1870,7 @@ export default function WheelApp() {
                 blurred flat gradient is the same flat gradient, so the dock
                 could only ever read as a slightly paler rectangle. The list
                 running under it IS the material. */}
-            <TabRail items={tabConfig} value={activeTab} onChange={setActiveTab} variant="dock" />
+            <TabRail items={tabConfig} value={activeTab} onChange={switchTab} variant="dock" />
           </nav>
         </main>
       </div>
