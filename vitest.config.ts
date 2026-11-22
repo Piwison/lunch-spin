@@ -22,6 +22,8 @@ export default defineConfig({
       // The design system's own guards (tokens, contrast, recipe ratchet). They
       // read index.css and the client sources as text; nothing renders.
       "client/src/design-system/**/*.test.ts",
+      // Operator tooling (db-verify's URL parsing).
+      "scripts/**/*.test.ts",
     ],
   },
 });

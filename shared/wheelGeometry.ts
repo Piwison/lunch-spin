@@ -23,17 +23,20 @@ export const SPIN_TIMELINE = {
   /** The free spin after the wind-up, before the stop may begin. Then up to
    *  one more turn (MAX_ALIGN_MS) so the stop always starts the same distance
    *  from the winning pane. Wind-up + this + MAX_ALIGN_MS + decayMs is
-   *  SPIN_TARGET_MS (pinned by a test), so an on-time reply lands at 2.85–3.0s
+   *  SPIN_TARGET_MS (pinned by a test), so an on-time reply lands at 1.95–2.1s
    *  from the TAP, whatever the network did.
    *
-   *  2600 -> 1900 -> 600 -> 150 -> 750. A reply that misses this point does
-   *  not wait for it: the stop starts the moment it arrives (planLateLanding). */
-  travelMs: 750,
+   *  2600 -> 1900 -> 600 -> 150 -> 750 -> 150. A reply that misses this point
+   *  does not wait for it: the stop starts the moment it arrives
+   *  (planLateLanding). */
+  travelMs: 150,
   /** The stop. Fixed: every on-time spin decelerates over the same time and
    *  the same arc (DECAY_ARC_DEG), from the free spin's own speed, along
-   *  EASE_DECAY. 700 -> 2000 (2026-11, the owner: "two seconds more, it has no
-   *  sense of slowing"): at 0.7s the curve had no room to read as a curve. */
-  decayMs: 2000,
+   *  EASE_DECAY. 700 -> 2000 -> 1700 (2026-11, the owner: first "two seconds
+   *  more, it has no sense of slowing", then "back to the one-second spin, and
+   *  one more second of slowing down"): at 0.7s the curve had no room to read
+   *  as a curve; at 3s the whole spin was too long. */
+  decayMs: 1700,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -47,7 +50,7 @@ export const SPIN_TIMELINE = {
 } as const;
 
 /** Tap to the disc at rest, on a reply that is in by the start of the stop. */
-export const SPIN_TARGET_MS = 3000;
+export const SPIN_TARGET_MS = 2100;
 
 /**
  * Tap to the winner's name fully unrolled, on a fast reply.

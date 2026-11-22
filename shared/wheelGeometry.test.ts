@@ -54,15 +54,19 @@ describe("timeline", () => {
   // which is what made the same spin feel different on production. A reply
   // that is in by the start of the stop lands within one alignment turn of
   // SPIN_TARGET_MS, and never after it.
-  it("lands at 3s from the tap when the reply is on time", () => {
+  // ...and then (same week): "back to one second, and give the stop one more
+  // second" — the ~1.05s spin with its 0.7s stop made 1.7s, ~2.1s in all.
+  it("lands at ~2.1s from the tap when the reply is on time", () => {
     const latest = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + MAX_ALIGN_MS + SPIN_TIMELINE.decayMs;
-    expect(SPIN_TARGET_MS).toBe(3000);
+    expect(SPIN_TARGET_MS).toBe(2100);
     expect(latest).toBe(SPIN_TARGET_MS);
     expect(latest - MAX_ALIGN_MS).toBeGreaterThanOrEqual(SPIN_TARGET_MS - 200);
   });
 
-  it("spends two seconds slowing down, most of the spin", () => {
-    expect(SPIN_TIMELINE.decayMs).toBe(2000);
+  it("keeps the ~1s spin's start and gives its stop one more second", () => {
+    expect(SPIN_TIMELINE.windupMs).toBe(100);
+    expect(SPIN_TIMELINE.travelMs).toBe(150);
+    expect(SPIN_TIMELINE.decayMs).toBe(700 + 1000);
   });
 
   it("still turns at least twice between the release and the stop", () => {
@@ -138,12 +142,13 @@ describe("planLateLanding — the reply missed the start of the stop", () => {
     }
   });
 
-  it("lands as near 3s from the tap as a whole pane allows", () => {
+  it("lands as near SPIN_TARGET_MS as a whole pane allows", () => {
     // Aligned arcs are a turn apart, i.e. MAX_ALIGN_MS * DECAY_PEAK of decay;
     // the nearest is never more than half of that away.
     const step = MAX_ALIGN_MS * DECAY_PEAK;
-    // Up to 1.5s the nearest arc is never one the minimum stop rules out.
-    for (const elapsed of [900, 1200, 1500]) {
+    // While the target leaves room for a minimum stop plus one step, the
+    // nearest arc is never one the minimum stop rules out.
+    for (const elapsed of [300, 450, 600]) {
       for (let t = 0; t < 8; t++) {
         const p = plan(elapsed, 13, t);
         expect(Math.abs(elapsed + p.decayMs - SPIN_TARGET_MS)).toBeLessThanOrEqual(step / 2 + 1e-6);
