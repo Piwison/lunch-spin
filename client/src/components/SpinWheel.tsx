@@ -470,8 +470,8 @@ export default function SpinWheel({
         if (answeredAt == null && targetIdRef.current != null) answeredAt = now;
         // The spin is counted from the TAP (SPIN_TARGET_MS), not from the reply.
         // On time: keep turning at this speed until exactly one decay-arc short
-        // of the winning seat, then the fixed 2s stop — landing by 3s.
-        // Late: start slowing right now, sized to land as near 3s as it can.
+        // of the winning seat, then the fixed stop — landing by SPIN_TARGET_MS.
+        // Late: start slowing right now, sized to land as near that as it can.
         if (!planned && answeredAt != null && now >= freeFloorAt) {
           const { targetIndex, count } = resolveTarget();
           if (answeredAt <= freeFloorAt) {
