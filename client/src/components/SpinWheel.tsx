@@ -332,7 +332,8 @@ export default function SpinWheel({
    *     very next render, because excluding the winner is what a spin DOES and
    *     the effect keyed on the segment count.
    *   · the angle is normalised. `targetAngle` carries the spin's whole travel
-   *     (four turns plus the landing arc — 1957° for a 390px phone at 8 panes),
+   *     (the minimum turns plus the landing arc — 1957° for a 390px phone at 8 panes
+   *     when the minimum was four),
    *     and any later re-seat to an absolute seat angle then reads as the disc
    *     unwinding every one of those turns. Measured: a 1713° snap backwards, on
    *     a disc sitting at 0.72 opacity behind the winner. Rotation is periodic
@@ -447,7 +448,8 @@ export default function SpinWheel({
       // so the wheel speeds up at the one moment nothing is pushing it —
       // measured at 1.46 -> 1.79 deg/ms before this floor existed.
       // This is also the floor when the server answers late: the shortest arc the
-      // landing can produce (4 turns less the settle) needs 1614ms, so there is
+      // landing can produce (MIN_LAND_TURNS less the settle) already needs
+      // decayDurationMs of it — 497ms at two turns and 2.4 deg/ms — so there is
       // no separate MIN_DECAY_MS — a constant that can never win an argument is
       // not a guard.
       const continuousMs = decayDurationMs(settleFromAngle - decayFromAngle, FREE_SPIN_SPEED);

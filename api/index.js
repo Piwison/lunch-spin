@@ -1970,7 +1970,7 @@ function hoursView(rawOpenHours, utcOffsetMinutes, walkSeconds, now = /* @__PURE
 // shared/wheelGeometry.ts
 var SPIN_TIMELINE = {
   /** Disc counter-rotates slightly. `--ease-exit`. */
-  windupMs: 180,
+  windupMs: 100,
   /** Constant fast phase into the long tail. `--ease-decay`. Stretches while the
    *  server is still choosing — this is the floor, not the ceiling.
    *
@@ -1978,10 +1978,17 @@ var SPIN_TIMELINE = {
    *  length: with the old decay curve the wheel finished 96% of its rotation in
    *  the first half of the decay, so most of what you sat through was a disc
    *  that had already stopped moving. Shortening the phase and spreading the
-   *  deceleration across it are the same fix. */
-  travelMs: 1900,
+   *  deceleration across it are the same fix.
+   *
+   *  1900 -> 600 (2026-11). Still too long, and the owner asked for it to lose
+   *  more than half. Measured in the replica with a 64ms server reply: tap ->
+   *  disc at rest went from 2389ms to about a second. The spin is shorter
+   *  because it turns fewer times at a higher speed (MIN_LAND_TURNS,
+   *  FREE_SPIN_SPEED), not because the decay was squeezed: decayDurationMs
+   *  still sizes the deceleration so it never outruns the free spin. */
+  travelMs: 600,
   /** Lands the winning pane on the pointer. `--ease-settle`. */
-  settleMs: 220,
+  settleMs: 180,
   /** Disc drops back 52px and blurs to 14px at 50% opacity. */
   recedeMs: 320,
   /** The unroll starts partway into the recede — see SPIN_TOTAL_MS. */
@@ -1994,8 +2001,8 @@ var SPIN_TIMELINE = {
   reducedMs: 400
 };
 var SPIN_TOTAL_MS = SPIN_TIMELINE.windupMs + SPIN_TIMELINE.travelMs + SPIN_TIMELINE.settleMs + SPIN_TIMELINE.unrollDelayMs + SPIN_TIMELINE.unrollMs;
-var FREE_SPIN_SPEED = 1.49;
-var MIN_LAND_TURNS = 4;
+var FREE_SPIN_SPEED = 2.4;
+var MIN_LAND_TURNS = 2;
 var SETTLE_DEG = 12;
 var MAX_LAND_ARC_DEG = (MIN_LAND_TURNS + 1) * 360 - SETTLE_DEG;
 function cubicBezier(x1, y1, x2, y2) {
