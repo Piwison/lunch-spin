@@ -54,8 +54,11 @@ export default function WheelMembers({ ownerId, owner, members, currentUserId, p
       <button
         type="button"
         onClick={() => collapsible && setOpen((o) => !o)}
-        className={`flex items-center justify-between gap-2 ${collapsible ? "cursor-pointer" : "cursor-default"}`}
-        style={collapsible ? { minHeight: 56 } : undefined}
+        aria-expanded={collapsible ? open : undefined}
+        /* 44px, the same row as Today's votes beneath it: both are the same
+           kind of disclosure header, and the old 56px made the roster's 11px
+           label float in a band of empty space. */
+        className={`flex items-center justify-between gap-2 ${collapsible ? "min-h-11 cursor-pointer" : "cursor-default"}`}
       >
         <span className="type-eyebrow flex items-center gap-2" style={{ color: "var(--ink-warm)" }}>
           <Users size={12} /> {t("wheel.members.team")}
