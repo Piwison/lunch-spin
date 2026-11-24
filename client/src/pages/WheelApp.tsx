@@ -1565,9 +1565,15 @@ export default function WheelApp() {
                       </div>
                     )}
 
-                    {/* Team roster */}
-                    {isShared && wheelData && (
-                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
+                    {/* Team roster + today's votes: two collapsed disclosure
+                        headers that read as one block. They share a wrapper so
+                        the column's 16px gap does not open up between them —
+                        each header's 44px tap row already spaces them, and the
+                        extra gap left the two 11px labels 66px apart, pushing
+                        Spin under the dock on a 390x844 phone. */}
+                    {isShared && (
+                      <div className="w-full flex flex-col md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        {wheelData && (
                         <WheelMembers
                           ownerId={wheelData.ownerId}
                           owner={wheelData.owner}
@@ -1576,12 +1582,7 @@ export default function WheelApp() {
                           presentUserIds={presentUserIds}
                           collapsible
                         />
-                      </div>
-                    )}
-
-                    {/* Round panel (shared wheels) */}
-                    {isShared && (
-                      <div className="w-full md:col-start-2 xl:col-auto" style={recedeStyle}>
+                        )}
                         <RoundPanel
                           restaurants={roundCandidates.map((r) => ({ id: r.id, name: r.name, tagIds: r.tags.map((tag) => tag.id) }))}
                           tags={(tags ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color, category: t.category }))}
